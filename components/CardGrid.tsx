@@ -8,6 +8,8 @@ import {
   ValueSetterParams,
   GridReadyEvent,
   CellClickedEvent,
+  CellContextMenuEvent,
+  CellValueChangedEvent,
   CellClassParams,
   RowClassParams,
 } from 'ag-grid-community';
@@ -559,7 +561,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
   }, [previewCard]);
 
   // Handle row right-click for context menu
-  const onCellContextMenu = useCallback((event: CellClickedEvent<CardItemWithImages>) => {
+  const onCellContextMenu = useCallback((event: CellContextMenuEvent<CardItemWithImages>) => {
     if (!event.data) return;
     
     // Prevent default browser context menu
@@ -607,7 +609,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
   }, [contextMenu?.cardId, onDeleteCard]);
 
   // Handle cell value changes - refresh condition-related cells when conditionType changes
-  const onCellValueChanged = useCallback((event: { column: { getColId: () => string }; node: { id: string | undefined }; api: { refreshCells: (params: { rowNodes: unknown[]; columns: string[]; force: boolean }) => void; getRowNode: (id: string) => unknown } }) => {
+  const onCellValueChanged = useCallback((event: CellValueChangedEvent<CardItemWithImages>) => {
     if (event.column.getColId() === 'conditionType' && event.node?.id) {
       // Refresh the condition-related cells in this row
       const rowNode = event.api.getRowNode(event.node.id);
