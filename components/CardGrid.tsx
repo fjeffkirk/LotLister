@@ -1015,7 +1015,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       cellClass: getMandatoryCellClass('conditionType'),
     },
     {
-      headerName: 'Card Condition',
+      headerName: 'Card Condition*',
       field: 'condition',
       width: 320,
       minWidth: 280,
@@ -1026,7 +1026,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
         const isGraded = isCardGraded(card);
         
         if (isGraded) {
-          return null;
+          return <span style={{ color: '#71717a', fontStyle: 'italic' }}>N/A (graded)</span>;
         }
         
         const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -1039,7 +1039,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
             onChange={handleChange}
             onClick={(e) => e.stopPropagation()}
             style={{ 
-              backgroundColor: isMandatoryFieldEmpty('condition', params.value, card) ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+              backgroundColor: 'transparent',
               border: 'none',
               color: '#fafafa',
               cursor: 'pointer',
@@ -1058,6 +1058,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       },
       headerTooltip: 'Required when ungraded - Right-click to bulk edit',
       suppressSizeToFit: true,
+      cellClass: getMandatoryCellClass('condition'),
     },
     {
       headerName: 'Professional Grader',
