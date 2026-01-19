@@ -5,7 +5,7 @@ services:
     runtime: node
     region: oregon
     buildCommand: npm ci --include=dev && npx prisma generate && NODE_OPTIONS="--max-old-space-size=512" npm run build
-    startCommand: npx prisma migrate deploy && npm start
+    startCommand: npx prisma db push --skip-generate && npm start
     envVars:
       - key: DATABASE_URL
         value: file:/data/lotlister.sqlite
