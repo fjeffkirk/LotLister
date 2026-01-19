@@ -1,0 +1,22 @@
+# Render Blueprint - https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: lotlister
+    runtime: node
+    plan: starter # $7/month - includes 512MB RAM, can upgrade later
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    envVars:
+      - key: DATABASE_URL
+        value: file:/data/lotlister.sqlite
+      - key: UPLOAD_DIR
+        value: /data/uploads
+      - key: NODE_ENV
+        value: production
+      # This will be set after first deploy when you know your URL
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+    disk:
+      name: lotlister-data
+      mountPath: /data
+      sizeGB: 1 # 1GB for images, can increase later

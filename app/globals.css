@@ -1,0 +1,273 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-geist-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-geist-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+/* Base styles */
+html {
+  font-family: var(--font-geist-sans);
+}
+
+body {
+  @apply bg-surface-950 text-surface-100 antialiased;
+  min-height: 100vh;
+}
+
+/* AG Grid theme overrides for dark mode */
+.ag-theme-alpine-dark {
+  --ag-background-color: #18181b;
+  --ag-header-background-color: #27272a;
+  --ag-odd-row-background-color: #1f1f23;
+  --ag-row-hover-color: #2d2d35;
+  --ag-selected-row-background-color: #0c4a6e;
+  --ag-range-selection-background-color: rgba(14, 165, 233, 0.2);
+  --ag-border-color: #3f3f46;
+  --ag-header-foreground-color: #e4e4e7;
+  --ag-foreground-color: #fafafa;
+  --ag-secondary-foreground-color: #a1a1aa;
+  --ag-input-focus-border-color: #0ea5e9;
+  --ag-font-family: var(--font-geist-sans);
+  --ag-font-size: 13px;
+  --ag-row-height: 52px;
+  --ag-header-height: 44px;
+  --ag-borders: solid 1px;
+  --ag-row-border-color: #3f3f46;
+  --ag-cell-horizontal-border: solid 1px #3f3f46;
+}
+
+.ag-theme-alpine-dark .ag-header-cell {
+  @apply font-semibold uppercase text-xs tracking-wider;
+  border-right: 1px solid #3f3f46 !important;
+}
+
+.ag-theme-alpine-dark .ag-header-cell-label {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.ag-theme-alpine-dark .ag-header-group-cell {
+  border-right: 1px solid #3f3f46 !important;
+}
+
+.ag-theme-alpine-dark .ag-cell {
+  @apply flex items-center;
+  padding: 8px 12px;
+  border-right: 1px solid #3f3f46 !important;
+}
+
+.ag-theme-alpine-dark .ag-row {
+  border-bottom: 1px solid #3f3f46;
+}
+
+.ag-theme-alpine-dark .ag-pinned-left-cols-container .ag-cell {
+  border-right: 1px solid #3f3f46 !important;
+}
+
+.ag-theme-alpine-dark .ag-cell-inline-editing {
+  @apply bg-surface-800 border-primary-500;
+}
+
+.ag-theme-alpine-dark input[class^='ag-'] {
+  @apply bg-surface-800 border-surface-600 text-surface-100;
+}
+
+.ag-theme-alpine-dark .ag-cell-focus {
+  border-color: #0ea5e9 !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-surface-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-surface-600 rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-surface-500;
+}
+
+/* Dropdown styles */
+select {
+  @apply bg-surface-800 border-surface-600 text-surface-100 rounded;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+}
+
+/* Input styles */
+input[type="text"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+textarea {
+  @apply bg-surface-800 border border-surface-600 text-surface-100 rounded px-3 py-2;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  @apply outline-none ring-2 ring-primary-500 border-primary-500;
+}
+
+/* Button base */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded font-medium transition-all duration-200;
+}
+
+.btn-primary {
+  @apply bg-primary-600 hover:bg-primary-500 text-white;
+}
+
+.btn-secondary {
+  @apply bg-surface-700 hover:bg-surface-600 text-surface-100;
+}
+
+.btn-danger {
+  @apply bg-red-600 hover:bg-red-500 text-white;
+}
+
+.btn-ghost {
+  @apply hover:bg-surface-800 text-surface-300 hover:text-surface-100;
+}
+
+.btn:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+/* Card/Panel styles */
+.panel {
+  @apply bg-surface-900 border border-surface-700 rounded-lg;
+}
+
+/* Modal overlay */
+.modal-overlay {
+  @apply fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center;
+}
+
+.modal-content {
+  @apply bg-surface-900 border border-surface-700 rounded-xl shadow-2xl max-h-[90vh] overflow-auto;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply w-5 h-5 border-2 border-surface-600 border-t-primary-500 rounded-full animate-spin;
+}
+
+/* Thumbnail image container */
+.thumb-container {
+  @apply relative w-12 h-12 rounded overflow-hidden bg-surface-800 flex-shrink-0;
+}
+
+.thumb-container img {
+  @apply w-full h-full object-cover;
+}
+
+/* Status badges */
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+}
+
+.badge-draft {
+  @apply bg-surface-700 text-surface-300;
+}
+
+.badge-ready {
+  @apply bg-green-900/50 text-green-400;
+}
+
+.badge-exported {
+  @apply bg-primary-900/50 text-primary-400;
+}
+
+/* Dropzone styles */
+.dropzone {
+  @apply border-2 border-dashed border-surface-600 rounded-xl p-8 text-center transition-colors;
+}
+
+.dropzone.active {
+  @apply border-primary-500 bg-primary-500/10;
+}
+
+/* Tab styles */
+.tab {
+  @apply px-4 py-2 text-sm font-medium text-surface-400 hover:text-surface-100 border-b-2 border-transparent transition-colors;
+}
+
+.tab.active {
+  @apply text-primary-400 border-primary-500;
+}
+
+/* AG Grid - Mandatory field empty (red hue) */
+.ag-theme-alpine-dark .cell-mandatory-empty {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+.ag-theme-alpine-dark .cell-mandatory-empty:hover {
+  background-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+/* AG Grid - Row complete (green hue) */
+.ag-theme-alpine-dark .row-complete {
+  background-color: rgba(34, 197, 94, 0.08) !important;
+}
+
+.ag-theme-alpine-dark .row-complete:hover {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+}
+
+.ag-theme-alpine-dark .row-complete.ag-row-odd {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+
+.ag-theme-alpine-dark .row-complete.ag-row-odd:hover {
+  background-color: rgba(34, 197, 94, 0.18) !important;
+}

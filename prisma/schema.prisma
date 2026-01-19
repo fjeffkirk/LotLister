@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  // Use DATABASE_URL env var in production, fallback to local file for development
+  url      = env("DATABASE_URL")
+}
+
+model Lot {
+  id            String         @id @default(uuid())
+  name          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  cardItems     CardItem[]
+  exportProfile ExportProfile?
+}
+
+model CardItem {
+  id        String      @id @default(uuid())
+  lotId     String
+  lot       Lot         @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  sortOrder Int         @default(0)
+  images    CardImage[]
+
+  // Overview fields
+  title     String?
+  status    String   @default("Draft") // Draft, Ready, Exported
+  listings  String?
+  salePrice Float?
+  category  String   @default("Baseball")
+  year      Int?
+  brand     String?
+  setName   String?
+
+  // Inspector fields
+  name           String?
+  cardNumber     String?
+  subsetParallel String?
+  attributes     String?
+  team           String?
+  variation      String?
+  graded         Boolean @default(false)
+  grader         String?
+  grade          String?
+  conditionType  String  @default("Ungraded: Not in original packaging or professionally graded")
+  condition      String  @default("Near Mint or Better")
+  certNo         String?
+
+  @@index([lotId])
+}
+
+model CardImage {
+  id           String   @id @default(uuid())
+  cardItemId   String
+  cardItem     CardItem @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
+  originalPath String
+  thumbPath    String
+  filename     String
+  sortOrder    Int      @default(0)
+
+  @@index([cardItemId])
+}
+
+model ExportProfile {
+  id                     String   @id @default(uuid())
+  lotId                  String   @unique
+  lot                    Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  // Template
+  templateName String @default("7 Day Auction")
+
+  // eBay Category
+  ebayCategory  String @default("261328")
+  storeCategory String @default("0")
+
+  // Listing Type
+  listingType       String @default("Auction") // Auction, BuyItNow
+  startPriceDefault Float  @default(4.99)
+  buyItNowPrice     Float?
+
+  // Duration & Schedule
+  durationDays           Int     @default(7) // 1, 3, 5, 7, 10
+  scheduleMode           String  @default("Scheduled") // Immediate, Scheduled
+  scheduleDate           String? // ISO date string
+  scheduleTime           String? // HH:mm format
+  staggerEnabled         Boolean @default(true)
+  staggerIntervalSeconds Int     @default(15)
+
+  // Shipping
+  shippingService        String  @default("USPS Ground Advantage")
+  handlingTimeDays       Int     @default(3)
+  freeShipping           Boolean @default(false)
+  shippingCost           Float   @default(3.99)
+  eachAdditionalItemCost Float   @default(1.49)
+
+  // Payment
+  immediatePayment Boolean @default(false)
+
+  // Location
+  itemLocationCity  String?
+  itemLocationState String?
+  itemLocationZip   String?
+
+  // Returns
+  returnsAccepted    Boolean @default(true)
+  returnWindowDays   Int     @default(14)
+  refundMethod       String  @default("Money Back")
+  shippingCostPaidBy String  @default("Seller")
+
+  // Tax
+  salesTaxEnabled Boolean @default(false)
+
+  @@index([lotId])
+}
