@@ -4,6 +4,9 @@
 
 import { Lot, CardItem, CardImage, ExportProfile } from '@prisma/client';
 
+// Re-export Prisma types that are used by components
+export type { CardImage };
+
 // Full types with relations
 export type LotWithCount = Lot & {
   _count: {
