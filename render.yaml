@@ -3,7 +3,7 @@ services:
   - type: web
     name: lotlister
     runtime: node
-    plan: starter # $7/month - includes 512MB RAM, can upgrade later
+    region: oregon
     buildCommand: npm install && npx prisma generate && npm run build
     startCommand: npx prisma migrate deploy && npm start
     envVars:
@@ -19,4 +19,4 @@ services:
     disk:
       name: lotlister-data
       mountPath: /data
-      sizeGB: 1 # 1GB for images, can increase later
+      sizeGB: 1
