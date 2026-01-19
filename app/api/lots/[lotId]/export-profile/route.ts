@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { exportProfileSchema } from '@/lib/validation';
+import prisma from '../../../../../lib/prisma';
+import { exportProfileSchema } from '../../../../../lib/validation';
 import { ExportProfile } from '@prisma/client';
-import { ApiResponse } from '@/lib/types';
+import { ApiResponse } from '../../../../../lib/types';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;

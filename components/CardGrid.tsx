@@ -13,7 +13,7 @@ import {
 } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
-import { CardItemWithImages, CardImage, CATEGORY_OPTIONS, CONDITION_TYPE_OPTIONS, CONDITION_OPTIONS, GRADER_OPTIONS, GRADE_OPTIONS } from '@/lib/types';
+import { CardItemWithImages, CardImage, CATEGORY_OPTIONS, CONDITION_TYPE_OPTIONS, CONDITION_OPTIONS, GRADER_OPTIONS, GRADE_OPTIONS } from '../lib/types';
 
 // Get image URL (client-side utility)
 function getImageUrl(relativePath: string): string {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { ApiResponse, CardItemWithImages } from '@/lib/types';
+import prisma from '../../../../../../../lib/prisma';
+import { ApiResponse, CardItemWithImages } from '../../../../../../../lib/types';
 
 interface RouteParams {
   params: Promise<{ lotId: string; cardId: string }>;

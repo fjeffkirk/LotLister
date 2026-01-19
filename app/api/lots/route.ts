@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { createLotSchema } from '@/lib/validation';
-import { ApiResponse, LotWithCount } from '@/lib/types';
+import prisma from '../../../lib/prisma';
+import { createLotSchema } from '../../../lib/validation';
+import { ApiResponse, LotWithCount } from '../../../lib/types';
 
 // GET /api/lots - List all lots
 export async function GET(): Promise<NextResponse<ApiResponse<LotWithCount[]>>> {

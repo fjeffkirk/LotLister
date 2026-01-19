@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { generateRawCSV } from '@/lib/export-csv';
+import prisma from '../../../../../../lib/prisma';
+import { generateRawCSV } from '../../../../../../lib/export-csv';
 import { format } from 'date-fns';
 
 interface RouteParams {

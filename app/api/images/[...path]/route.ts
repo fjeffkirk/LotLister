@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
-import { resolveImagePath } from '@/lib/storage';
+import { resolveImagePath } from '../../../../lib/storage';
 
 interface RouteParams {
   params: Promise<{ path: string[] }>;

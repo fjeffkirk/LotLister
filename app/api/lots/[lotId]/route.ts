@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { updateLotSchema } from '@/lib/validation';
-import { deleteLotImages } from '@/lib/storage';
-import { ApiResponse, LotWithCards } from '@/lib/types';
+import prisma from '../../../../lib/prisma';
+import { updateLotSchema } from '../../../../lib/validation';
+import { deleteLotImages } from '../../../../lib/storage';
+import { ApiResponse, LotWithCards } from '../../../../lib/types';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { regroupLotImages } from '@/lib/grouping';
-import { ApiResponse } from '@/lib/types';
+import prisma from '../../../../../lib/prisma';
+import { regroupLotImages } from '../../../../../lib/grouping';
+import { ApiResponse } from '../../../../../lib/types';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;

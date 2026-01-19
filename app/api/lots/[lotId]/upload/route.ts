@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { saveImage } from '@/lib/storage';
-import { groupImages, createCardItemsFromGroups, ImageInfo } from '@/lib/grouping';
+import prisma from '../../../../../lib/prisma';
+import { saveImage } from '../../../../../lib/storage';
+import { groupImages, createCardItemsFromGroups, ImageInfo } from '../../../../../lib/grouping';
 import { v4 as uuidv4 } from 'uuid';
-import { ApiResponse } from '@/lib/types';
+import { ApiResponse } from '../../../../../lib/types';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;

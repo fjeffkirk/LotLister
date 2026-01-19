@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { LotWithCount } from '@/lib/types';
+import { LotWithCount } from '../../lib/types';
 
 export default function LotsPage() {
   const [lots, setLots] = useState<LotWithCount[]>([]);

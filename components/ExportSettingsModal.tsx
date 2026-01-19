@@ -8,7 +8,7 @@ import {
   DURATION_OPTIONS,
   RETURN_WINDOW_OPTIONS,
   SHIPPING_SERVICE_OPTIONS,
-} from '@/lib/types';
+} from '../lib/types';
 
 interface ExportSettingsModalProps {
   lotId: string;

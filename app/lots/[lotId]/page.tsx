@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { LotWithCards, CardItemWithImages } from '@/lib/types';
-import ExportSettingsModal from '@/components/ExportSettingsModal';
+import { LotWithCards, CardItemWithImages } from '../../../lib/types';
+import ExportSettingsModal from '../../../components/ExportSettingsModal';
 
 // Check if a card is graded (based on conditionType)
 function isCardGraded(card: CardItemWithImages): boolean {
@@ -44,7 +44,7 @@ function isCardReadyForExport(card: CardItemWithImages): boolean {
 }
 
 // Dynamic import for AG Grid to avoid SSR issues
-const CardGrid = dynamic(() => import('@/components/CardGrid'), {
+const CardGrid = dynamic(() => import('../../../components/CardGrid'), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-full">
