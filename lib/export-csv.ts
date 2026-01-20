@@ -332,8 +332,9 @@ export function generateEbayCSV(
       })
       .join('|');
     
-    // Description
-    const description = `<p>${title}</p>`;
+    // Description - use custom description if provided, otherwise use title
+    const customDescription = (card as Record<string, unknown>).description as string | undefined;
+    const description = customDescription || `<p>${title}</p>`;
     
     // Format and pricing
     const ebayFormat = EBAY_FORMATS[profile.listingType as keyof typeof EBAY_FORMATS] || 'Auction';

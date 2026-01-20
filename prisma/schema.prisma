@@ -52,6 +52,7 @@ model CardItem {
   conditionType  String  @default("Ungraded: Not in original packaging or professionally graded")
   condition      String  @default("Near Mint or Better")
   certNo         String?
+  description    String? // Custom item description for eBay listing
 
   @@index([lotId])
 }

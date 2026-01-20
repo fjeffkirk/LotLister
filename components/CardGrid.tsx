@@ -1194,6 +1194,21 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       headerTooltip: 'Recommended when graded - Right-click to bulk edit',
       suppressSizeToFit: true,
     },
+    {
+      headerName: 'Item Description',
+      field: 'description',
+      width: 300,
+      minWidth: 200,
+      editable: true,
+      cellEditor: 'agLargeTextCellEditor',
+      cellEditorParams: {
+        maxLength: 5000,
+        rows: 5,
+        cols: 50,
+      },
+      headerTooltip: 'Custom description for eBay listing - Right-click to bulk edit',
+      suppressSizeToFit: true,
+    },
   ], [onCellChange]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
