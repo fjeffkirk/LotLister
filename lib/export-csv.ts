@@ -192,6 +192,25 @@ export const EBAY_CONDITION_IDS = {
   UNGRADED: '4000',
 };
 
+// eBay shipping service codes - map human-readable names to API codes
+const EBAY_SHIPPING_SERVICES: Record<string, string> = {
+  'USPS Ground Advantage': 'USPSParcel',
+  'USPS First Class': 'USPSFirstClass',
+  'USPS Priority Mail': 'USPSPriority',
+  'USPS Priority Mail Express': 'USPSPriorityExpress',
+  'USPSParcel': 'USPSParcel',
+  'USPSFirstClass': 'USPSFirstClass',
+  'USPSPriority': 'USPSPriority',
+  'USPSPriorityExpress': 'USPSPriorityExpress',
+  'UPS Ground': 'UPSGround',
+  'UPS 3 Day Select': 'UPS3rdDay',
+  'UPS 2nd Day Air': 'UPS2ndDay',
+  'UPS Next Day Air': 'UPSNextDay',
+  'FedEx Ground': 'FedExHomeDelivery',
+  'FedEx 2Day': 'FedEx2Day',
+  'FedEx Express Saver': 'FedExExpressSaver',
+};
+
 // eBay format types
 export const EBAY_FORMATS = {
   Auction: 'Auction',
@@ -380,7 +399,7 @@ export function generateEbayCSV(
       location,                                 // *Location
       profile.itemLocationZip || '',            // PostalCode
       shippingType,                             // ShippingType
-      profile.shippingService,                  // ShippingService-1:Option
+      EBAY_SHIPPING_SERVICES[profile.shippingService] || 'USPSParcel', // ShippingService-1:Option
       freeShippingFlag,                         // ShippingService-1:FreeShipping
       shippingCost,                             // ShippingService-1:Cost
       profile.eachAdditionalItemCost || '',     // ShippingService-1:AdditionalCost
