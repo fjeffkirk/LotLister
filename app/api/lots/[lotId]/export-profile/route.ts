@@ -3,9 +3,15 @@ import prisma from '../../../../../lib/prisma';
 import { exportProfileSchema } from '../../../../../lib/validation';
 import { ExportProfile } from '@prisma/client';
 import { ApiResponse } from '../../../../../lib/types';
+import { getUserEmail } from '../../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
+}
+
+// Helper to verify lot ownership
+async function verifyLotOwnership(lotId: string, userEmail: string) {
+  return prisma.lot.findFirst({ where: { id: lotId, userEmail } });
 }
 
 // GET /api/lots/[lotId]/export-profile - Get export profile for a lot
@@ -14,7 +20,18 @@ export async function GET(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<ExportProfile | null>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId } = await params;
+    
+    // Verify ownership
+    const lot = await verifyLotOwnership(lotId, userEmail);
+    if (!lot) {
+      return NextResponse.json({ success: false, error: 'Lot not found' }, { status: 404 });
+    }
     
     const profile = await prisma.exportProfile.findUnique({
       where: { lotId },
@@ -36,7 +53,19 @@ export async function PUT(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<ExportProfile>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId } = await params;
+    
+    // Verify ownership
+    const lot = await verifyLotOwnership(lotId, userEmail);
+    if (!lot) {
+      return NextResponse.json({ success: false, error: 'Lot not found' }, { status: 404 });
+    }
+
     const body = await request.json();
     
     // Validate input

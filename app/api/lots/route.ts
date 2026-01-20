@@ -2,11 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
 import { createLotSchema } from '../../../lib/validation';
 import { ApiResponse, LotWithCount } from '../../../lib/types';
+import { getUserEmail } from '../../../lib/auth';
 
-// GET /api/lots - List all lots
+// GET /api/lots - List all lots for the current user
 export async function GET(): Promise<NextResponse<ApiResponse<LotWithCount[]>>> {
   try {
+    const userEmail = await getUserEmail();
+    
+    if (!userEmail) {
+      return NextResponse.json(
+        { success: false, error: 'User email not set' },
+        { status: 401 }
+      );
+    }
+
     const lots = await prisma.lot.findMany({
+      where: { userEmail },
       include: {
         _count: {
           select: { cardItems: true },
@@ -25,11 +36,20 @@ export async function GET(): Promise<NextResponse<ApiResponse<LotWithCount[]>>> 
   }
 }
 
-// POST /api/lots - Create a new lot
+// POST /api/lots - Create a new lot for the current user
 export async function POST(
   request: NextRequest
 ): Promise<NextResponse<ApiResponse<LotWithCount>>> {
   try {
+    const userEmail = await getUserEmail();
+    
+    if (!userEmail) {
+      return NextResponse.json(
+        { success: false, error: 'User email not set' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     
     // Validate input
@@ -44,6 +64,7 @@ export async function POST(
     const lot = await prisma.lot.create({
       data: {
         name: validation.data.name,
+        userEmail,
       },
       include: {
         _count: {

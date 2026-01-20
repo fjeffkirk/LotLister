@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { LotWithCount } from '../../lib/types';
+import { useUser } from '../../components/UserProvider';
 
 export default function LotsPage() {
+  const { userEmail, isLoading: userLoading } = useUser();
   const [lots, setLots] = useState<LotWithCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -13,8 +15,14 @@ export default function LotsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchLots();
-  }, []);
+    // Only fetch lots when we have a user email
+    if (userEmail) {
+      fetchLots();
+    } else if (!userLoading) {
+      // Not loading and no email means modal is showing
+      setLoading(false);
+    }
+  }, [userEmail, userLoading]);
 
   async function fetchLots() {
     try {
@@ -22,6 +30,9 @@ export default function LotsPage() {
       const data = await res.json();
       if (data.success) {
         setLots(data.data);
+      } else if (data.error === 'User email not set') {
+        // Email cookie might have been cleared, will show modal
+        setLots([]);
       }
     } catch (err) {
       setError('Failed to load lots');
@@ -80,6 +91,24 @@ export default function LotsPage() {
     }
   }
 
+  // Don't render anything while checking for user
+  if (userLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950 flex items-center justify-center">
+        <div className="spinner w-8 h-8"></div>
+      </div>
+    );
+  }
+
+  // If no email, the EmailModal will show - render minimal UI
+  if (!userEmail) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
+        {/* Empty state - modal will overlay */}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
       {/* Header */}
@@ -95,15 +124,23 @@ export default function LotsPage() {
               LotLister
             </h1>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn btn-primary"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Lot
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-surface-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="max-w-[200px] truncate">{userEmail}</span>
+            </div>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="btn btn-primary"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Lot
+            </button>
+          </div>
         </div>
       </header>
 

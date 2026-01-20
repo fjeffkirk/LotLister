@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
 import { bulkUpdateCardItemsSchema, updateCardItemSchema } from '../../../../../lib/validation';
 import { ApiResponse, CardItemWithImages } from '../../../../../lib/types';
+import { getUserEmail } from '../../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
+}
+
+// Helper to verify lot ownership
+async function verifyLotOwnership(lotId: string, userEmail: string) {
+  return prisma.lot.findFirst({ where: { id: lotId, userEmail } });
 }
 
 // GET /api/lots/[lotId]/cards - Get all card items for a lot
@@ -13,7 +19,18 @@ export async function GET(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<CardItemWithImages[]>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId } = await params;
+    
+    // Verify ownership
+    const lot = await verifyLotOwnership(lotId, userEmail);
+    if (!lot) {
+      return NextResponse.json({ success: false, error: 'Lot not found' }, { status: 404 });
+    }
     
     const cards = await prisma.cardItem.findMany({
       where: { lotId },
@@ -37,7 +54,19 @@ export async function PATCH(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<CardItemWithImages[]>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId } = await params;
+    
+    // Verify ownership
+    const lot = await verifyLotOwnership(lotId, userEmail);
+    if (!lot) {
+      return NextResponse.json({ success: false, error: 'Lot not found' }, { status: 404 });
+    }
+
     const body = await request.json();
     
     // Validate input

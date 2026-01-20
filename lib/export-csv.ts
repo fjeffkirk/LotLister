@@ -220,10 +220,8 @@ export function generateEbayCSV(
 ): string {
   const rows: string[] = [];
   
-  // eBay File Exchange format requires two header rows:
-  // 1. First row: Just the action header (site info)
-  // 2. Second row: All column headers
-  rows.push('*Action(SiteID=US|Country=US|Currency=USD|Version=1193)');
+  // eBay File Exchange format: header row followed by data rows
+  // The first column header *Action contains the site/version info
   rows.push(toCSVRow(EBAY_FILE_EXCHANGE_HEADERS));
   
   // Data rows

@@ -4,6 +4,7 @@ import { saveImage } from '../../../../../lib/storage';
 import { groupImages, createCardItemsFromGroups, ImageInfo } from '../../../../../lib/grouping';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiResponse } from '../../../../../lib/types';
+import { getUserEmail } from '../../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
@@ -20,11 +21,16 @@ export async function POST(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<UploadResult>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId } = await params;
     
-    // Verify lot exists
-    const lot = await prisma.lot.findUnique({
-      where: { id: lotId },
+    // Verify lot exists and belongs to user
+    const lot = await prisma.lot.findFirst({
+      where: { id: lotId, userEmail },
     });
     
     if (!lot) {

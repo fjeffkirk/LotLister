@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma';
 import { updateCardItemSchema } from '../../../../../../lib/validation';
 import { ApiResponse, CardItemWithImages } from '../../../../../../lib/types';
+import { getUserEmail } from '../../../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string; cardId: string }>;
+}
+
+// Helper to verify lot ownership
+async function verifyLotOwnership(lotId: string, userEmail: string) {
+  return prisma.lot.findFirst({ where: { id: lotId, userEmail } });
 }
 
 // PATCH /api/lots/[lotId]/cards/[cardId] - Update a single card item
@@ -13,7 +19,19 @@ export async function PATCH(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<CardItemWithImages>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId, cardId } = await params;
+    
+    // Verify ownership
+    const lot = await verifyLotOwnership(lotId, userEmail);
+    if (!lot) {
+      return NextResponse.json({ success: false, error: 'Lot not found' }, { status: 404 });
+    }
+
     const body = await request.json();
     
     // Validate input
@@ -48,7 +66,18 @@ export async function DELETE(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<{ id: string }>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId, cardId } = await params;
+    
+    // Verify ownership
+    const lot = await verifyLotOwnership(lotId, userEmail);
+    if (!lot) {
+      return NextResponse.json({ success: false, error: 'Lot not found' }, { status: 404 });
+    }
     
     await prisma.cardItem.delete({
       where: { id: cardId, lotId },

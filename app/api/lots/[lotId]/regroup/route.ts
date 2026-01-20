@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
 import { regroupLotImages } from '../../../../../lib/grouping';
 import { ApiResponse } from '../../../../../lib/types';
+import { getUserEmail } from '../../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
@@ -17,13 +18,18 @@ export async function POST(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<RegroupResult>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId } = await params;
     const body = await request.json();
     const imagesPerCard = parseInt(body.imagesPerCard) || 2;
     
-    // Verify lot exists
-    const lot = await prisma.lot.findUnique({
-      where: { id: lotId },
+    // Verify lot exists and belongs to user
+    const lot = await prisma.lot.findFirst({
+      where: { id: lotId, userEmail },
     });
     
     if (!lot) {

@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../../../lib/prisma';
 import { ApiResponse, CardItemWithImages } from '../../../../../../../lib/types';
+import { getUserEmail } from '../../../../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string; cardId: string }>;
+}
+
+// Helper to verify lot ownership
+async function verifyLotOwnership(lotId: string, userEmail: string) {
+  return prisma.lot.findFirst({ where: { id: lotId, userEmail } });
 }
 
 // POST /api/lots/[lotId]/cards/[cardId]/clone - Clone a card item
@@ -12,7 +18,18 @@ export async function POST(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<CardItemWithImages>>> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId, cardId } = await params;
+    
+    // Verify ownership
+    const lot = await verifyLotOwnership(lotId, userEmail);
+    if (!lot) {
+      return NextResponse.json({ success: false, error: 'Lot not found' }, { status: 404 });
+    }
     
     // Fetch the card to clone with its images
     const originalCard = await prisma.cardItem.findUnique({

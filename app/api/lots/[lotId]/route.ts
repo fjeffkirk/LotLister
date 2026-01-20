@@ -3,9 +3,18 @@ import prisma from '../../../../lib/prisma';
 import { updateLotSchema } from '../../../../lib/validation';
 import { deleteLotImages } from '../../../../lib/storage';
 import { ApiResponse, LotWithCards } from '../../../../lib/types';
+import { getUserEmail } from '../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
+}
+
+// Helper to verify lot ownership
+async function verifyLotOwnership(lotId: string, userEmail: string) {
+  const lot = await prisma.lot.findFirst({
+    where: { id: lotId, userEmail },
+  });
+  return lot;
 }
 
 // GET /api/lots/[lotId] - Get a single lot with all data
@@ -14,10 +23,19 @@ export async function GET(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<LotWithCards>>> {
   try {
+    const userEmail = await getUserEmail();
+    
+    if (!userEmail) {
+      return NextResponse.json(
+        { success: false, error: 'User email not set' },
+        { status: 401 }
+      );
+    }
+
     const { lotId } = await params;
     
-    const lot = await prisma.lot.findUnique({
-      where: { id: lotId },
+    const lot = await prisma.lot.findFirst({
+      where: { id: lotId, userEmail },
       include: {
         cardItems: {
           include: { images: true },
@@ -50,7 +68,26 @@ export async function PATCH(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<LotWithCards>>> {
   try {
+    const userEmail = await getUserEmail();
+    
+    if (!userEmail) {
+      return NextResponse.json(
+        { success: false, error: 'User email not set' },
+        { status: 401 }
+      );
+    }
+
     const { lotId } = await params;
+    
+    // Verify ownership
+    const existingLot = await verifyLotOwnership(lotId, userEmail);
+    if (!existingLot) {
+      return NextResponse.json(
+        { success: false, error: 'Lot not found' },
+        { status: 404 }
+      );
+    }
+
     const body = await request.json();
     
     // Validate input
@@ -90,7 +127,25 @@ export async function DELETE(
   { params }: RouteParams
 ): Promise<NextResponse<ApiResponse<{ id: string }>>> {
   try {
+    const userEmail = await getUserEmail();
+    
+    if (!userEmail) {
+      return NextResponse.json(
+        { success: false, error: 'User email not set' },
+        { status: 401 }
+      );
+    }
+
     const { lotId } = await params;
+    
+    // Verify ownership
+    const existingLot = await verifyLotOwnership(lotId, userEmail);
+    if (!existingLot) {
+      return NextResponse.json(
+        { success: false, error: 'Lot not found' },
+        { status: 404 }
+      );
+    }
     
     // Delete images from filesystem
     await deleteLotImages(lotId);

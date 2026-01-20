@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma';
 import { generateEbayCSV } from '../../../../../../lib/export-csv';
 import { format } from 'date-fns';
+import { getUserEmail } from '../../../../../../lib/auth';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
@@ -43,11 +44,16 @@ export async function GET(
   { params }: RouteParams
 ): Promise<NextResponse> {
   try {
+    const userEmail = await getUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ success: false, error: 'User email not set' }, { status: 401 });
+    }
+
     const { lotId } = await params;
     
-    // Fetch lot with cards and export profile
-    const lot = await prisma.lot.findUnique({
-      where: { id: lotId },
+    // Fetch lot with cards and export profile (verify ownership)
+    const lot = await prisma.lot.findFirst({
+      where: { id: lotId, userEmail },
       include: {
         cardItems: {
           include: { images: { orderBy: { sortOrder: 'asc' } } },

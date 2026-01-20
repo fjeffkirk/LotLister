@@ -11,10 +11,13 @@ datasource db {
 model Lot {
   id            String         @id @default(uuid())
   name          String
+  userEmail     String         // Email used for workspace isolation
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   cardItems     CardItem[]
   exportProfile ExportProfile?
+
+  @@index([userEmail])
 }
 
 model CardItem {
