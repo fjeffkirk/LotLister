@@ -228,6 +228,7 @@ export const EBAY_FORMATS = {
 
 /**
  * Calculate schedule times with staggering
+ * User enters local time, we convert to UTC for eBay
  */
 function calculateScheduleTime(
   profile: ExportProfile,
@@ -242,20 +243,25 @@ function calculateScheduleTime(
   }
   
   try {
-    // Parse date and time
+    // Parse date and time as local time
     const dateStr = profile.scheduleDate;
     const timeStr = profile.scheduleTime;
-    const baseDateTime = parseISO(`${dateStr}T${timeStr}:00`);
+    
+    // Create a Date object from the local time string
+    // This interprets the time as the user's local timezone
+    const localDateTime = new Date(`${dateStr}T${timeStr}:00`);
     
     // Add stagger offset if enabled
     const offsetSeconds = profile.staggerEnabled
       ? index * profile.staggerIntervalSeconds
       : 0;
     
-    const scheduledTime = addSeconds(baseDateTime, offsetSeconds);
+    const scheduledTime = addSeconds(localDateTime, offsetSeconds);
     
-    // Format for eBay: YYYY-MM-DD HH:MM:SS (in GMT/UTC)
-    return format(scheduledTime, 'yyyy-MM-dd HH:mm:ss');
+    // Format for eBay in ISO format (eBay expects UTC)
+    // toISOString() converts to UTC and formats as ISO
+    // Remove the .000Z suffix and keep just YYYY-MM-DDTHH:MM:SS
+    return scheduledTime.toISOString().slice(0, 19);
   } catch (error) {
     console.error('Error calculating schedule time:', error);
     return '';
