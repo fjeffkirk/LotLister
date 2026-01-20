@@ -192,10 +192,11 @@ export default function LotsPage() {
       {/* Header */}
       <header className="border-b border-surface-800 bg-surface-950/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
-          {/* Top row: Logo and New Lot button */}
-          <div className="flex items-center justify-between">
+          {/* Desktop: single row / Mobile: two rows */}
+          <div className="flex items-center justify-between gap-4">
+            {/* Logo */}
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
@@ -204,43 +205,74 @@ export default function LotsPage() {
                 LotLister
               </h1>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn btn-primary text-sm sm:text-base"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <span className="hidden sm:inline">New Lot</span>
-            </button>
-          </div>
-          
-          {/* Bottom row: Storage, User info */}
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-surface-800/50 sm:mt-0 sm:pt-0 sm:border-0 sm:absolute sm:right-6 sm:top-1/2 sm:-translate-y-1/2 sm:flex-row-reverse gap-3 sm:gap-4">
-            {/* User info with completed count */}
-            <div className="flex items-center gap-2 text-sm text-surface-400">
-              <svg className="w-4 h-4 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span className="max-w-[120px] sm:max-w-[200px] truncate text-xs sm:text-sm">{userEmail}</span>
-              {userStats && (
-                <div className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+
+            {/* Right side: Storage, User info, New Lot button */}
+            <div className="flex items-center gap-3 sm:gap-4">
+              {/* Storage Indicator - hidden on mobile */}
+              {storage && (
+                <div className="hidden sm:flex items-center gap-2 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
+                  <svg className="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                   </svg>
-                  {userStats.completedCount}
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-20 h-2 bg-surface-700 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all ${
+                          storage.percentUsed > 90 ? 'bg-red-500' : 
+                          storage.percentUsed > 70 ? 'bg-yellow-500' : 'bg-green-500'
+                        }`}
+                        style={{ width: `${storage.percentUsed}%` }}
+                      />
+                    </div>
+                    <span className={`text-xs ${
+                      storage.percentUsed > 90 ? 'text-red-400' : 
+                      storage.percentUsed > 70 ? 'text-yellow-400' : 'text-surface-400'
+                    }`}>
+                      {storage.percentUsed}%
+                    </span>
+                  </div>
                 </div>
               )}
-            </div>
 
+              {/* User info with completed count - hidden on mobile */}
+              <div className="hidden sm:flex items-center gap-2 text-sm text-surface-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="max-w-[200px] truncate">{userEmail}</span>
+                {userStats && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    {userStats.completedCount}
+                  </div>
+                )}
+              </div>
+
+              {/* New Lot button */}
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="btn btn-primary text-sm sm:text-base"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden sm:inline">New Lot</span>
+              </button>
+            </div>
+          </div>
+          
+          {/* Mobile only: Storage and User info row */}
+          <div className="flex sm:hidden items-center justify-between mt-2 pt-2 border-t border-surface-800/50 gap-3">
             {/* Storage Indicator */}
             {storage && (
-              <div className="flex items-center gap-1.5 sm:gap-2 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
+              <div className="flex items-center gap-1.5 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
                 <svg className="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                 </svg>
                 <div className="flex items-center gap-1">
-                  <div className="w-12 sm:w-20 h-2 bg-surface-700 rounded-full overflow-hidden">
+                  <div className="w-12 h-2 bg-surface-700 rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full transition-all ${
                         storage.percentUsed > 90 ? 'bg-red-500' : 
@@ -258,6 +290,19 @@ export default function LotsPage() {
                 </div>
               </div>
             )}
+
+            {/* User info with completed count */}
+            <div className="flex items-center gap-2 text-sm text-surface-400">
+              <span className="max-w-[120px] truncate text-xs">{userEmail}</span>
+              {userStats && (
+                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  {userStats.completedCount}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
