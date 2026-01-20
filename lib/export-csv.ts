@@ -207,6 +207,19 @@ const EBAY_SHIPPING_SERVICES: Record<string, string> = {
   'FedEx Express Saver': 'FedExExpressSaver',
 };
 
+// eBay card condition descriptor codes (for descriptor ID 40001)
+// Maps our display values to eBay's numeric codes
+const EBAY_CARD_CONDITION_CODES: Record<string, string> = {
+  'Near mint or better: Comparable to a fresh pack': '400010',
+  'Near Mint or Better': '400010',
+  'Excellent: Has clearly visible signs of wear': '400020',
+  'Excellent': '400020',
+  'Very good: Has moderate-to-heavy damage all over': '400030',
+  'Very Good': '400030',
+  'Poor: Is extremely worn and displays flaws all over': '400040',
+  'Poor': '400040',
+};
+
 // eBay format types
 export const EBAY_FORMATS = {
   Auction: 'Auction',
@@ -286,8 +299,9 @@ export function generateEbayCSV(
       ? EBAY_CONDITION_IDS.GRADED
       : EBAY_CONDITION_IDS.UNGRADED;
     
-    // Card condition descriptor (only for ungraded) - use eBay's expected value format
-    const cardCondition = isGraded ? '' : (card.condition || '');
+    // Card condition descriptor (only for ungraded) - use eBay's numeric code
+    const rawCondition = card.condition || '';
+    const cardCondition = isGraded ? '' : (EBAY_CARD_CONDITION_CODES[rawCondition] || '400010');
     
     // Grader info (only for graded)
     const grader = isGraded ? (card.grader || '') : '';
