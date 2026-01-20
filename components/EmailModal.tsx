@@ -30,23 +30,23 @@ export function EmailModal() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="bg-surface-900 border border-surface-700 rounded-xl shadow-2xl w-full max-w-md p-8 animate-slide-up">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in p-4">
+      <div className="bg-surface-900 border border-surface-700 rounded-xl shadow-2xl w-full max-w-md p-6 sm:p-8 animate-slide-up">
         {/* Logo */}
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center">
-            <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-5 sm:mb-6">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-200 bg-clip-text text-transparent">
+          <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-200 bg-clip-text text-transparent">
             LotLister
           </h1>
         </div>
 
-        <div className="text-center mb-6">
-          <h2 className="text-xl font-semibold text-surface-100 mb-2">Welcome!</h2>
-          <p className="text-surface-400 text-sm">
+        <div className="text-center mb-5 sm:mb-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-surface-100 mb-2">Welcome!</h2>
+          <p className="text-surface-400 text-xs sm:text-sm">
             Enter your email address to access your workspace. Your data is tied to this email.
           </p>
         </div>

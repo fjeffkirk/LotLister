@@ -191,26 +191,56 @@ export default function LotsPage() {
     <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
       {/* Header */}
       <header className="border-b border-surface-800 bg-surface-950/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+          {/* Top row: Logo and New Lot button */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-200 bg-clip-text text-transparent">
+                LotLister
+              </h1>
             </div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-200 bg-clip-text text-transparent">
-              LotLister
-            </h1>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="btn btn-primary text-sm sm:text-base"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span className="hidden sm:inline">New Lot</span>
+            </button>
           </div>
-          <div className="flex items-center gap-4">
+          
+          {/* Bottom row: Storage, User info */}
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-surface-800/50 sm:mt-0 sm:pt-0 sm:border-0 sm:absolute sm:right-6 sm:top-1/2 sm:-translate-y-1/2 sm:flex-row-reverse gap-3 sm:gap-4">
+            {/* User info with completed count */}
+            <div className="flex items-center gap-2 text-sm text-surface-400">
+              <svg className="w-4 h-4 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="max-w-[120px] sm:max-w-[200px] truncate text-xs sm:text-sm">{userEmail}</span>
+              {userStats && (
+                <div className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  {userStats.completedCount}
+                </div>
+              )}
+            </div>
+
             {/* Storage Indicator */}
             {storage && (
-              <div className="flex items-center gap-2 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
+              <div className="flex items-center gap-1.5 sm:gap-2 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
                 <svg className="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                 </svg>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-20 h-2 bg-surface-700 rounded-full overflow-hidden">
+                <div className="flex items-center gap-1">
+                  <div className="w-12 sm:w-20 h-2 bg-surface-700 rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full transition-all ${
                         storage.percentUsed > 90 ? 'bg-red-500' : 
@@ -228,38 +258,12 @@ export default function LotsPage() {
                 </div>
               </div>
             )}
-
-            <div className="flex items-center gap-3 text-sm text-surface-400">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span className="max-w-[200px] truncate">{userEmail}</span>
-              </div>
-              {userStats && (
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  {userStats.completedCount}
-                </div>
-              )}
-            </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn btn-primary"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Lot
-            </button>
           </div>
         </div>
       </header>
 
       {/* Main content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {error && (
           <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-300">
             {error}
@@ -449,31 +453,31 @@ export default function LotsPage() {
       {showCreateModal && (
         <div className="modal-overlay animate-fade-in" onClick={() => setShowCreateModal(false)}>
           <div
-            className="modal-content w-full max-w-md p-6 animate-slide-up"
+            className="modal-content w-full max-w-md mx-4 sm:mx-auto p-4 sm:p-6 animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-xl font-semibold mb-4">Create New Lot</h2>
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">Create New Lot</h2>
             <form onSubmit={createLot}>
               <input
                 type="text"
                 value={newLotName}
                 onChange={(e) => setNewLotName(e.target.value)}
                 placeholder="Lot name (e.g., 2024 Topps Baseball)"
-                className="w-full mb-4"
+                className="w-full mb-4 text-sm sm:text-base"
                 autoFocus
               />
-              <div className="flex justify-end gap-3">
+              <div className="flex justify-end gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="btn btn-secondary"
+                  className="btn btn-secondary text-sm sm:text-base"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!newLotName.trim() || creating}
-                  className="btn btn-primary"
+                  className="btn btn-primary text-sm sm:text-base"
                 >
                   {creating ? (
                     <>

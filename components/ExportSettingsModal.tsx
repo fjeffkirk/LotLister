@@ -129,24 +129,24 @@ export default function ExportSettingsModal({
   return (
     <div className="modal-overlay animate-fade-in" onClick={onClose}>
       <div
-        className="modal-content w-full max-w-3xl animate-slide-up"
+        className="modal-content w-full max-w-3xl mx-4 sm:mx-auto animate-slide-up max-h-[90vh] sm:max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-surface-700">
-          <div>
-            <h2 className="text-xl font-semibold">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-700 flex-shrink-0">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-semibold truncate">
               {isExportMode ? 'eBay File Exchange Export' : 'Export Settings'}
             </h2>
             {isExportMode && (
-              <p className="text-sm text-surface-400 mt-1">
+              <p className="text-xs sm:text-sm text-surface-400 mt-1">
                 Review your settings before exporting
               </p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="btn-ghost p-2 rounded-lg"
+            className="btn-ghost p-2 rounded-lg flex-shrink-0"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -155,7 +155,7 @@ export default function ExportSettingsModal({
         </div>
 
         {/* Body */}
-        <div className="p-5 max-h-[70vh] overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 sm:space-y-6 flex-1">
           {loading ? (
             <div className="flex items-center justify-center py-10">
               <div className="spinner w-8 h-8"></div>
@@ -535,8 +535,8 @@ export default function ExportSettingsModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 p-5 border-t border-surface-700">
-          <button onClick={onClose} className="btn btn-secondary">
+        <div className="flex justify-end gap-2 sm:gap-3 p-4 sm:p-5 border-t border-surface-700 flex-shrink-0">
+          <button onClick={onClose} className="btn btn-secondary text-sm sm:text-base">
             Cancel
           </button>
           {!isExportMode && (
