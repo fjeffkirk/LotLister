@@ -99,9 +99,20 @@ export async function PATCH(
       );
     }
 
+    // Build update data, handling completedAt automatically
+    const updateData: Record<string, unknown> = { ...validation.data };
+    
+    // If marking as completed, set completedAt to now
+    // If marking as not completed, clear completedAt
+    if (validation.data.completed === true) {
+      updateData.completedAt = new Date();
+    } else if (validation.data.completed === false) {
+      updateData.completedAt = null;
+    }
+
     const lot = await prisma.lot.update({
       where: { id: lotId },
-      data: validation.data,
+      data: updateData,
       include: {
         cardItems: {
           include: { images: true },

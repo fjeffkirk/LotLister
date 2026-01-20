@@ -8,6 +8,7 @@ export const createLotSchema = z.object({
 export const updateLotSchema = z.object({
   name: z.string().min(1, 'Lot name is required').max(100, 'Lot name too long').optional(),
   completed: z.boolean().optional(),
+  completedAt: z.string().datetime().nullable().optional(),
 });
 
 // CardItem validation

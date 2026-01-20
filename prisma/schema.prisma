@@ -13,6 +13,7 @@ model Lot {
   name          String
   userEmail     String         @default("legacy@lotlister.app") // Email used for workspace isolation
   completed     Boolean        @default(false) // Whether the lot is completed
+  completedAt   DateTime?      // When the lot was marked completed (for auto-delete)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   cardItems     CardItem[]

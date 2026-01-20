@@ -5,6 +5,23 @@ import Link from 'next/link';
 import { LotWithCount } from '../../lib/types';
 import { useUser } from '../../components/UserProvider';
 
+interface StorageInfo {
+  usedMB: number;
+  maxGB: number;
+  percentUsed: number;
+}
+
+// Calculate days remaining before auto-delete
+function getDaysRemaining(completedAt: string | Date | null): number {
+  if (!completedAt) return 10;
+  const completed = new Date(completedAt);
+  const deleteDate = new Date(completed);
+  deleteDate.setDate(deleteDate.getDate() + 10);
+  const now = new Date();
+  const diff = deleteDate.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+
 export default function LotsPage() {
   const { userEmail, isLoading: userLoading } = useUser();
   const [lots, setLots] = useState<LotWithCount[]>([]);
@@ -13,11 +30,13 @@ export default function LotsPage() {
   const [newLotName, setNewLotName] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
 
   useEffect(() => {
     // Only fetch lots when we have a user email
     if (userEmail) {
       fetchLots();
+      fetchStorage();
     } else if (!userLoading) {
       // Not loading and no email means modal is showing
       setLoading(false);
@@ -38,6 +57,18 @@ export default function LotsPage() {
       setError('Failed to load lots');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchStorage() {
+    try {
+      const res = await fetch('/api/storage');
+      const data = await res.json();
+      if (data.success) {
+        setStorage(data.data);
+      }
+    } catch (err) {
+      // Silently fail - storage indicator is optional
     }
   }
 
@@ -150,6 +181,32 @@ export default function LotsPage() {
             </h1>
           </div>
           <div className="flex items-center gap-4">
+            {/* Storage Indicator */}
+            {storage && (
+              <div className="flex items-center gap-2 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
+                <svg className="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                </svg>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-20 h-2 bg-surface-700 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all ${
+                        storage.percentUsed > 90 ? 'bg-red-500' : 
+                        storage.percentUsed > 70 ? 'bg-yellow-500' : 'bg-green-500'
+                      }`}
+                      style={{ width: `${storage.percentUsed}%` }}
+                    />
+                  </div>
+                  <span className={`text-xs ${
+                    storage.percentUsed > 90 ? 'text-red-400' : 
+                    storage.percentUsed > 70 ? 'text-yellow-400' : 'text-surface-400'
+                  }`}>
+                    {storage.percentUsed}%
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 text-sm text-surface-400">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -276,12 +333,20 @@ export default function LotsPage() {
             {/* Completed Section */}
             {completedLots.length > 0 && (
               <section>
-                <h2 className="text-lg font-semibold text-surface-200 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Completed ({completedLots.length})
-                </h2>
+                <div className="mb-4">
+                  <h2 className="text-lg font-semibold text-surface-200 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Completed ({completedLots.length})
+                  </h2>
+                  <p className="text-xs text-surface-500 mt-1 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Completed lots are automatically deleted after 10 days to free up storage
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {completedLots.map((lot, index) => (
                     <div
@@ -322,8 +387,10 @@ export default function LotsPage() {
                           </button>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-surface-500">
-                        <span>Created {new Date(lot.createdAt).toLocaleDateString()}</span>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className={`${getDaysRemaining((lot as Record<string, unknown>).completedAt as string | null) <= 3 ? 'text-red-400' : 'text-surface-500'}`}>
+                          Auto-deletes in {getDaysRemaining((lot as Record<string, unknown>).completedAt as string | null)} days
+                        </span>
                         <Link
                           href={`/lots/${lot.id}`}
                           className="btn btn-secondary text-sm py-1.5"
