@@ -300,6 +300,18 @@ export default function ExportSettingsModal({
                           onChange={(e) => updateField('scheduleTime', e.target.value)}
                           className="w-full"
                         />
+                        {profile.scheduleDate && profile.scheduleTime && (
+                          <p className="mt-1 text-xs text-surface-400">
+                            eBay will see: {(() => {
+                              try {
+                                const localDate = new Date(`${profile.scheduleDate}T${profile.scheduleTime}:00`);
+                                return localDate.toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
+                              } catch {
+                                return 'Invalid date/time';
+                              }
+                            })()}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
