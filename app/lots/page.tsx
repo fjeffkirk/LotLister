@@ -323,9 +323,11 @@ export default function LotsPage() {
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-lg text-surface-100 truncate group-hover:text-primary-400 transition-colors">
-                            {lot.name}
-                          </h3>
+                          <Link href={`/lots/${lot.id}`} className="block">
+                            <h3 className="font-semibold text-lg text-surface-100 truncate hover:text-primary-400 transition-colors cursor-pointer">
+                              {lot.name}
+                            </h3>
+                          </Link>
                           <p className="text-sm text-surface-400">
                             {lot._count.cardItems} {lot._count.cardItems === 1 ? 'card' : 'cards'}
                           </p>
@@ -395,12 +397,14 @@ export default function LotsPage() {
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-lg text-surface-100 truncate group-hover:text-primary-400 transition-colors flex items-center gap-2">
-                            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            {lot.name}
-                          </h3>
+                          <Link href={`/lots/${lot.id}`} className="block">
+                            <h3 className="font-semibold text-lg text-surface-100 truncate hover:text-primary-400 transition-colors cursor-pointer flex items-center gap-2">
+                              <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              {lot.name}
+                            </h3>
+                          </Link>
                           <p className="text-sm text-surface-400">
                             {lot._count.cardItems} {lot._count.cardItems === 1 ? 'card' : 'cards'}
                           </p>
