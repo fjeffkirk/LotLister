@@ -252,6 +252,27 @@ export default function LotPage() {
       performExport('raw');
     }
   }
+
+  async function toggleLotComplete() {
+    if (!lot) return;
+    
+    try {
+      const res = await fetch(`/api/lots/${lotId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !lot.completed }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setLot(prev => prev ? { ...prev, completed: !prev.completed } : null);
+      } else {
+        setError(data.error || 'Failed to update lot');
+      }
+    } catch (err) {
+      setError('Failed to update lot');
+    }
+  }
   
   async function performExport(type: 'raw' | 'ebay') {
     setExporting(true);
@@ -470,6 +491,28 @@ export default function LotPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               Settings
+            </button>
+
+            {/* Mark as Completed */}
+            <button
+              onClick={toggleLotComplete}
+              className={`btn text-sm py-1.5 ${lot?.completed ? 'btn-secondary' : 'btn-ghost border border-green-600 text-green-400 hover:bg-green-600/20'}`}
+            >
+              {lot?.completed ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Move to In Progress
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Mark as Completed
+                </>
+              )}
             </button>
           </div>
         </div>

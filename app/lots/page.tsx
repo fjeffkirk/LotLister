@@ -91,6 +91,31 @@ export default function LotsPage() {
     }
   }
 
+  async function toggleComplete(id: string, currentStatus: boolean) {
+    try {
+      const res = await fetch(`/api/lots/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !currentStatus }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setLots((prev) => prev.map((lot) => 
+          lot.id === id ? { ...lot, completed: !currentStatus } : lot
+        ));
+      } else {
+        setError(data.error || 'Failed to update lot');
+      }
+    } catch (err) {
+      setError('Failed to update lot');
+    }
+  }
+
+  // Separate lots into in-progress and completed
+  const inProgressLots = lots.filter(lot => !lot.completed);
+  const completedLots = lots.filter(lot => lot.completed);
+
   // Don't render anything while checking for user
   if (userLoading) {
     return (
@@ -179,46 +204,141 @@ export default function LotsPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {lots.map((lot, index) => (
-              <div
-                key={lot.id}
-                className="panel p-5 hover:border-surface-600 transition-all duration-200 group animate-slide-up"
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-lg text-surface-100 truncate group-hover:text-primary-400 transition-colors">
-                      {lot.name}
-                    </h3>
-                    <p className="text-sm text-surface-400">
-                      {lot._count.cardItems} {lot._count.cardItems === 1 ? 'card' : 'cards'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => deleteLot(lot.id)}
-                    className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Delete lot"
-                  >
-                    <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+          <div className="space-y-8">
+            {/* In Progress Section */}
+            <section>
+              <h2 className="text-lg font-semibold text-surface-200 mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                In Progress ({inProgressLots.length})
+              </h2>
+              {inProgressLots.length === 0 ? (
+                <div className="panel p-6 text-center text-surface-400">
+                  No lots in progress. Create a new lot or move one from completed.
                 </div>
-                <div className="flex items-center justify-between text-xs text-surface-500">
-                  <span>Created {new Date(lot.createdAt).toLocaleDateString()}</span>
-                  <Link
-                    href={`/lots/${lot.id}`}
-                    className="btn btn-secondary text-sm py-1.5"
-                  >
-                    Open
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {inProgressLots.map((lot, index) => (
+                    <div
+                      key={lot.id}
+                      className="panel p-5 hover:border-surface-600 transition-all duration-200 group animate-slide-up"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-lg text-surface-100 truncate group-hover:text-primary-400 transition-colors">
+                            {lot.name}
+                          </h3>
+                          <p className="text-sm text-surface-400">
+                            {lot._count.cardItems} {lot._count.cardItems === 1 ? 'card' : 'cards'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => toggleComplete(lot.id, lot.completed || false)}
+                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Mark as completed"
+                          >
+                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => deleteLot(lot.id)}
+                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete lot"
+                          >
+                            <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-surface-500">
+                        <span>Created {new Date(lot.createdAt).toLocaleDateString()}</span>
+                        <Link
+                          href={`/lots/${lot.id}`}
+                          className="btn btn-secondary text-sm py-1.5"
+                        >
+                          Open
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
+              )}
+            </section>
+
+            {/* Completed Section */}
+            {completedLots.length > 0 && (
+              <section>
+                <h2 className="text-lg font-semibold text-surface-200 mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Completed ({completedLots.length})
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {completedLots.map((lot, index) => (
+                    <div
+                      key={lot.id}
+                      className="panel p-5 hover:border-surface-600 transition-all duration-200 group animate-slide-up opacity-75"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-lg text-surface-100 truncate group-hover:text-primary-400 transition-colors flex items-center gap-2">
+                            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            {lot.name}
+                          </h3>
+                          <p className="text-sm text-surface-400">
+                            {lot._count.cardItems} {lot._count.cardItems === 1 ? 'card' : 'cards'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => toggleComplete(lot.id, lot.completed || false)}
+                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Move back to in progress"
+                          >
+                            <svg className="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => deleteLot(lot.id)}
+                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete lot"
+                          >
+                            <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-surface-500">
+                        <span>Created {new Date(lot.createdAt).toLocaleDateString()}</span>
+                        <Link
+                          href={`/lots/${lot.id}`}
+                          className="btn btn-secondary text-sm py-1.5"
+                        >
+                          Open
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </main>
