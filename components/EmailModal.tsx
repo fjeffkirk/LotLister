@@ -62,7 +62,7 @@ export function EmailModal() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="your@email.com"
-              className="w-full"
+              className="w-full px-4 py-3 bg-surface-800 border border-surface-600 rounded-lg text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               autoFocus
               autoComplete="email"
             />
