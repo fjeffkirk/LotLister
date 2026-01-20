@@ -11,7 +11,7 @@ datasource db {
 model Lot {
   id            String         @id @default(uuid())
   name          String
-  userEmail     String         // Email used for workspace isolation
+  userEmail     String         @default("legacy@lotlister.app") // Email used for workspace isolation
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   cardItems     CardItem[]
