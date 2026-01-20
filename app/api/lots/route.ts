@@ -5,23 +5,38 @@ import { ApiResponse, LotWithCount } from '../../../lib/types';
 import { getUserEmail } from '../../../lib/auth';
 import { deleteLotImages } from '../../../lib/storage';
 
-// Auto-delete completed lots after this many days
-const AUTO_DELETE_DAYS = 10;
+// Auto-delete settings
+const COMPLETED_DELETE_DAYS = 10; // Delete completed lots after 10 days
+const MAX_LOT_AGE_DAYS = 30;      // Delete any lot older than 30 days
 
-// Cleanup old completed lots (runs on each GET request)
-async function cleanupOldCompletedLots(): Promise<void> {
+// Cleanup old lots (runs on each GET request)
+async function cleanupOldLots(): Promise<void> {
   try {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - AUTO_DELETE_DAYS);
+    const completedCutoff = new Date();
+    completedCutoff.setDate(completedCutoff.getDate() - COMPLETED_DELETE_DAYS);
     
-    // Find lots to delete
+    const ageCutoff = new Date();
+    ageCutoff.setDate(ageCutoff.getDate() - MAX_LOT_AGE_DAYS);
+    
+    // Find lots to delete: completed > 10 days OR any lot > 30 days old
     const oldLots = await prisma.lot.findMany({
       where: {
-        completed: true,
-        completedAt: {
-          lt: cutoffDate,
-          not: null,
-        },
+        OR: [
+          // Completed lots older than 10 days
+          {
+            completed: true,
+            completedAt: {
+              lt: completedCutoff,
+              not: null,
+            },
+          },
+          // Any lot older than 30 days
+          {
+            createdAt: {
+              lt: ageCutoff,
+            },
+          },
+        ],
       },
       select: { id: true },
     });
@@ -31,7 +46,7 @@ async function cleanupOldCompletedLots(): Promise<void> {
       try {
         await deleteLotImages(lot.id);
         await prisma.lot.delete({ where: { id: lot.id } });
-        console.log(`Auto-deleted completed lot: ${lot.id}`);
+        console.log(`Auto-deleted old lot: ${lot.id}`);
       } catch (err) {
         console.error(`Failed to auto-delete lot ${lot.id}:`, err);
       }
@@ -54,7 +69,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<LotWithCount[]>>> 
     }
 
     // Run cleanup in background (don't await to not slow down response)
-    cleanupOldCompletedLots();
+    cleanupOldLots();
 
     const lots = await prisma.lot.findMany({
       where: { userEmail },

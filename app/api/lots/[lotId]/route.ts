@@ -102,6 +102,9 @@ export async function PATCH(
     // Build update data, handling completedAt automatically
     const updateData: Record<string, unknown> = { ...validation.data };
     
+    // Check if we're newly marking as completed (wasn't completed before)
+    const isNewlyCompleted = validation.data.completed === true && !existingLot.completed;
+    
     // If marking as completed, set completedAt to now
     // If marking as not completed, clear completedAt
     if (validation.data.completed === true) {
@@ -121,6 +124,15 @@ export async function PATCH(
         exportProfile: true,
       },
     });
+
+    // If newly completed, increment the user's completed count
+    if (isNewlyCompleted) {
+      await prisma.user.upsert({
+        where: { email: userEmail },
+        update: { completedCount: { increment: 1 } },
+        create: { email: userEmail, completedCount: 1 },
+      });
+    }
 
     return NextResponse.json({ success: true, data: lot });
   } catch (error) {

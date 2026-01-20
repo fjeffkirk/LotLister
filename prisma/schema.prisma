@@ -8,6 +8,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  email          String   @id
+  completedCount Int      @default(0) // Lifetime count of completed lots
+  createdAt      DateTime @default(now())
+}
+
 model Lot {
   id            String         @id @default(uuid())
   name          String

@@ -11,6 +11,10 @@ interface StorageInfo {
   percentUsed: number;
 }
 
+interface UserStats {
+  completedCount: number;
+}
+
 // Calculate days remaining before auto-delete
 function getDaysRemaining(completedAt: string | Date | null): number {
   if (!completedAt) return 10;
@@ -31,12 +35,14 @@ export default function LotsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
 
   useEffect(() => {
     // Only fetch lots when we have a user email
     if (userEmail) {
       fetchLots();
       fetchStorage();
+      fetchUserStats();
     } else if (!userLoading) {
       // Not loading and no email means modal is showing
       setLoading(false);
@@ -69,6 +75,18 @@ export default function LotsPage() {
       }
     } catch (err) {
       // Silently fail - storage indicator is optional
+    }
+  }
+
+  async function fetchUserStats() {
+    try {
+      const res = await fetch('/api/user');
+      const data = await res.json();
+      if (data.success) {
+        setUserStats(data.data);
+      }
+    } catch (err) {
+      // Silently fail - stats are optional
     }
   }
 
@@ -135,6 +153,10 @@ export default function LotsPage() {
         setLots((prev) => prev.map((lot) => 
           lot.id === id ? { ...lot, completed: !currentStatus } : lot
         ));
+        // Refresh user stats if marking as completed
+        if (!currentStatus) {
+          fetchUserStats();
+        }
       } else {
         setError(data.error || 'Failed to update lot');
       }
@@ -207,11 +229,21 @@ export default function LotsPage() {
               </div>
             )}
 
-            <div className="flex items-center gap-2 text-sm text-surface-400">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span className="max-w-[200px] truncate">{userEmail}</span>
+            <div className="flex items-center gap-3 text-sm text-surface-400">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="max-w-[200px] truncate">{userEmail}</span>
+              </div>
+              {userStats && (
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  {userStats.completedCount}
+                </div>
+              )}
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
@@ -264,12 +296,15 @@ export default function LotsPage() {
           <div className="space-y-8">
             {/* In Progress Section */}
             <section>
-              <h2 className="text-lg font-semibold text-surface-200 mb-4 flex items-center gap-2">
-                <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                In Progress ({inProgressLots.length})
-              </h2>
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-surface-200 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  In Progress ({inProgressLots.length})
+                </h2>
+                <p className="text-xs text-surface-500 mt-1">Lots are auto-deleted after 30 days</p>
+              </div>
               {inProgressLots.length === 0 ? (
                 <div className="panel p-6 text-center text-surface-400">
                   No lots in progress. Create a new lot or move one from completed.
