@@ -118,18 +118,33 @@ export function generateRawCSV(cards: CardItemWithImages[]): string {
 // EBAY FILE EXCHANGE CSV EXPORT
 // ============================================================================
 
+// eBay File Exchange Info row (required first row)
+const EBAY_INFO_ROW = 'Info,Version=1.0.0,Template=fx_category_template_EBAY_US';
+
 // eBay File Exchange headers for trading cards (category 261328)
-// Based on eBay's File Exchange template for Sports Trading Card Singles
+// Based on official eBay template downloaded from their template tool
 const EBAY_FILE_EXCHANGE_HEADERS = [
-  '*Action(SiteID=US|Country=US|Currency=USD|Version=1193)',
+  '*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)',
+  'CustomLabel',
   '*Category',
   'StoreCategory',
   '*Title',
+  'ScheduleTime',
   '*ConditionID',
-  'C:Card Condition',
-  'C:Professional Grader',
-  'C:Certification Number',
-  'C:Grade',
+  'CD:Professional Grader - (ID: 27501)',
+  'CD:Grade - (ID: 27502)',
+  'CDA:Certification Number - (ID: 27503)',
+  'CD:Card Condition - (ID: 40001)',
+  '*C:Sport',
+  'C:Player/Athlete',
+  'C:Year Manufactured',
+  'C:Manufacturer',
+  'C:Parallel/Variety',
+  'C:Set',
+  'C:Team',
+  'C:Card Name',
+  'C:Card Number',
+  'C:Graded',
   'PicURL',
   '*Description',
   '*Format',
@@ -137,22 +152,16 @@ const EBAY_FILE_EXCHANGE_HEADERS = [
   '*StartPrice',
   'BuyItNowPrice',
   '*Quantity',
-  'PayPalAccepted',
-  'PayPalEmailAddress',
   'ImmediatePayRequired',
   '*Location',
-  'PostalCode',
   'ShippingType',
   'ShippingService-1:Option',
   'ShippingService-1:Cost',
-  'ShippingService-1:AdditionalCost',
   '*DispatchTimeMax',
-  'ReturnsAcceptedOption',
+  '*ReturnsAcceptedOption',
   'ReturnsWithinOption',
   'RefundOption',
   'ShippingCostPaidByOption',
-  'ScheduleTime',
-  'CustomLabel',
 ];
 
 // eBay condition IDs for trading cards
@@ -220,8 +229,11 @@ export function generateEbayCSV(
 ): string {
   const rows: string[] = [];
   
-  // eBay File Exchange format: header row followed by data rows
-  // The first column header *Action contains the site/version info
+  // eBay File Exchange format requires:
+  // 1. Info row first
+  // 2. Header row
+  // 3. Data rows
+  rows.push(EBAY_INFO_ROW);
   rows.push(toCSVRow(EBAY_FILE_EXCHANGE_HEADERS));
   
   // Data rows
@@ -237,7 +249,7 @@ export function generateEbayCSV(
       ? EBAY_CONDITION_IDS.GRADED
       : EBAY_CONDITION_IDS.UNGRADED;
     
-    // Card condition descriptor (only for ungraded)
+    // Card condition descriptor (only for ungraded) - use eBay's expected value format
     const cardCondition = isGraded ? '' : (card.condition || '');
     
     // Grader info (only for graded)
@@ -293,16 +305,32 @@ export function generateEbayCSV(
     // Custom label (can be used for internal tracking)
     const customLabel = `${card.lotId.slice(0, 8)}-${String(i + 1).padStart(3, '0')}`;
     
+    // Sport - always Baseball for this app (required field)
+    const sport = card.category || 'Baseball';
+    
+    // Build row matching the new header order
     const row = [
       'Add',                                    // *Action
+      customLabel,                              // CustomLabel
       profile.ebayCategory,                     // *Category
       profile.storeCategory,                    // StoreCategory
       title.slice(0, 80),                       // *Title (max 80 chars)
+      scheduleTime,                             // ScheduleTime
       conditionId,                              // *ConditionID
-      cardCondition,                            // C:Card Condition
-      grader,                                   // C:Professional Grader
-      certNo,                                   // C:Certification Number
-      grade,                                    // C:Grade
+      grader,                                   // CD:Professional Grader - (ID: 27501)
+      grade,                                    // CD:Grade - (ID: 27502)
+      certNo,                                   // CDA:Certification Number - (ID: 27503)
+      cardCondition,                            // CD:Card Condition - (ID: 40001)
+      sport,                                    // *C:Sport (required)
+      card.name || '',                          // C:Player/Athlete
+      card.year || '',                          // C:Year Manufactured
+      card.brand || '',                         // C:Manufacturer
+      card.subsetParallel || '',                // C:Parallel/Variety
+      card.setName || '',                       // C:Set
+      card.team || '',                          // C:Team
+      card.name || '',                          // C:Card Name
+      card.cardNumber || '',                    // C:Card Number
+      isGraded ? 'Yes' : 'No',                  // C:Graded
       imageUrls,                                // PicURL
       description,                              // *Description
       ebayFormat,                               // *Format
@@ -310,22 +338,16 @@ export function generateEbayCSV(
       startPrice,                               // *StartPrice
       buyItNowPrice,                            // BuyItNowPrice
       '1',                                      // *Quantity
-      '1',                                      // PayPalAccepted
-      '',                                       // PayPalEmailAddress
       profile.immediatePayment ? '1' : '0',     // ImmediatePayRequired
       location,                                 // *Location
-      profile.itemLocationZip || '',            // PostalCode
       shippingType,                             // ShippingType
       profile.shippingService,                  // ShippingService-1:Option
       shippingCost,                             // ShippingService-1:Cost
-      profile.eachAdditionalItemCost,           // ShippingService-1:AdditionalCost
       profile.handlingTimeDays,                 // *DispatchTimeMax
-      returnsOption,                            // ReturnsAcceptedOption
+      returnsOption,                            // *ReturnsAcceptedOption
       returnWindow,                             // ReturnsWithinOption
       profile.refundMethod === 'Money Back' ? 'MoneyBack' : 'MoneyBackOrExchange', // RefundOption
       profile.shippingCostPaidBy,               // ShippingCostPaidByOption
-      scheduleTime,                             // ScheduleTime
-      customLabel,                              // CustomLabel
     ];
     
     rows.push(toCSVRow(row));
