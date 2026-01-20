@@ -122,46 +122,68 @@ export function generateRawCSV(cards: CardItemWithImages[]): string {
 const EBAY_INFO_ROW = 'Info,Version=1.0.0,Template=fx_category_template_EBAY_US';
 
 // eBay File Exchange headers for trading cards (category 261328)
-// Based on official eBay template downloaded from their template tool
+// Based on working Carddealerpro export format
 const EBAY_FILE_EXCHANGE_HEADERS = [
   '*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)',
   'CustomLabel',
   '*Category',
   'StoreCategory',
   '*Title',
-  'ScheduleTime',
+  'Subtitle',
+  'Relationship',
   '*ConditionID',
-  'CD:Professional Grader - (ID: 27501)',
-  'CD:Grade - (ID: 27502)',
-  'CDA:Certification Number - (ID: 27503)',
-  'CD:Card Condition - (ID: 40001)',
+  '*C:Graded',
   '*C:Sport',
-  'C:Player/Athlete',
+  '*C:Player/Athlete',
+  '*C:Parallel/Variety',
+  '*C:Manufacturer',
+  'C:Season',
+  '*C:Features',
+  '*C:Set',
+  'CD:Grade - (ID: 27502)',
+  '*C:League',
+  'CD:Professional Grader - (ID: 27501)',
+  '*C:Team',
+  '*C:Autographed',
+  'CD:Card Condition - (ID: 40001)',
+  '*C:Card Name',
+  '*C:Card Number',
+  'CDA:Certification Number - (ID: 27503)',
+  '*C:Type',
   'C:Year Manufactured',
-  'C:Manufacturer',
-  'C:Parallel/Variety',
-  'C:Set',
-  'C:Team',
-  'C:Card Name',
-  'C:Card Number',
-  'C:Graded',
   'PicURL',
+  'GalleryType',
   '*Description',
   '*Format',
   '*Duration',
   '*StartPrice',
   'BuyItNowPrice',
   '*Quantity',
+  'PayPalAccepted',
+  'PayPalEmailAddress',
   'ImmediatePayRequired',
+  'PaymentInstructions',
   '*Location',
+  'PostalCode',
   'ShippingType',
   'ShippingService-1:Option',
+  'ShippingService-1:FreeShipping',
   'ShippingService-1:Cost',
+  'ShippingService-1:AdditionalCost',
+  'ShippingService-2:Option',
+  'ShippingService-2:Cost',
   '*DispatchTimeMax',
+  'PromotionalShippingDiscount',
+  'ShippingDiscountProfileID',
   '*ReturnsAcceptedOption',
   'ReturnsWithinOption',
   'RefundOption',
   'ShippingCostPaidByOption',
+  'AdditionalDetails',
+  'ShippingProfileName',
+  'ReturnProfileName',
+  'PaymentProfileName',
+  'ScheduleTime',
 ];
 
 // eBay condition IDs for trading cards
@@ -308,46 +330,74 @@ export function generateEbayCSV(
     // Sport - always Baseball for this app (required field)
     const sport = card.category || 'Baseball';
     
-    // Build row matching the new header order
+    // FreeShipping flag (0 = not free, 1 = free)
+    const freeShippingFlag = profile.freeShipping ? '1' : '0';
+    
+    // Features - use the parallel/subset as a feature
+    const features = card.subsetParallel || '';
+    
+    // Build row matching the header order exactly (from working Carddealerpro export)
     const row = [
       'Add',                                    // *Action
       customLabel,                              // CustomLabel
       profile.ebayCategory,                     // *Category
-      profile.storeCategory,                    // StoreCategory
+      profile.storeCategory || '0',             // StoreCategory (0 = none)
       title.slice(0, 80),                       // *Title (max 80 chars)
-      scheduleTime,                             // ScheduleTime
+      '',                                       // Subtitle
+      '',                                       // Relationship
       conditionId,                              // *ConditionID
-      grader,                                   // CD:Professional Grader - (ID: 27501)
+      isGraded ? 'Yes' : 'No',                  // *C:Graded
+      sport,                                    // *C:Sport
+      card.name || '',                          // *C:Player/Athlete
+      card.subsetParallel || '',                // *C:Parallel/Variety
+      card.brand || '',                         // *C:Manufacturer
+      card.year || '',                          // C:Season
+      features,                                 // *C:Features
+      card.setName || '',                       // *C:Set
       grade,                                    // CD:Grade - (ID: 27502)
-      certNo,                                   // CDA:Certification Number - (ID: 27503)
+      'MLB',                                    // *C:League (default to MLB for baseball)
+      grader,                                   // CD:Professional Grader - (ID: 27501)
+      card.team || '',                          // *C:Team
+      'No',                                     // *C:Autographed (default No)
       cardCondition,                            // CD:Card Condition - (ID: 40001)
-      sport,                                    // *C:Sport (required)
-      card.name || '',                          // C:Player/Athlete
+      card.name || '',                          // *C:Card Name
+      card.cardNumber || '',                    // *C:Card Number
+      certNo,                                   // CDA:Certification Number - (ID: 27503)
+      'Sports Trading Card',                    // *C:Type
       card.year || '',                          // C:Year Manufactured
-      card.brand || '',                         // C:Manufacturer
-      card.subsetParallel || '',                // C:Parallel/Variety
-      card.setName || '',                       // C:Set
-      card.team || '',                          // C:Team
-      card.name || '',                          // C:Card Name
-      card.cardNumber || '',                    // C:Card Number
-      isGraded ? 'Yes' : 'No',                  // C:Graded
       imageUrls,                                // PicURL
+      '',                                       // GalleryType
       description,                              // *Description
       ebayFormat,                               // *Format
       profile.durationDays,                     // *Duration
       startPrice,                               // *StartPrice
       buyItNowPrice,                            // BuyItNowPrice
       '1',                                      // *Quantity
+      '',                                       // PayPalAccepted (deprecated, leave empty)
+      '',                                       // PayPalEmailAddress
       profile.immediatePayment ? '1' : '0',     // ImmediatePayRequired
+      '',                                       // PaymentInstructions
       location,                                 // *Location
+      profile.itemLocationZip || '',            // PostalCode
       shippingType,                             // ShippingType
       profile.shippingService,                  // ShippingService-1:Option
+      freeShippingFlag,                         // ShippingService-1:FreeShipping
       shippingCost,                             // ShippingService-1:Cost
+      profile.eachAdditionalItemCost || '',     // ShippingService-1:AdditionalCost
+      '',                                       // ShippingService-2:Option
+      '',                                       // ShippingService-2:Cost
       profile.handlingTimeDays,                 // *DispatchTimeMax
+      '',                                       // PromotionalShippingDiscount
+      '',                                       // ShippingDiscountProfileID
       returnsOption,                            // *ReturnsAcceptedOption
       returnWindow,                             // ReturnsWithinOption
-      profile.refundMethod === 'Money Back' ? 'MoneyBack' : 'MoneyBackOrExchange', // RefundOption
+      profile.refundMethod === 'Money Back' ? 'MoneyBack' : 'MoneyBackOrReplacement', // RefundOption
       profile.shippingCostPaidBy,               // ShippingCostPaidByOption
+      '',                                       // AdditionalDetails
+      '',                                       // ShippingProfileName
+      '',                                       // ReturnProfileName
+      '',                                       // PaymentProfileName
+      scheduleTime,                             // ScheduleTime
     ];
     
     rows.push(toCSVRow(row));
