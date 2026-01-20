@@ -257,9 +257,12 @@ export default function LotPage() {
     setExporting(true);
     
     try {
+      // Get client's timezone offset in minutes (negative for ahead of UTC)
+      const timezoneOffset = new Date().getTimezoneOffset();
+      
       const endpoint = type === 'raw' 
         ? `/api/lots/${lotId}/export/raw`
-        : `/api/lots/${lotId}/export/ebay`;
+        : `/api/lots/${lotId}/export/ebay?tzOffset=${timezoneOffset}`;
       
       const res = await fetch(endpoint);
       

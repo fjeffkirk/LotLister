@@ -86,8 +86,12 @@ export async function GET(
       || process.env.NEXT_PUBLIC_APP_URL 
       || origin;
     
-    // Generate CSV with full image URLs
-    const csv = generateEbayCSV(lot.cardItems, profile, imageBaseUrl);
+    // Get client timezone offset (minutes offset from UTC, negative for ahead)
+    const tzOffsetParam = searchParams.get('tzOffset');
+    const tzOffsetMinutes = tzOffsetParam ? parseInt(tzOffsetParam, 10) : 0;
+    
+    // Generate CSV with full image URLs and timezone offset
+    const csv = generateEbayCSV(lot.cardItems, profile, imageBaseUrl, tzOffsetMinutes);
     
     // Create filename
     const date = format(new Date(), 'MM-dd-yy');

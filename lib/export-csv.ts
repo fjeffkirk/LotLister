@@ -228,11 +228,12 @@ export const EBAY_FORMATS = {
 
 /**
  * Calculate schedule times with staggering
- * User enters local time, we convert to UTC for eBay
+ * User enters local time, we convert to UTC for eBay using the client's timezone offset
  */
 function calculateScheduleTime(
   profile: ExportProfile,
-  index: number
+  index: number,
+  clientTzOffsetMinutes: number = 0
 ): string {
   if (profile.scheduleMode === 'Immediate') {
     return '';
@@ -243,24 +244,26 @@ function calculateScheduleTime(
   }
   
   try {
-    // Parse date and time as local time
     const dateStr = profile.scheduleDate;
     const timeStr = profile.scheduleTime;
     
-    // Create a Date object from the local time string
-    // This interprets the time as the user's local timezone
-    const localDateTime = new Date(`${dateStr}T${timeStr}:00`);
+    // Parse date and time - server interprets this as UTC
+    // We need to add the client's timezone offset to get the correct UTC time
+    // getTimezoneOffset() returns positive values for timezones behind UTC (e.g., EST = +300)
+    const serverDateTime = new Date(`${dateStr}T${timeStr}:00Z`); // Parse as UTC
+    
+    // Add the client's timezone offset to convert to the intended UTC time
+    // (offset is in minutes, positive for west of UTC)
+    const utcDateTime = new Date(serverDateTime.getTime() + (clientTzOffsetMinutes * 60 * 1000));
     
     // Add stagger offset if enabled
     const offsetSeconds = profile.staggerEnabled
       ? index * profile.staggerIntervalSeconds
       : 0;
     
-    const scheduledTime = addSeconds(localDateTime, offsetSeconds);
+    const scheduledTime = addSeconds(utcDateTime, offsetSeconds);
     
-    // Format for eBay in ISO format (eBay expects UTC)
-    // toISOString() converts to UTC and formats as ISO
-    // Remove the .000Z suffix and keep just YYYY-MM-DDTHH:MM:SS
+    // Format for eBay in ISO format
     return scheduledTime.toISOString().slice(0, 19);
   } catch (error) {
     console.error('Error calculating schedule time:', error);
@@ -281,7 +284,8 @@ function calculateScheduleTime(
 export function generateEbayCSV(
   cards: CardItemWithImages[],
   profile: ExportProfile,
-  imageBaseUrl?: string // Optional base URL for images (e.g., "https://yoursite.com")
+  imageBaseUrl?: string, // Optional base URL for images (e.g., "https://yoursite.com")
+  clientTzOffsetMinutes: number = 0 // Client's timezone offset (from Date.getTimezoneOffset())
 ): string {
   const rows: string[] = [];
   
@@ -356,8 +360,8 @@ export function generateEbayCSV(
       : 'ReturnsNotAccepted';
     const returnWindow = `Days_${profile.returnWindowDays}`;
     
-    // Schedule time with staggering
-    const scheduleTime = calculateScheduleTime(profile, i);
+    // Schedule time with staggering (using client's timezone offset)
+    const scheduleTime = calculateScheduleTime(profile, i, clientTzOffsetMinutes);
     
     // Custom label (can be used for internal tracking)
     const customLabel = `${card.lotId.slice(0, 8)}-${String(i + 1).padStart(3, '0')}`;
