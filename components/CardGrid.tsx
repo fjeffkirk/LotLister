@@ -13,6 +13,7 @@ import {
   CellClassParams,
   RowClassParams,
   TabToNextCellParams,
+  CellFocusedEvent,
 } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
@@ -557,6 +558,23 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       // Only update if it's a different card
       if (event.data.id !== previewCard.id) {
         setPreviewCard(event.data);
+      }
+    }
+  }, [previewCard]);
+
+  // Handle cell focus change - update image preview when navigating with Tab
+  const onCellFocused = useCallback((event: CellFocusedEvent<CardItemWithImages>) => {
+    // Only update if preview is already open
+    if (!previewCard) return;
+    
+    // Get the row data for the focused cell
+    if (event.rowIndex !== null && event.rowIndex !== undefined) {
+      const rowNode = event.api.getDisplayedRowAtIndex(event.rowIndex);
+      if (rowNode && rowNode.data && rowNode.data.images.length > 0) {
+        // Only update if it's a different card
+        if (rowNode.data.id !== previewCard.id) {
+          setPreviewCard(rowNode.data);
+        }
       }
     }
   }, [previewCard]);
@@ -1280,6 +1298,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
           context={gridContext}
           onGridReady={onGridReady}
           onCellClicked={onCellClicked}
+          onCellFocused={onCellFocused}
           onCellContextMenu={onCellContextMenu}
           onCellValueChanged={onCellValueChanged}
           getRowId={(params) => params.data.id}
