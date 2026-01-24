@@ -77,6 +77,19 @@ body {
   @apply bg-surface-800 border-surface-600 text-surface-100;
 }
 
+/* AG Grid Large Text Editor (textarea popup) */
+.ag-theme-alpine-dark .ag-large-text-input {
+  background-color: #1e293b !important;
+  border: 1px solid #475569 !important;
+}
+
+.ag-theme-alpine-dark .ag-large-text-input textarea {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border: none !important;
+  padding: 8px !important;
+}
+
 .ag-theme-alpine-dark .ag-cell-focus {
   border-color: #0ea5e9 !important;
 }
