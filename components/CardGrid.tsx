@@ -19,6 +19,12 @@ import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
 import { CardItemWithImages, CardImage, CATEGORY_OPTIONS, CONDITION_TYPE_OPTIONS, CONDITION_OPTIONS, GRADER_OPTIONS, GRADE_OPTIONS } from '../lib/types';
 
+// Helper to check if a condition value is valid (one of the dropdown options)
+function isValidCondition(condition: string | null | undefined): boolean {
+  if (!condition || condition.trim() === '') return false;
+  return CONDITION_OPTIONS.includes(condition as typeof CONDITION_OPTIONS[number]);
+}
+
 // Get image URL (client-side utility)
 function getImageUrl(relativePath: string): string {
   return `/api/images/${encodeURIComponent(relativePath)}`;
@@ -82,8 +88,8 @@ function isCardComplete(card: CardItemWithImages): boolean {
     const grade = (card as Record<string, unknown>).grade as string | undefined;
     if (!grade || grade.trim() === '') return false;
   } else {
-    // If ungraded, condition is required
-    if (!card.condition || card.condition.trim() === '') return false;
+    // If ungraded, condition is required AND must be a valid option
+    if (!isValidCondition(card.condition)) return false;
   }
   
   return true;
@@ -111,6 +117,11 @@ function isMandatoryFieldEmpty(field: string, value: unknown, card: CardItemWith
   if (UNGRADED_REQUIRED_FIELDS.includes(field as typeof UNGRADED_REQUIRED_FIELDS[number])) {
     // Only required if NOT graded
     if (isCardGraded(card)) return false;
+    
+    // For condition field, must be a valid dropdown option
+    if (field === 'condition') {
+      return !isValidCondition(value as string | null | undefined);
+    }
     
     // Check if value is empty
     if (value === null || value === undefined) return true;
@@ -667,6 +678,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     grade: { field: 'grade', headerName: 'Grade', type: 'select', options: GRADE_OPTIONS },
     certNo: { field: 'certNo', headerName: 'Certification Number', type: 'text' },
     attributes: { field: 'attributes', headerName: 'Attributes', type: 'text' },
+    description: { field: 'description', headerName: 'Item Description', type: 'text' },
   };
 
   // Handle header right-click for bulk edit (left-click still sorts)
