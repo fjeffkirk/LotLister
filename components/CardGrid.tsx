@@ -33,7 +33,7 @@ function getImageUrl(relativePath: string): string {
 // Mandatory fields for eBay listings
 const MANDATORY_FIELDS = [
   'title', 'salePrice', 'year', 'conditionType', 'category', 
-  'brand', 'setName', 'name', 'cardNumber', 'subsetParallel'
+  'brand', 'setName', 'name', 'cardNumber', 'subsetParallel', 'description'
 ] as const;
 
 // Generate auto-title from card fields: Year, Set, Name, Card #, Subset/Parallel
@@ -81,6 +81,10 @@ function isCardComplete(card: CardItemWithImages): boolean {
   if (!card.name || card.name.trim() === '') return false;
   if (!card.cardNumber || card.cardNumber.trim() === '') return false;
   if (!card.subsetParallel || card.subsetParallel.trim() === '') return false;
+  
+  // Description is required
+  const description = (card as Record<string, unknown>).description as string | undefined;
+  if (!description || description.trim() === '') return false;
   
   // If graded, grader and grade are required
   if (isCardGraded(card)) {
@@ -1238,7 +1242,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       suppressSizeToFit: true,
     },
     {
-      headerName: 'Item Description',
+      headerName: 'Item Description*',
       field: 'description',
       width: 450,
       minWidth: 300,
@@ -1249,8 +1253,10 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
         rows: 5,
         cols: 50,
       },
-      headerTooltip: 'Custom description for eBay listing - Right-click to bulk edit',
+      valueSetter: createValueSetter('description'),
+      headerTooltip: 'Required - Custom description for eBay listing - Right-click to bulk edit',
       suppressSizeToFit: true,
+      cellClass: getMandatoryCellClass('description'),
     },
   ], [onCellChange]);
 

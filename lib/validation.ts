@@ -35,6 +35,7 @@ export const updateCardItemSchema = z.object({
   conditionType: z.string().optional(),
   condition: z.string().optional(),
   certNo: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
 
