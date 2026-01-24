@@ -36,8 +36,8 @@ function generateAutoTitle(card: CardItemWithImages): string {
   
   if (card.year) parts.push(String(card.year));
   if (card.setName?.trim()) parts.push(card.setName.trim());
-  if (card.name?.trim()) parts.push(card.name.trim());
   if (card.cardNumber?.trim()) parts.push(`#${card.cardNumber.trim()}`);
+  if (card.name?.trim()) parts.push(card.name.trim());
   if (card.subsetParallel?.trim()) parts.push(card.subsetParallel.trim());
   
   return parts.join(' ');
@@ -876,7 +876,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
           </div>
         );
       },
-      headerTooltip: 'Auto-generated from Year, Set, Name, Card #, Subset/Parallel. Click lock icon to edit manually. Max 80 characters.',
+      headerTooltip: 'Auto-generated from Year, Set, Card #, Name, Subset/Parallel. Click lock icon to edit manually. Max 80 characters.',
       cellClass: (params: CellClassParams<CardItemWithImages>) => {
         if (!params.data) return '';
         const title = params.data.title || '';
