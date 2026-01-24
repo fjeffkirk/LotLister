@@ -61,6 +61,10 @@ function isCardComplete(card: CardItemWithImages): boolean {
   
   // Check all mandatory text/select fields
   if (!card.title || card.title.trim() === '') return false;
+  
+  // Title must be 80 characters or less for eBay
+  if (card.title.length > 80) return false;
+  
   if (card.salePrice === null || card.salePrice === undefined) return false;
   if (card.year === null || card.year === undefined) return false;
   const conditionType = (card as Record<string, unknown>).conditionType as string | undefined;
@@ -873,7 +877,15 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
         );
       },
       headerTooltip: 'Auto-generated from Year, Set, Name, Card #, Subset/Parallel. Click lock icon to edit manually. Max 80 characters.',
-      cellClass: getMandatoryCellClass('title'),
+      cellClass: (params: CellClassParams<CardItemWithImages>) => {
+        if (!params.data) return '';
+        const title = params.data.title || '';
+        // Show error if title is over 80 characters
+        if (title.length > 80) return 'cell-title-over-limit';
+        // Show error if title is empty (mandatory)
+        if (title.trim() === '') return 'cell-mandatory-empty';
+        return '';
+      },
     },
     {
       headerName: 'Sale Price*',

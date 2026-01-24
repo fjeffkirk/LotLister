@@ -255,6 +255,15 @@ textarea:focus {
   background-color: rgba(239, 68, 68, 0.25) !important;
 }
 
+/* AG Grid - Title over 80 character limit (red background) */
+.ag-theme-alpine-dark .cell-title-over-limit {
+  background-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.ag-theme-alpine-dark .cell-title-over-limit:hover {
+  background-color: rgba(239, 68, 68, 0.4) !important;
+}
+
 /* AG Grid - Row complete (green hue) */
 .ag-theme-alpine-dark .row-complete {
   background-color: rgba(34, 197, 94, 0.08) !important;
