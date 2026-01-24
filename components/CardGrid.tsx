@@ -25,6 +25,12 @@ function isValidCondition(condition: string | null | undefined): boolean {
   return CONDITION_OPTIONS.includes(condition as typeof CONDITION_OPTIONS[number]);
 }
 
+// Helper to check if a category value is valid (one of the dropdown options)
+function isValidCategory(category: string | null | undefined): boolean {
+  if (!category || category.trim() === '') return false;
+  return CATEGORY_OPTIONS.includes(category as typeof CATEGORY_OPTIONS[number]);
+}
+
 // Get image URL (client-side utility)
 function getImageUrl(relativePath: string): string {
   return `/api/images/${encodeURIComponent(relativePath)}`;
@@ -75,7 +81,7 @@ function isCardComplete(card: CardItemWithImages): boolean {
   if (card.year === null || card.year === undefined) return false;
   const conditionType = (card as Record<string, unknown>).conditionType as string | undefined;
   if (!conditionType || conditionType.trim() === '') return false;
-  if (!card.category || card.category.trim() === '') return false;
+  if (!isValidCategory(card.category)) return false;
   if (!card.brand || card.brand.trim() === '') return false;
   if (!card.setName || card.setName.trim() === '') return false;
   if (!card.name || card.name.trim() === '') return false;
@@ -136,6 +142,11 @@ function isMandatoryFieldEmpty(field: string, value: unknown, card: CardItemWith
   // Check if field is in mandatory list
   if (!MANDATORY_FIELDS.includes(field as typeof MANDATORY_FIELDS[number])) {
     return false;
+  }
+  
+  // For category field, must be a valid dropdown option
+  if (field === 'category') {
+    return !isValidCategory(value as string | null | undefined);
   }
   
   // Check if value is empty
@@ -945,15 +956,51 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Category*',
       field: 'category',
-      width: 165,
-      minWidth: 140,
-      editable: true,
-      cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: CATEGORY_OPTIONS },
-      valueSetter: createValueSetter('category'),
+      width: 240,
+      minWidth: 200,
+      editable: false,
+      cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
+        const card = params.data;
+        if (!card) return null;
+        
+        const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+          onCellChange(card.id, 'category', e.target.value);
+        };
+        
+        return (
+          <select
+            value={params.value || ''}
+            onChange={handleChange}
+            onClick={(e) => e.stopPropagation()}
+            style={{ 
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: params.value ? '#fafafa' : '#a1a1aa',
+              cursor: 'pointer',
+              outline: 'none',
+              width: '100%',
+            }}
+          >
+            <option value="" style={{ backgroundColor: '#27272a', color: '#a1a1aa' }}>Select a Category...</option>
+            {CATEGORY_OPTIONS.map(opt => (
+              <option key={opt} value={opt} style={{ backgroundColor: '#27272a', color: '#fafafa' }}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        );
+      },
       headerTooltip: 'Required - Right-click to bulk edit',
       suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('category'),
+      cellClass: (params: CellClassParams<CardItemWithImages>) => {
+        if (!params.data) return '';
+        const category = params.data.category;
+        // Show error if no category or not a valid option
+        if (!category || !CATEGORY_OPTIONS.includes(category as typeof CATEGORY_OPTIONS[number])) {
+          return 'cell-mandatory-empty';
+        }
+        return '';
+      },
     },
     {
       headerName: 'Brand*',
