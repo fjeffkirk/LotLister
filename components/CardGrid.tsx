@@ -12,6 +12,7 @@ import {
   CellValueChangedEvent,
   CellClassParams,
   RowClassParams,
+  TabToNextCellParams,
 } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
@@ -696,16 +697,16 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     },
   }), []);
 
-  // All columns combined - widths set to show full header text
+  // All columns combined - widths set to show full header text (50% larger than original)
   // Right-click any header (except Images) to bulk edit
   // Order: Images, Title, Sale Price, Category, Year, Brand, Set, Name, Card #, Subset/Parallel, Attributes, Team, then rest
   const columns: ColDef<CardItemWithImages>[] = useMemo(() => [
     {
       headerName: 'Images*',
       field: 'images',
-      width: 90,
-      minWidth: 90,
-      maxWidth: 90,
+      width: 100,
+      minWidth: 100,
+      maxWidth: 100,
       cellRenderer: ImageCellRenderer,
       sortable: false,
       filter: false,
@@ -722,8 +723,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Title*',
       field: 'title',
-      width: 550,
-      minWidth: 400,
+      width: 700,
+      minWidth: 500,
       flex: 1,
       editable: false, // We handle editing in our custom renderer
       cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
@@ -859,8 +860,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Sale Price*',
       field: 'salePrice',
-      width: 100,
-      minWidth: 100,
+      width: 150,
+      minWidth: 120,
       editable: true,
       valueFormatter: (params) => params.value ? `$${Number(params.value).toFixed(2)}` : '',
       valueSetter: (params) => {
@@ -879,8 +880,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Year*',
       field: 'year',
-      width: 85,
-      minWidth: 85,
+      width: 130,
+      minWidth: 100,
       editable: true,
       valueSetter: (params) => {
         const val = params.newValue === '' || params.newValue === null ? null : parseInt(params.newValue);
@@ -898,8 +899,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Category*',
       field: 'category',
-      width: 110,
-      minWidth: 110,
+      width: 165,
+      minWidth: 140,
       editable: true,
       cellEditor: 'agSelectCellEditor',
       cellEditorParams: { values: CATEGORY_OPTIONS },
@@ -911,8 +912,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Brand*',
       field: 'brand',
-      width: 100,
-      minWidth: 100,
+      width: 150,
+      minWidth: 120,
       editable: true,
       valueSetter: createValueSetter('brand'),
       headerTooltip: 'Required - Right-click to bulk edit',
@@ -922,8 +923,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Set*',
       field: 'setName',
-      width: 100,
-      minWidth: 80,
+      width: 150,
+      minWidth: 120,
       editable: true,
       valueSetter: createValueSetter('setName'),
       headerTooltip: 'Required - Right-click to bulk edit',
@@ -933,8 +934,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Name*',
       field: 'name',
-      width: 120,
-      minWidth: 100,
+      width: 180,
+      minWidth: 150,
       editable: true,
       valueSetter: createValueSetter('name'),
       headerTooltip: 'Required - Right-click to bulk edit',
@@ -943,8 +944,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Card #*',
       field: 'cardNumber',
-      width: 95,
-      minWidth: 95,
+      width: 145,
+      minWidth: 120,
       editable: true,
       valueSetter: createValueSetter('cardNumber'),
       headerTooltip: 'Required - Right-click to bulk edit',
@@ -954,8 +955,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Subset/Parallel*',
       field: 'subsetParallel',
-      width: 140,
-      minWidth: 140,
+      width: 210,
+      minWidth: 180,
       editable: true,
       valueSetter: createValueSetter('subsetParallel'),
       headerTooltip: 'Required - Right-click to bulk edit',
@@ -965,8 +966,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Attributes',
       field: 'attributes',
-      width: 115,
-      minWidth: 115,
+      width: 175,
+      minWidth: 150,
       editable: true,
       valueSetter: createValueSetter('attributes'),
       headerTooltip: 'Right-click to bulk edit',
@@ -975,8 +976,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Team',
       field: 'team',
-      width: 100,
-      minWidth: 90,
+      width: 150,
+      minWidth: 120,
       editable: true,
       valueSetter: createValueSetter('team'),
       headerTooltip: 'Right-click to bulk edit',
@@ -986,8 +987,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Variation',
       field: 'variation',
-      width: 105,
-      minWidth: 105,
+      width: 160,
+      minWidth: 140,
       editable: true,
       valueSetter: createValueSetter('variation'),
       headerTooltip: 'Right-click to bulk edit',
@@ -997,8 +998,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Condition Type*',
       field: 'conditionType',
-      width: 280,
-      minWidth: 250,
+      width: 350,
+      minWidth: 300,
       editable: true,
       singleClickEdit: true,
       cellEditor: 'agSelectCellEditor',
@@ -1017,8 +1018,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Card Condition*',
       field: 'condition',
-      width: 320,
-      minWidth: 280,
+      width: 400,
+      minWidth: 350,
       editable: false,
       cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
         const card = params.data;
@@ -1063,8 +1064,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Professional Grader',
       field: 'grader',
-      width: 280,
-      minWidth: 250,
+      width: 350,
+      minWidth: 300,
       editable: false,
       cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
         const card = params.data;
@@ -1108,8 +1109,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Grade',
       field: 'grade',
-      width: 100,
-      minWidth: 80,
+      width: 150,
+      minWidth: 120,
       editable: false,
       cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
         const card = params.data;
@@ -1153,8 +1154,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Certification Number',
       field: 'certNo',
-      width: 160,
-      minWidth: 140,
+      width: 240,
+      minWidth: 200,
       editable: false,
       cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
         const card = params.data;
@@ -1197,8 +1198,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     {
       headerName: 'Item Description',
       field: 'description',
-      width: 300,
-      minWidth: 200,
+      width: 450,
+      minWidth: 300,
       editable: true,
       cellEditor: 'agLargeTextCellEditor',
       cellEditorParams: {
@@ -1215,10 +1216,47 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
     sortable: true,
     resizable: true,
     filter: true,
+    suppressAutoSize: true, // Prevent auto-sizing from resetting widths
   }), []);
 
   const onGridReady = useCallback((event: GridReadyEvent) => {
     // Don't auto-size, let columns use their defined widths
+  }, []);
+
+  // Tab navigation: move down the column instead of across the row
+  const tabToNextCell = useCallback((params: TabToNextCellParams) => {
+    const { backwards, nextCellPosition, previousCellPosition } = params;
+    
+    if (!nextCellPosition) return null;
+    
+    const currentColumn = previousCellPosition?.column;
+    const currentRowIndex = previousCellPosition?.rowIndex ?? 0;
+    const api = params.api;
+    const rowCount = api.getDisplayedRowCount();
+    
+    if (!currentColumn) return nextCellPosition;
+    
+    // Calculate next row index (down for Tab, up for Shift+Tab)
+    let nextRowIndex: number;
+    if (backwards) {
+      // Shift+Tab: move up
+      nextRowIndex = currentRowIndex - 1;
+      if (nextRowIndex < 0) {
+        nextRowIndex = rowCount - 1; // Wrap to last row
+      }
+    } else {
+      // Tab: move down
+      nextRowIndex = currentRowIndex + 1;
+      if (nextRowIndex >= rowCount) {
+        nextRowIndex = 0; // Wrap to first row
+      }
+    }
+    
+    return {
+      rowIndex: nextRowIndex,
+      column: currentColumn, // Stay in the same column
+      rowPinned: null, // Required by CellPosition type
+    };
   }, []);
 
   // Quick filter when search text changes
@@ -1256,6 +1294,9 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
           tooltipShowDelay={500}
           rowClassRules={rowClassRules}
           suppressContextMenu={true}
+          tabToNextCell={tabToNextCell}
+          maintainColumnOrder={true}
+          suppressColumnMoveAnimation={true}
         />
       </div>
       
