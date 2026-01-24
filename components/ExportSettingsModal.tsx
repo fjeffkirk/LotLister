@@ -110,7 +110,46 @@ export default function ExportSettingsModal({
     }
   }
   
+  // Validate all required fields for export
+  function validateForExport(): string[] {
+    const errors: string[] = [];
+    
+    if (!profile.templateName?.trim()) errors.push('Template Name');
+    if (!profile.ebayCategory?.trim()) errors.push('eBay Category');
+    if (!profile.listingType) errors.push('Listing Type');
+    if (profile.startPriceDefault === null || profile.startPriceDefault === undefined) errors.push('Start Price');
+    if (!profile.durationDays) errors.push('Duration');
+    if (profile.storeCategory === null || profile.storeCategory === undefined || profile.storeCategory === '') errors.push('Store Category');
+    
+    // Schedule validation
+    if (profile.scheduleMode === 'Scheduled') {
+      if (!profile.scheduleDate) errors.push('Schedule Date');
+      if (!profile.scheduleTime) errors.push('Schedule Time');
+    }
+    
+    // Shipping validation
+    if (!profile.shippingService) errors.push('Shipping Service');
+    if (profile.handlingTimeDays === null || profile.handlingTimeDays === undefined) errors.push('Handling Time');
+    if (!profile.freeShipping && (profile.shippingCost === null || profile.shippingCost === undefined)) {
+      errors.push('Shipping Cost');
+    }
+    
+    // Location validation
+    if (!profile.itemLocationCity?.trim()) errors.push('City');
+    if (!profile.itemLocationState?.trim()) errors.push('State');
+    if (!profile.itemLocationZip?.trim()) errors.push('ZIP Code');
+    
+    return errors;
+  }
+
   async function handleExport() {
+    // Validate before export
+    const validationErrors = validateForExport();
+    if (validationErrors.length > 0) {
+      setError(`Missing required fields: ${validationErrors.join(', ')}`);
+      return;
+    }
+    
     const saved = await handleSave(false);
     if (saved && onExport) {
       onExport();

@@ -499,21 +499,21 @@ export default function LotPage() {
               <button
                 onClick={toggleLotComplete}
                 className={`btn text-sm py-1.5 px-2 sm:px-3 ${lot?.completed ? 'btn-secondary' : 'btn-ghost border border-green-600 text-green-400 hover:bg-green-600/20'}`}
-                title={lot?.completed ? 'Move to In Progress' : 'Mark as Completed'}
+                title={lot?.completed ? 'Mark as In Progress' : 'Mark as Completed'}
               >
                 {lot?.completed ? (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="hidden lg:inline">In Progress</span>
+                    <span className="hidden lg:inline">Mark In Progress</span>
                   </>
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="hidden lg:inline">Complete</span>
+                    <span className="hidden lg:inline">Mark Completed</span>
                   </>
                 )}
               </button>
