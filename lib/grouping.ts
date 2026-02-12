@@ -20,27 +20,15 @@ export interface CardGroup {
 }
 
 /**
- * Sort images by filename (natural sort), then by upload order
- */
-function sortImages(images: ImageInfo[]): ImageInfo[] {
-  return [...images].sort((a, b) => {
-    // Natural sort by filename
-    return a.filename.localeCompare(b.filename, undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
-  });
-}
-
-/**
  * Group images into card groups based on images per card setting
+ * Images are kept in their original order (as uploaded/reordered by user)
  */
 export function groupImages(images: ImageInfo[], imagesPerCard: number): CardGroup[] {
-  const sortedImages = sortImages(images);
+  // Keep images in their original order - user has already reordered them on the import screen
   const groups: CardGroup[] = [];
   
-  for (let i = 0; i < sortedImages.length; i += imagesPerCard) {
-    const groupImages = sortedImages.slice(i, i + imagesPerCard);
+  for (let i = 0; i < images.length; i += imagesPerCard) {
+    const groupImages = images.slice(i, i + imagesPerCard);
     groups.push({
       cardItemId: uuidv4(),
       images: groupImages.map((img, idx) => ({
