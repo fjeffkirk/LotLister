@@ -64,7 +64,9 @@ export async function saveImage(
   await fs.writeFile(originalPath, buffer);
   
   // Generate thumbnail (200px width, maintain aspect ratio)
+  // .rotate() with no args auto-rotates based on EXIF orientation, then removes the tag
   await sharp(buffer)
+    .rotate()
     .resize(200, 200, {
       fit: 'inside',
       withoutEnlargement: true,
