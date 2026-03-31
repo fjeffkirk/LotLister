@@ -253,3 +253,17 @@ export function resolveCardImagePublicUrl(path: string): string {
   if (isRemoteImagePath(p)) return p;
   return `/api/images/${encodeURIComponent(p)}`;
 }
+
+/** Front before back (sortOrder, then PSA _f before _b in URL/filename). */
+export function sortCardImagesForDisplay(images: CardImage[]): CardImage[] {
+  function sideRank(img: CardImage): number {
+    const p = `${img.originalPath} ${img.thumbPath} ${img.filename}`.toLowerCase();
+    if (/_f\.(jpe?g|webp)(\?|$)/.test(p) || p.includes('_front')) return 0;
+    if (/_b\.(jpe?g|webp)(\?|$)/.test(p) || p.includes('_back')) return 1;
+    return 2;
+  }
+  return [...images].sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return sideRank(a) - sideRank(b);
+  });
+}

@@ -3,7 +3,7 @@
  */
 
 import { CardItem, CardImage, ExportProfile } from '@prisma/client';
-import { isRemoteImagePath } from './types';
+import { isRemoteImagePath, sortCardImagesForDisplay } from './types';
 import { format, addSeconds, parseISO } from 'date-fns';
 
 type CardItemWithImages = CardItem & { images: CardImage[] };
@@ -82,8 +82,7 @@ export function generateRawCSV(cards: CardItemWithImages[]): string {
   
   // Data rows
   for (const card of cards) {
-    const imagePaths = card.images
-      .sort((a, b) => a.sortOrder - b.sortOrder)
+    const imagePaths = sortCardImagesForDisplay(card.images)
       .map((img) => img.originalPath)
       .join(';');
     
@@ -321,9 +320,7 @@ export function generateEbayCSV(
     
     // Image URLs - if base URL provided, convert local paths to full URLs
     // eBay uses pipe (|) separator for multiple images
-    const imageUrls = card.images
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((img) => {
+    const imageUrls = sortCardImagesForDisplay(card.images).map((img) => {
         const p = img.originalPath.trim();
         if (isRemoteImagePath(p)) {
           return p;
