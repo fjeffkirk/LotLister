@@ -18,7 +18,7 @@ export interface PSACertData {
   labelType: string;         // Label type (e.g., "PSA")
   population: number;        // Population at this grade
   populationHigher: number;  // Population higher than this grade
-  /** PSA reverse-barcode slabs: CDN `_f` / `_b` filenames map to opposite physical sides; we swap so sortOrder 0 is the card front */
+  /** PSA ReverseBarCode: prefer `_f` scan as listing front (default is `_b` first for obverse) */
   reverseBarcode?: boolean;
   specNumber?: string;       // Spec number if available
 }
@@ -192,10 +192,6 @@ function partitionApiImageUrls(urls: string[]): { front: string[]; back: string[
     else if (c === 'back') back.push(u);
     else unknown.push(u);
   }
-  // When PSA returns two bare URLs without _f/_b in the path, order is often back then front
-  if (unknown.length === 2 && front.length === 0 && back.length === 0) {
-    return { front: [unknown[1]], back: [unknown[0]] };
-  }
   if (front.length === 0 && unknown[0]) front.push(unknown[0]);
   if (back.length === 0 && unknown[1]) back.push(unknown[1]);
   return { front, back };
@@ -251,14 +247,17 @@ async function downloadFirstValidImage(urls: string[]): Promise<Buffer | null> {
 }
 
 export interface DownloadPsaCertImagesOptions {
-  /** When true, PSA’s `_f` / `_b` files correspond to opposite slab sides; swap so our "front" is the card face */
+  /** PSA ReverseBarCode: use `_f` scan as listing front instead of default `_b`-first */
   reverseBarcode?: boolean;
 }
 
 /**
  * Download front/back cert scans: try CDN first (browser-like fetch); only then call
  * GetImagesByCertNumber to save PSA API quota when the CDN works.
- * Reverse-barcode certs need side swap so sortOrder 0 matches the card front in the grid.
+ *
+ * PSA filenames `_f` / `_b` are not “card front / card back” for many slabs — `_f` is often the
+ * reverse (stats back, barcode side). We map `_b` → listing front (sortOrder 0) by default.
+ * When the cert has ReverseBarCode, PSA flips holder orientation — we swap back to `_f` first.
  */
 export async function downloadPsaCertImages(
   certNumber: string,
@@ -270,8 +269,8 @@ export async function downloadPsaCertImages(
   const rev = options?.reverseBarcode === true;
   const psaF = getPsaCdnImageUrlCandidates(certNumber, 'front');
   const psaB = getPsaCdnImageUrlCandidates(certNumber, 'back');
-  const ourFrontCdn = rev ? psaB : psaF;
-  const ourBackCdn = rev ? psaF : psaB;
+  const ourFrontCdn = rev ? psaF : psaB;
+  const ourBackCdn = rev ? psaB : psaF;
 
   let [front, back] = await Promise.all([
     downloadFirstValidImage(ourFrontCdn),
@@ -280,9 +279,10 @@ export async function downloadPsaCertImages(
 
   if (!front || !back) {
     const apiUrls = await fetchPsaApiImageUrlList(certNumber);
+    // `front` = URLs with _f in path; `back` = URLs with _b — same mapping as CDN
     const { front: urlsPsaF, back: urlsPsaB } = partitionApiImageUrls(apiUrls);
-    const ourFrontApi = rev ? urlsPsaB : urlsPsaF;
-    const ourBackApi = rev ? urlsPsaF : urlsPsaB;
+    const ourFrontApi = rev ? urlsPsaF : urlsPsaB;
+    const ourBackApi = rev ? urlsPsaB : urlsPsaF;
     if (!front) {
       front = await downloadFirstValidImage([...ourFrontApi, ...ourFrontCdn]);
     }
