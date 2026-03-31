@@ -38,9 +38,7 @@ export async function GET(
       where: { id: lotId, userEmail },
       include: {
         cardItems: {
-          include: {
-            images: { orderBy: { sortOrder: 'asc' } },
-          },
+          include: { images: true },
           orderBy: { sortOrder: 'asc' },
         },
         exportProfile: true,
@@ -120,9 +118,7 @@ export async function PATCH(
       data: updateData,
       include: {
         cardItems: {
-          include: {
-            images: { orderBy: { sortOrder: 'asc' } },
-          },
+          include: { images: true },
           orderBy: { sortOrder: 'asc' },
         },
         exportProfile: true,

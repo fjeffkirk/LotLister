@@ -88,7 +88,7 @@ export async function regroupLotImages(
   // Get all current images for the lot
   const cardItems = await prisma.cardItem.findMany({
     where: { lotId },
-    include: { images: { orderBy: { sortOrder: 'asc' } } },
+    include: { images: true },
     orderBy: { sortOrder: 'asc' },
   });
   

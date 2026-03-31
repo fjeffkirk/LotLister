@@ -113,15 +113,151 @@ const PSA_API_BASE = 'https://api.psacard.com/publicapi';
 const PSA_IMAGE_BASE = 'https://cert-images.psa.com';
 
 /**
- * PSA’s CDN often returns 403/HTML for bare requests. Use for server-side fetch and /api/psa-image proxy.
+ * PSA’s CDN often returns 403/HTML for Node’s default fetch. Use browser-like headers for server-side downloads.
  */
-export const PSA_IMAGE_FETCH_HEADERS: Record<string, string> = {
+const PSA_IMAGE_FETCH_HEADERS: Record<string, string> = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
   Referer: 'https://www.psacard.com/',
 };
+
+function bufferLooksLikeImage(buf: Buffer): boolean {
+  if (buf.length < 400) return false;
+  // Reject HTML / Cloudflare challenge bodies
+  if (buf[0] === 0x3c /* < */) return false;
+  if (buf[0] === 0xff && buf[1] === 0xd8) return true; // JPEG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true; // PNG
+  return false;
+}
+
+function collectHttpsImageUrls(value: unknown, out: string[]): void {
+  if (value === null || value === undefined) return;
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (/^https?:\/\//i.test(t) && /\.(jpe?g|png|webp)(\?|$)/i.test(t)) {
+      out.push(t);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectHttpsImageUrls(item, out);
+    return;
+  }
+  if (typeof value === 'object') {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      collectHttpsImageUrls(v, out);
+    }
+  }
+}
+
+function classifyFrontBack(url: string): 'front' | 'back' | 'unknown' {
+  const u = url.toLowerCase();
+  if (/_f\.(jpe?g|png|webp)/.test(u) || /\/f\.(jpe?g|png|webp)/.test(u)) return 'front';
+  if (/_b\.(jpe?g|png|webp)/.test(u) || /\/b\.(jpe?g|png|webp)/.test(u)) return 'back';
+  if (u.includes('front')) return 'front';
+  if (u.includes('back')) return 'back';
+  return 'unknown';
+}
+
+function partitionApiImageUrls(urls: string[]): { front: string[]; back: string[] } {
+  const front: string[] = [];
+  const back: string[] = [];
+  const unknown: string[] = [];
+  for (const u of urls) {
+    const c = classifyFrontBack(u);
+    if (c === 'front') front.push(u);
+    else if (c === 'back') back.push(u);
+    else unknown.push(u);
+  }
+  if (front.length === 0 && unknown[0]) front.push(unknown[0]);
+  if (back.length === 0 && unknown[1]) back.push(unknown[1]);
+  return { front, back };
+}
+
+/** Try several CDN paths; some certs differ or only expose certain sizes. */
+function getPsaCdnImageUrlCandidates(certNumber: string, side: 'front' | 'back'): string[] {
+  const s = side === 'front' ? 'f' : 'b';
+  const sizes = ['large', 'medium', 'small'];
+  const exts = ['jpg', 'jpeg'];
+  const urls: string[] = [];
+  for (const size of sizes) {
+    for (const ext of exts) {
+      urls.push(`${PSA_IMAGE_BASE}/${certNumber}/${size}/${certNumber}_${s}.${ext}`);
+    }
+  }
+  return urls;
+}
+
+/**
+ * PSA exposes image URLs via API (swagger: GET /cert/GetImagesByCertNumber/{certNumber}).
+ * Uses one extra API call per import when token is set; helps when guessed CDN paths are wrong.
+ */
+async function fetchPsaApiImageUrlList(certNumber: string): Promise<string[]> {
+  const token = process.env.PSA_API_TOKEN?.trim();
+  if (!token) return [];
+  try {
+    const res = await fetch(`${PSA_API_BASE}/cert/GetImagesByCertNumber/${certNumber}`, {
+      headers: {
+        Authorization: `bearer ${token}`,
+        Accept: 'application/json',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json();
+    const found: string[] = [];
+    collectHttpsImageUrls(data, found);
+    return [...new Set(found)];
+  } catch {
+    return [];
+  }
+}
+
+async function downloadFirstValidImage(urls: string[]): Promise<Buffer | null> {
+  const unique = [...new Set(urls)];
+  for (const url of unique) {
+    const buf = await downloadImage(url);
+    if (buf && bufferLooksLikeImage(buf)) return buf;
+  }
+  return null;
+}
+
+/**
+ * Download front/back cert scans: try CDN first (browser-like fetch); only then call
+ * GetImagesByCertNumber to save PSA API quota when the CDN works.
+ */
+export async function downloadPsaCertImages(certNumber: string): Promise<{
+  front: Buffer | null;
+  back: Buffer | null;
+}> {
+  const frontCdn = getPsaCdnImageUrlCandidates(certNumber, 'front');
+  const backCdn = getPsaCdnImageUrlCandidates(certNumber, 'back');
+
+  let [front, back] = await Promise.all([
+    downloadFirstValidImage(frontCdn),
+    downloadFirstValidImage(backCdn),
+  ]);
+
+  if (!front || !back) {
+    const apiUrls = await fetchPsaApiImageUrlList(certNumber);
+    const { front: frontApi, back: backApi } = partitionApiImageUrls(apiUrls);
+    if (!front) {
+      front = await downloadFirstValidImage([...frontApi, ...frontCdn]);
+    }
+    if (!back) {
+      back = await downloadFirstValidImage([...backApi, ...backCdn]);
+    }
+  }
+
+  if (!front && !back) {
+    console.warn(`[PSA import] Could not download cert images for ${certNumber}`);
+  }
+
+  return { front, back };
+}
 
 /**
  * Get the PSA API token from environment
@@ -157,6 +293,26 @@ export async function checkImageExists(url: string): Promise<boolean> {
     return response.ok;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Download image from URL and return as Buffer
+ */
+export async function downloadImage(url: string): Promise<Buffer | null> {
+  try {
+    const response = await fetch(url, {
+      headers: PSA_IMAGE_FETCH_HEADERS,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(25000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch {
+    return null;
   }
 }
 

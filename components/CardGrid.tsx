@@ -45,12 +45,6 @@ function getImageUrl(relativePath: string): string {
   return `/api/images/${encodeURIComponent(relativePath)}`;
 }
 
-/** PSA import uses sortOrder 0 = front, 1 = back; API must return images ordered for grid/export. */
-function imagesInDisplayOrder(images: CardImage[] | undefined | null): CardImage[] {
-  if (!images?.length) return [];
-  return [...images].sort((a, b) => a.sortOrder - b.sortOrder);
-}
-
 // Mandatory fields for eBay listings
 const MANDATORY_FIELDS = [
   'title', 'salePrice', 'year', 'conditionType', 'category', 
@@ -192,10 +186,6 @@ function ImagePreviewPopup({
   cardTitle: string;
   onClose: () => void;
 }) {
-  const ordered = useMemo(
-    () => [...images].sort((a, b) => a.sortOrder - b.sortOrder),
-    [images]
-  );
   const popupRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 20, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
@@ -243,17 +233,17 @@ function ImagePreviewPopup({
       if (e.key === 'ArrowLeft' && currentImageIndex > 0) {
         setCurrentImageIndex(prev => prev - 1);
       }
-      if (e.key === 'ArrowRight' && currentImageIndex < ordered.length - 1) {
+      if (e.key === 'ArrowRight' && currentImageIndex < images.length - 1) {
         setCurrentImageIndex(prev => prev + 1);
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, currentImageIndex, ordered.length]);
+  }, [onClose, currentImageIndex, images.length]);
 
-  if (ordered.length === 0) return null;
+  if (images.length === 0) return null;
 
-  const currentImage = ordered[currentImageIndex];
+  const currentImage = images[currentImageIndex];
 
   return (
     <div
@@ -298,7 +288,7 @@ function ImagePreviewPopup({
         />
         
         {/* Navigation arrows */}
-        {ordered.length > 1 && (
+        {images.length > 1 && (
           <>
             <button
               onClick={() => setCurrentImageIndex(prev => Math.max(0, prev - 1))}
@@ -310,8 +300,8 @@ function ImagePreviewPopup({
               </svg>
             </button>
             <button
-              onClick={() => setCurrentImageIndex(prev => Math.min(ordered.length - 1, prev + 1))}
-              disabled={currentImageIndex === ordered.length - 1}
+              onClick={() => setCurrentImageIndex(prev => Math.min(images.length - 1, prev + 1))}
+              disabled={currentImageIndex === images.length - 1}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full text-white hover:bg-black/80 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -323,9 +313,9 @@ function ImagePreviewPopup({
       </div>
 
       {/* Thumbnail strip */}
-      {ordered.length > 1 && (
+      {images.length > 1 && (
         <div className="flex gap-2 p-3 bg-surface-800/50 border-t border-surface-700 overflow-x-auto">
-          {ordered.map((img, idx) => (
+          {images.map((img, idx) => (
             <button
               key={img.id}
               onClick={() => setCurrentImageIndex(idx)}
@@ -347,7 +337,7 @@ function ImagePreviewPopup({
 
       {/* Image counter */}
       <div className="px-3 py-2 bg-surface-800 border-t border-surface-700 text-center text-xs text-surface-400">
-        Image {currentImageIndex + 1} of {ordered.length} • Use ← → arrows to navigate
+        Image {currentImageIndex + 1} of {images.length} • Use ← → arrows to navigate
       </div>
     </div>
   );
@@ -372,7 +362,7 @@ interface ColumnInfo {
 
 // Image cell renderer - clickable to open preview
 function ImageCellRenderer(props: ICellRendererParams<CardItemWithImages>) {
-  const images = imagesInDisplayOrder(props.data?.images);
+  const images = props.data?.images || [];
   
   if (images.length === 0) {
     return (
@@ -1438,8 +1428,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       {/* Image Preview Popup */}
       {previewCard && previewCard.images.length > 0 && (
         <ImagePreviewPopup
-          key={previewCard.id}
-          images={imagesInDisplayOrder(previewCard.images)}
+          images={previewCard.images}
           cardTitle={previewCard.title || previewCard.name || `Card #${previewCard.cardNumber || previewCard.id.slice(0, 8)}`}
           onClose={() => setPreviewCard(null)}
         />
