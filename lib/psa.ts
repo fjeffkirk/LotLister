@@ -30,25 +30,78 @@ export interface PSALookupResult {
   error?: string;
 }
 
+/** PSA may return PascalCase (.NET) or camelCase JSON */
+export interface PSAApiCertRaw {
+  CertNumber?: string;
+  certNumber?: string;
+  Subject?: string;
+  subject?: string;
+  Brand?: string;
+  brand?: string;
+  Year?: string;
+  year?: string;
+  CardNumber?: string;
+  cardNumber?: string;
+  CardGrade?: string;
+  cardGrade?: string;
+  GradeDescription?: string;
+  gradeDescription?: string;
+  TotalPopulation?: number;
+  totalPopulation?: number;
+  PopulationHigher?: number;
+  populationHigher?: number;
+  LabelType?: string;
+  labelType?: string;
+  ReverseBarcode?: string;
+  reverseBarcode?: string;
+  SpecNumber?: string;
+  specNumber?: string;
+  Category?: string;
+  category?: string;
+  IsDNA?: boolean;
+  isDNA?: boolean;
+}
+
 export interface PSAApiResponse {
-  PSACert?: {
-    CertNumber: string;
-    Subject: string;
-    Brand: string;
-    Year: string;
-    CardNumber: string;
-    CardGrade: string;
-    GradeDescription: string;
-    TotalPopulation: number;
-    PopulationHigher: number;
-    LabelType: string;
-    ReverseBarcode?: string;
-    SpecNumber?: string;
-    Category?: string;
-    IsDNA?: boolean;
+  PSACert?: PSAApiCertRaw;
+  psaCert?: PSAApiCertRaw;
+  IsValidRequest?: boolean;
+  isValidRequest?: boolean;
+  ServerMessage?: string;
+  serverMessage?: string;
+}
+
+function pickStr(...vals: (string | undefined)[]): string {
+  for (const v of vals) {
+    if (v !== undefined && v !== null) return String(v);
+  }
+  return '';
+}
+
+function pickNum(...vals: (number | undefined)[]): number {
+  for (const v of vals) {
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+  }
+  return 0;
+}
+
+/** Normalize PSA cert object whether API used PascalCase or camelCase */
+function normalizePSACert(raw: PSAApiCertRaw) {
+  return {
+    CertNumber: pickStr(raw.CertNumber, raw.certNumber),
+    Subject: pickStr(raw.Subject, raw.subject),
+    Brand: pickStr(raw.Brand, raw.brand),
+    Year: pickStr(raw.Year, raw.year),
+    CardNumber: pickStr(raw.CardNumber, raw.cardNumber),
+    CardGrade: pickStr(raw.CardGrade, raw.cardGrade),
+    GradeDescription: pickStr(raw.GradeDescription, raw.gradeDescription),
+    TotalPopulation: pickNum(raw.TotalPopulation, raw.totalPopulation),
+    PopulationHigher: pickNum(raw.PopulationHigher, raw.populationHigher),
+    LabelType: pickStr(raw.LabelType, raw.labelType),
+    ReverseBarcode: raw.ReverseBarcode ?? raw.reverseBarcode,
+    SpecNumber: raw.SpecNumber ?? raw.specNumber,
+    Category: pickStr(raw.Category, raw.category),
   };
-  IsValidRequest: boolean;
-  ServerMessage: string;
 }
 
 const PSA_API_BASE = 'https://api.psacard.com/publicapi';
@@ -122,38 +175,83 @@ export async function lookupPSACert(certNumber: string): Promise<PSALookupResult
     const response = await fetch(`${PSA_API_BASE}/cert/GetByCertNumber/${cleanCert}`, {
       method: 'GET',
       headers: {
-        'Authorization': `bearer ${token}`,
-        'Content-Type': 'application/json',
+        // PSA docs: "bearer " + token (trim avoids newline issues from env paste)
+        Authorization: `bearer ${token.trim()}`,
+        Accept: 'application/json',
       },
     });
 
+    const responseText = await response.text();
+    let parsed: unknown;
+    try {
+      parsed = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      parsed = responseText;
+    }
+
     if (!response.ok) {
       if (response.status === 401) {
-        return { success: false, error: 'PSA API authentication failed' };
+        return { success: false, error: 'PSA API authentication failed. Check PSA_API_TOKEN.' };
       }
       if (response.status === 429) {
-        return { success: false, error: 'PSA API rate limit exceeded' };
+        const msg =
+          typeof parsed === 'string'
+            ? parsed
+            : 'PSA API daily quota exceeded (100 calls/day on free tier). Try again tomorrow or upgrade.';
+        return { success: false, error: msg };
       }
-      return { success: false, error: `PSA API error: ${response.status}` };
-    }
-
-    const data: PSAApiResponse = await response.json();
-
-    if (!data.IsValidRequest) {
+      const detail =
+        typeof parsed === 'string'
+          ? parsed
+          : parsed && typeof parsed === 'object' && 'ServerMessage' in parsed
+            ? String((parsed as PSAApiResponse).ServerMessage ?? (parsed as PSAApiResponse).serverMessage ?? '')
+            : '';
       return {
         success: false,
-        error: data.ServerMessage || 'Invalid request',
+        error: detail || `PSA API error (${response.status})`,
       };
     }
 
-    if (!data.PSACert) {
+    // Success HTTP but body might be a plain JSON string (e.g. quota message) or non-object
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      const asString = typeof parsed === 'string' ? parsed : responseText;
       return {
         success: false,
-        error: 'Certificate not found',
+        error: asString || 'Unexpected response from PSA API',
       };
     }
 
-    const cert = data.PSACert;
+    const data = parsed as PSAApiResponse;
+    const isValidRequest = data.IsValidRequest ?? data.isValidRequest;
+    const serverMessage = data.ServerMessage ?? data.serverMessage ?? '';
+    const rawCert = data.PSACert ?? data.psaCert;
+
+    if (isValidRequest === false) {
+      return {
+        success: false,
+        error: serverMessage || 'PSA rejected this request (check cert number format)',
+      };
+    }
+
+    // Missing flag treated as invalid only if we also have no cert payload
+    if (isValidRequest !== true && !rawCert) {
+      return {
+        success: false,
+        error: serverMessage || 'Invalid response from PSA API',
+      };
+    }
+
+    if (!rawCert) {
+      if (serverMessage.toLowerCase().includes('no data')) {
+        return { success: false, error: 'Certificate not found in PSA database' };
+      }
+      return {
+        success: false,
+        error: serverMessage || 'Certificate not found',
+      };
+    }
+
+    const cert = normalizePSACert(rawCert);
     const imageUrls = getPSAImageUrls(cleanCert);
     
     // Check if images exist
