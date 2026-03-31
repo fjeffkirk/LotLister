@@ -26,8 +26,6 @@ import {
   GRADER_OPTIONS,
   GRADE_OPTIONS,
   isPsaImportedCard,
-  resolveCardImagePublicUrl,
-  sortCardImagesForDisplay,
 } from '../lib/types';
 
 // Helper to check if a condition value is valid (one of the dropdown options)
@@ -40,6 +38,17 @@ function isValidCondition(condition: string | null | undefined): boolean {
 function isValidCategory(category: string | null | undefined): boolean {
   if (!category || category.trim() === '') return false;
   return CATEGORY_OPTIONS.includes(category as typeof CATEGORY_OPTIONS[number]);
+}
+
+// Get image URL (client-side utility)
+function getImageUrl(relativePath: string): string {
+  return `/api/images/${encodeURIComponent(relativePath)}`;
+}
+
+/** PSA import uses sortOrder 0 = front, 1 = back; API must return images ordered for grid/export. */
+function imagesInDisplayOrder(images: CardImage[] | undefined | null): CardImage[] {
+  if (!images?.length) return [];
+  return [...images].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 // Mandatory fields for eBay listings
@@ -183,7 +192,10 @@ function ImagePreviewPopup({
   cardTitle: string;
   onClose: () => void;
 }) {
-  const ordered = useMemo(() => sortCardImagesForDisplay(images), [images]);
+  const ordered = useMemo(
+    () => [...images].sort((a, b) => a.sortOrder - b.sortOrder),
+    [images]
+  );
   const popupRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 20, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
@@ -280,7 +292,7 @@ function ImagePreviewPopup({
       {/* Main Image */}
       <div className="relative bg-black">
         <img
-          src={resolveCardImagePublicUrl(currentImage.originalPath)}
+          src={getImageUrl(currentImage.originalPath)}
           alt={`Card image ${currentImageIndex + 1}`}
           className="w-full h-auto max-h-[500px] object-contain"
         />
@@ -324,7 +336,7 @@ function ImagePreviewPopup({
               }`}
             >
               <img
-                src={resolveCardImagePublicUrl(img.thumbPath)}
+                src={getImageUrl(img.thumbPath)}
                 alt={`Thumbnail ${idx + 1}`}
                 className="w-full h-full object-cover"
               />
@@ -360,7 +372,7 @@ interface ColumnInfo {
 
 // Image cell renderer - clickable to open preview
 function ImageCellRenderer(props: ICellRendererParams<CardItemWithImages>) {
-  const images = sortCardImagesForDisplay(props.data?.images || []);
+  const images = imagesInDisplayOrder(props.data?.images);
   
   if (images.length === 0) {
     return (
@@ -379,7 +391,7 @@ function ImageCellRenderer(props: ICellRendererParams<CardItemWithImages>) {
       {images.slice(0, 2).map((img, idx) => (
         <div key={img.id} className="w-10 h-10 bg-surface-700 rounded overflow-hidden flex-shrink-0 ring-0 group-hover:ring-2 group-hover:ring-primary-500/50 transition-all">
           <img
-            src={resolveCardImagePublicUrl(img.thumbPath)}
+            src={getImageUrl(img.thumbPath)}
             alt={`Image ${idx + 1}`}
             className="w-full h-full object-cover"
             loading="lazy"
@@ -1427,7 +1439,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       {previewCard && previewCard.images.length > 0 && (
         <ImagePreviewPopup
           key={previewCard.id}
-          images={previewCard.images}
+          images={imagesInDisplayOrder(previewCard.images)}
           cardTitle={previewCard.title || previewCard.name || `Card #${previewCard.cardNumber || previewCard.id.slice(0, 8)}`}
           onClose={() => setPreviewCard(null)}
         />
