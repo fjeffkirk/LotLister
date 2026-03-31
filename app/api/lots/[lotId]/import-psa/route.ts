@@ -3,9 +3,8 @@ import prisma from '../../../../../lib/prisma';
 import { getUserEmail } from '../../../../../lib/auth';
 import {
   lookupPSACert,
-  downloadImage,
   mapPSAToCardData,
-  getPSAImageUrls,
+  downloadPsaCertImages,
   PSALookupResult,
 } from '../../../../../lib/psa';
 import { saveImage } from '../../../../../lib/storage';
@@ -132,12 +131,11 @@ export async function POST(
       const cardData = mapPSAToCardData(psaResult.data);
       const cardId = uuidv4();
 
-      // Download and save images — always try GET; PSA/CDN often blocks HEAD while GET works
+      // Download scans: browser-like fetch + PSA GetImagesByCertNumber + CDN size fallbacks (see lib/psa.ts)
       const imageRecords: { originalPath: string; thumbPath: string; filename: string; sortOrder: number }[] = [];
-      const { front: frontUrl, back: backUrl } = getPSAImageUrls(cleanCert);
+      const { front: frontBuffer, back: backBuffer } = await downloadPsaCertImages(cleanCert);
 
-      const frontBuffer = await downloadImage(frontUrl);
-      if (frontBuffer && frontBuffer.length > 100) {
+      if (frontBuffer) {
         const frontResult = await saveImage(lotId, `psa_${cleanCert}_front.jpg`, frontBuffer);
         imageRecords.push({
           originalPath: frontResult.originalPath,
@@ -147,8 +145,7 @@ export async function POST(
         });
       }
 
-      const backBuffer = await downloadImage(backUrl);
-      if (backBuffer && backBuffer.length > 100) {
+      if (backBuffer) {
         const backResult = await saveImage(lotId, `psa_${cleanCert}_back.jpg`, backBuffer);
         imageRecords.push({
           originalPath: backResult.originalPath,
