@@ -226,22 +226,31 @@ async function downloadFirstValidImage(urls: string[]): Promise<Buffer | null> {
 }
 
 /**
- * Download front/back cert scans: PSA API image list (if any), then CDN URL fallbacks with browser-like fetch.
+ * Download front/back cert scans: try CDN first (browser-like fetch); only then call
+ * GetImagesByCertNumber to save PSA API quota when the CDN works.
  */
 export async function downloadPsaCertImages(certNumber: string): Promise<{
   front: Buffer | null;
   back: Buffer | null;
 }> {
-  const apiUrls = await fetchPsaApiImageUrlList(certNumber);
-  const { front: frontApi, back: backApi } = partitionApiImageUrls(apiUrls);
+  const frontCdn = getPsaCdnImageUrlCandidates(certNumber, 'front');
+  const backCdn = getPsaCdnImageUrlCandidates(certNumber, 'back');
 
-  const frontUrls = [...frontApi, ...getPsaCdnImageUrlCandidates(certNumber, 'front')];
-  const backUrls = [...backApi, ...getPsaCdnImageUrlCandidates(certNumber, 'back')];
-
-  const [front, back] = await Promise.all([
-    downloadFirstValidImage(frontUrls),
-    downloadFirstValidImage(backUrls),
+  let [front, back] = await Promise.all([
+    downloadFirstValidImage(frontCdn),
+    downloadFirstValidImage(backCdn),
   ]);
+
+  if (!front || !back) {
+    const apiUrls = await fetchPsaApiImageUrlList(certNumber);
+    const { front: frontApi, back: backApi } = partitionApiImageUrls(apiUrls);
+    if (!front) {
+      front = await downloadFirstValidImage([...frontApi, ...frontCdn]);
+    }
+    if (!back) {
+      back = await downloadFirstValidImage([...backApi, ...backCdn]);
+    }
+  }
 
   if (!front && !back) {
     console.warn(`[PSA import] Could not download cert images for ${certNumber}`);
