@@ -6,6 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import sharp from 'sharp';
+import { imagePathToBrowserSrc } from './imageUrls';
 
 // Use environment variable for uploads directory (for Render/production)
 // Falls back to local 'data' folder for development
@@ -129,9 +130,8 @@ export function resolveImagePath(relativePath: string): string {
 }
 
 /**
- * Get the public URL for an image
+ * Get the public URL for an image (relative uploads/... or absolute legacy URL)
  */
 export function getImageUrl(relativePath: string): string {
-  // For local storage, serve via API route
-  return `/api/images/${encodeURIComponent(relativePath)}`;
+  return imagePathToBrowserSrc(relativePath);
 }

@@ -4,6 +4,7 @@
 
 import { CardItem, CardImage, ExportProfile } from '@prisma/client';
 import { format, addSeconds, parseISO } from 'date-fns';
+import { imagePathToEbayPicUrl } from './imageUrls';
 
 type CardItemWithImages = CardItem & { images: CardImage[] };
 
@@ -322,14 +323,8 @@ export function generateEbayCSV(
     // eBay uses pipe (|) separator for multiple images
     const imageUrls = card.images
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((img) => {
-        if (imageBaseUrl) {
-          // Convert local path to full URL
-          return `${imageBaseUrl}/api/images/${encodeURIComponent(img.originalPath)}`;
-        }
-        // Return local path (will need to be updated before eBay upload)
-        return img.originalPath;
-      })
+      .map((img) => imagePathToEbayPicUrl(img.originalPath, imageBaseUrl))
+      .filter(Boolean)
       .join('|');
     
     // Description - use custom description if provided, otherwise use title
