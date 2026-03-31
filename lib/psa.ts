@@ -113,9 +113,9 @@ const PSA_API_BASE = 'https://api.psacard.com/publicapi';
 const PSA_IMAGE_BASE = 'https://cert-images.psa.com';
 
 /**
- * PSA’s CDN often returns 403/HTML for Node’s default fetch. Use browser-like headers for server-side downloads.
+ * PSA’s CDN often returns 403/HTML for bare requests. Use for server-side fetch and /api/psa-image proxy.
  */
-const PSA_IMAGE_FETCH_HEADERS: Record<string, string> = {
+export const PSA_IMAGE_FETCH_HEADERS: Record<string, string> = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',

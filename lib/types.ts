@@ -247,11 +247,30 @@ export function isRemoteImagePath(path: string): boolean {
   return /^https?:\/\//i.test(path.trim());
 }
 
-/** Grid / preview: local paths use /api/images; remote URLs (PSA) load directly */
+const PSA_CERT_IMAGES_HOST = 'cert-images.psa.com';
+
+function isPsaCertImagesUrl(url: string): boolean {
+  try {
+    const u = new URL(url.trim());
+    return u.protocol === 'https:' && u.hostname === PSA_CERT_IMAGES_HOST;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Grid / preview: local uploads via /api/images; PSA cert scans via same-origin proxy (CDN blocks in-browser hotlink).
+ * eBay export still uses the raw https URL from the database.
+ */
 export function resolveCardImagePublicUrl(path: string): string {
   const p = path.trim();
-  if (isRemoteImagePath(p)) return p;
-  return `/api/images/${encodeURIComponent(p)}`;
+  if (!isRemoteImagePath(p)) {
+    return `/api/images/${encodeURIComponent(p)}`;
+  }
+  if (isPsaCertImagesUrl(p)) {
+    return `/api/psa-image?u=${encodeURIComponent(p)}`;
+  }
+  return p;
 }
 
 /** Front before back (sortOrder, then PSA _f before _b in URL/filename). */
