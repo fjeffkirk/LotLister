@@ -3,6 +3,7 @@
  * Fetches card data by certification number
  */
 
+import { createHash } from 'crypto';
 import { CATEGORY_OPTIONS } from './types';
 
 export interface PSACertData {
@@ -153,7 +154,37 @@ function bufferLooksLikeImage(buf: Buffer): boolean {
   return false;
 }
 
-function collectHttpsImageUrls(value: unknown, out: string[]): void {
+/** Digits-only cert variants for CDN paths (PSA sometimes pads in URLs). */
+function certNumberUrlVariants(digits: string): string[] {
+  const d = digits.replace(/\D/g, '');
+  if (!d) return [];
+  const out = new Set<string>([d]);
+  const p8 = d.padStart(8, '0');
+  if (p8 !== d) out.add(p8);
+  const trimmed = d.replace(/^0+/, '') || '0';
+  if (trimmed !== d) out.add(trimmed);
+  return [...out];
+}
+
+function bufferSig(buf: Buffer): string {
+  const n = Math.min(8192, buf.length);
+  return `${buf.length}:${createHash('sha256').update(buf.subarray(0, n)).digest('hex')}`;
+}
+
+/** Sort JSON object keys so Front/Image1-style properties are walked before Back/Image2 (PSA GetImages payload). */
+function objectKeyImageSortOrder(key: string): number {
+  const k = key.toLowerCase();
+  if ((/\bfront\b|\bobverse\b|\bface\b|primary|image\s*0|^image1$|first/.test(k) || /^f$/i.test(k)) && !/\bback\b/.test(k)) {
+    return 0;
+  }
+  if (/\bback\b|\breverse\b|\bverso\b|image\s*2|^image2$|second/.test(k) || /^b$/i.test(k)) {
+    return 2;
+  }
+  return 1;
+}
+
+/** Depth-first image URL extraction: arrays preserve order; object keys ordered for front-before-back. */
+function walkImageUrlsOrdered(value: unknown, out: string[]): void {
   if (value === null || value === undefined) return;
   if (typeof value === 'string') {
     const t = value.trim();
@@ -163,46 +194,28 @@ function collectHttpsImageUrls(value: unknown, out: string[]): void {
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) collectHttpsImageUrls(item, out);
+    for (const item of value) walkImageUrlsOrdered(item, out);
     return;
   }
   if (typeof value === 'object') {
-    for (const v of Object.values(value as Record<string, unknown>)) {
-      collectHttpsImageUrls(v, out);
-    }
+    const o = value as Record<string, unknown>;
+    const keys = Object.keys(o).sort((a, b) => {
+      const d = objectKeyImageSortOrder(a) - objectKeyImageSortOrder(b);
+      return d !== 0 ? d : a.localeCompare(b);
+    });
+    for (const k of keys) walkImageUrlsOrdered(o[k], out);
   }
 }
 
-function classifyFrontBack(url: string): 'front' | 'back' | 'unknown' {
-  const u = url.toLowerCase();
-  if (/_f\.(jpe?g|png|webp)/.test(u) || /\/f\.(jpe?g|png|webp)/.test(u)) return 'front';
-  if (/_b\.(jpe?g|png|webp)/.test(u) || /\/b\.(jpe?g|png|webp)/.test(u)) return 'back';
-  if (u.includes('front')) return 'front';
-  if (u.includes('back')) return 'back';
-  return 'unknown';
-}
-
-function partitionApiImageUrls(urls: string[]): { front: string[]; back: string[] } {
-  const front: string[] = [];
-  const back: string[] = [];
-  const unknown: string[] = [];
-  for (const u of urls) {
-    const c = classifyFrontBack(u);
-    if (c === 'front') front.push(u);
-    else if (c === 'back') back.push(u);
-    else unknown.push(u);
-  }
-  if (front.length === 0 && unknown[0]) front.push(unknown[0]);
-  if (back.length === 0 && unknown[1]) back.push(unknown[1]);
-  return { front, back };
-}
-
-/** Try several CDN paths; some certs differ or only expose certain sizes. */
+/** Try several CDN paths per side (with and without size folder). */
 function getPsaCdnImageUrlCandidates(certNumber: string, side: 'front' | 'back'): string[] {
   const s = side === 'front' ? 'f' : 'b';
   const sizes = ['large', 'medium', 'small'];
   const exts = ['jpg', 'jpeg'];
   const urls: string[] = [];
+  for (const ext of exts) {
+    urls.push(`${PSA_IMAGE_BASE}/${certNumber}/${certNumber}_${s}.${ext}`);
+  }
   for (const size of sizes) {
     for (const ext of exts) {
       urls.push(`${PSA_IMAGE_BASE}/${certNumber}/${size}/${certNumber}_${s}.${ext}`);
@@ -211,11 +224,7 @@ function getPsaCdnImageUrlCandidates(certNumber: string, side: 'front' | 'back')
   return urls;
 }
 
-/**
- * PSA exposes image URLs via API (swagger: GET /cert/GetImagesByCertNumber/{certNumber}).
- * Uses one extra API call per import when token is set; helps when guessed CDN paths are wrong.
- */
-async function fetchPsaApiImageUrlList(certNumber: string): Promise<string[]> {
+async function fetchPsaApiImageUrlsOrdered(certNumber: string): Promise<string[]> {
   const token = process.env.PSA_API_TOKEN?.trim();
   if (!token) return [];
   try {
@@ -225,16 +234,52 @@ async function fetchPsaApiImageUrlList(certNumber: string): Promise<string[]> {
         Accept: 'application/json',
       },
       redirect: 'follow',
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(25000),
     });
     if (!res.ok) return [];
     const data: unknown = await res.json();
-    const found: string[] = [];
-    collectHttpsImageUrls(data, found);
-    return [...new Set(found)];
+    const ordered: string[] = [];
+    walkImageUrlsOrdered(data, ordered);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const u of ordered) {
+      if (seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+    }
+    return out;
   } catch {
     return [];
   }
+}
+
+async function downloadDistinctFromUrls(urls: string[], max: number): Promise<Buffer[]> {
+  const bufs: Buffer[] = [];
+  const sigs = new Set<string>();
+  for (const url of urls) {
+    if (bufs.length >= max) break;
+    const buf = await downloadImage(url);
+    if (!buf || !bufferLooksLikeImage(buf)) continue;
+    const sig = bufferSig(buf);
+    if (sigs.has(sig)) continue;
+    sigs.add(sig);
+    bufs.push(buf);
+  }
+  return bufs;
+}
+
+async function downloadCdnBothSides(variants: string[]): Promise<{ f: Buffer | null; b: Buffer | null }> {
+  let f: Buffer | null = null;
+  let b: Buffer | null = null;
+  for (const c of variants) {
+    if (!f) f = await downloadFirstValidImage(getPsaCdnImageUrlCandidates(c, 'front'));
+    if (!b) b = await downloadFirstValidImage(getPsaCdnImageUrlCandidates(c, 'back'));
+    if (f && b) break;
+  }
+  if (f && b && bufferSig(f) === bufferSig(b)) {
+    b = null;
+  }
+  return { f, b };
 }
 
 async function downloadFirstValidImage(urls: string[]): Promise<Buffer | null> {
@@ -247,17 +292,15 @@ async function downloadFirstValidImage(urls: string[]): Promise<Buffer | null> {
 }
 
 export interface DownloadPsaCertImagesOptions {
-  /** PSA ReverseBarCode: use `_f` scan as listing front instead of default `_b`-first */
+  /** PSA ReverseBarCode: swap which downloaded scan is treated as listing front (sortOrder 0) */
   reverseBarcode?: boolean;
 }
 
 /**
- * Download front/back cert scans: try CDN first (browser-like fetch); only then call
- * GetImagesByCertNumber to save PSA API quota when the CDN works.
- *
- * PSA filenames `_f` / `_b` are not “card front / card back” for many slabs — `_f` is often the
- * reverse (stats back, barcode side). We map `_b` → listing front (sortOrder 0) by default.
- * When the cert has ReverseBarCode, PSA flips holder orientation — we swap back to `_f` first.
+ * Download up to two distinct cert scans for import.
+ * 1) Always uses GetImagesByCertNumber when PSA_API_TOKEN is set — URLs are ordered (front-before-back keys, then arrays).
+ * 2) Fills missing sides from CDN `_f` / `_b` with padded cert variants and extra path patterns.
+ * 3) Without API data, uses CDN only; listing front defaults to `_b` then `_f` when both exist (empirical for many slabs).
  */
 export async function downloadPsaCertImages(
   certNumber: string,
@@ -267,28 +310,46 @@ export async function downloadPsaCertImages(
   back: Buffer | null;
 }> {
   const rev = options?.reverseBarcode === true;
-  const psaF = getPsaCdnImageUrlCandidates(certNumber, 'front');
-  const psaB = getPsaCdnImageUrlCandidates(certNumber, 'back');
-  const ourFrontCdn = rev ? psaF : psaB;
-  const ourBackCdn = rev ? psaB : psaF;
+  const clean = certNumber.replace(/\D/g, '');
+  const variants = certNumberUrlVariants(clean);
 
-  let [front, back] = await Promise.all([
-    downloadFirstValidImage(ourFrontCdn),
-    downloadFirstValidImage(ourBackCdn),
+  const apiUrls = await fetchPsaApiImageUrlsOrdered(clean);
+  const [apiBufs, { f: bufF, b: bufB }] = await Promise.all([
+    downloadDistinctFromUrls(apiUrls, 4),
+    downloadCdnBothSides(variants),
   ]);
 
-  if (!front || !back) {
-    const apiUrls = await fetchPsaApiImageUrlList(certNumber);
-    // `front` = URLs with _f in path; `back` = URLs with _b — same mapping as CDN
-    const { front: urlsPsaF, back: urlsPsaB } = partitionApiImageUrls(apiUrls);
-    const ourFrontApi = rev ? urlsPsaF : urlsPsaB;
-    const ourBackApi = rev ? urlsPsaB : urlsPsaF;
-    if (!front) {
-      front = await downloadFirstValidImage([...ourFrontApi, ...ourFrontCdn]);
+  let front: Buffer | null = null;
+  let back: Buffer | null = null;
+
+  if (apiBufs.length >= 2) {
+    front = apiBufs[0];
+    back = apiBufs[1];
+  } else if (apiBufs.length === 1) {
+    front = apiBufs[0];
+    for (const c of [bufF, bufB]) {
+      if (c && bufferSig(c) !== bufferSig(front)) {
+        back = c;
+        break;
+      }
     }
-    if (!back) {
-      back = await downloadFirstValidImage([...ourBackApi, ...ourBackCdn]);
+  } else {
+    if (bufF && bufB && bufferSig(bufF) !== bufferSig(bufB)) {
+      front = bufB;
+      back = bufF;
+    } else if (bufF && bufB) {
+      front = bufF;
+      back = null;
+    } else {
+      front = bufF ?? bufB ?? null;
+      back = null;
     }
+  }
+
+  if (rev && front && back) {
+    const t = front;
+    front = back;
+    back = t;
   }
 
   if (!front && !back) {
