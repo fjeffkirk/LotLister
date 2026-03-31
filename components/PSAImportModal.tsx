@@ -2,6 +2,12 @@
 
 import { useState } from 'react';
 
+const CERT_SLOT_COUNT = 12;
+
+function emptyCertSlots(): string[] {
+  return Array(CERT_SLOT_COUNT).fill('');
+}
+
 interface ImportResult {
   certNumber: string;
   success: boolean;
@@ -22,31 +28,37 @@ export default function PSAImportModal({
   onClose,
   onImportComplete,
 }: PSAImportModalProps) {
-  const [certInput, setCertInput] = useState('');
+  const [certSlots, setCertSlots] = useState<string[]>(emptyCertSlots);
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState<ImportResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  const certNumbers = (() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of certSlots) {
+      const clean = s.trim().replace(/\D/g, '');
+      if (clean.length >= 5 && !seen.has(clean)) {
+        seen.add(clean);
+        out.push(clean);
+      }
+    }
+    return out;
+  })();
 
-  // Parse cert numbers from input (supports comma, newline, space separated)
-  const parseCertNumbers = (input: string): string[] => {
-    return input
-      .split(/[\n,\s]+/)
-      .map(s => s.trim().replace(/\D/g, ''))
-      .filter(s => s.length >= 5);
+  const setSlot = (index: number, value: string) => {
+    setCertSlots((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
   };
 
-  const certNumbers = parseCertNumbers(certInput);
+  if (!isOpen) return null;
 
   const handleImport = async () => {
     if (certNumbers.length === 0) {
       setError('Please enter at least one valid cert number');
-      return;
-    }
-
-    if (certNumbers.length > 50) {
-      setError('Maximum 50 cert numbers per import');
       return;
     }
 
@@ -79,7 +91,7 @@ export default function PSAImportModal({
   };
 
   const handleClose = () => {
-    setCertInput('');
+    setCertSlots(emptyCertSlots());
     setResults(null);
     setError(null);
     onClose();
@@ -123,23 +135,48 @@ export default function PSAImportModal({
         <div className="p-4 sm:p-5 overflow-y-auto flex-1">
           {!results ? (
             <>
-              {/* Input Section */}
+              {/* 12 cert slots: 3 columns × 4 rows on sm+; 2 cols on narrow phones */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-surface-300 mb-2">
-                  PSA Certification Numbers
+                <label className="block text-sm font-medium text-surface-300 mb-1">
+                  PSA certification numbers
                 </label>
-                <textarea
-                  value={certInput}
-                  onChange={(e) => setCertInput(e.target.value)}
-                  placeholder="Enter cert numbers (one per line, or separated by commas)&#10;&#10;Example:&#10;12345678&#10;87654321&#10;11223344"
-                  className="w-full h-48 px-4 py-3 bg-surface-800 border border-surface-600 rounded-lg text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none font-mono text-sm"
-                  disabled={importing}
-                />
-                <p className="mt-2 text-xs text-surface-400">
+                <p className="text-xs text-surface-500 mb-3">
+                  Up to 12 certs — leave blanks empty. Digits only; non-digits are ignored.
+                </p>
+                <div
+                  className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3"
+                  role="group"
+                  aria-label="PSA certification number inputs"
+                >
+                  {certSlots.map((value, index) => (
+                    <div key={index} className="min-w-0">
+                      <label
+                        htmlFor={`psa-cert-${index}`}
+                        className="block text-[10px] sm:text-xs font-medium text-surface-500 mb-1 uppercase tracking-wide"
+                      >
+                        Cert {index + 1}
+                      </label>
+                      <input
+                        id={`psa-cert-${index}`}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="e.g. 12345678"
+                        value={value}
+                        onChange={(e) => setSlot(index, e.target.value)}
+                        disabled={importing}
+                        className="w-full min-h-[44px] px-2.5 sm:px-3 py-2 text-sm sm:text-base bg-surface-800 border border-surface-600 rounded-lg text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono tabular-nums"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-surface-400">
                   {certNumbers.length > 0 ? (
-                    <span className="text-primary-400">{certNumbers.length} cert number{certNumbers.length !== 1 ? 's' : ''} detected</span>
+                    <span className="text-primary-400">
+                      {certNumbers.length} cert{certNumbers.length !== 1 ? 's' : ''} ready to import
+                    </span>
                   ) : (
-                    'Enter the numeric cert numbers from PSA labels'
+                    'Fill at least one field with a valid cert number (5+ digits)'
                   )}
                 </p>
               </div>
@@ -162,8 +199,7 @@ export default function PSAImportModal({
 
               {/* Rate Limit Notice */}
               <div className="p-3 bg-surface-800/50 border border-surface-700 rounded-lg text-xs text-surface-400">
-                <strong className="text-surface-300">Note:</strong> PSA API has a daily limit. 
-                Large imports may be rate-limited. Maximum 50 certs per import.
+                <strong className="text-surface-300">Note:</strong> PSA API has a daily limit; each cert uses one lookup.
               </div>
 
               {error && (
@@ -266,7 +302,7 @@ export default function PSAImportModal({
               <button
                 onClick={() => {
                   setResults(null);
-                  setCertInput('');
+                  setCertSlots(emptyCertSlots());
                 }}
                 className="btn btn-secondary"
               >
