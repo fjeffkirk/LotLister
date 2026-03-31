@@ -17,7 +17,16 @@ import {
 } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
-import { CardItemWithImages, CardImage, CATEGORY_OPTIONS, CONDITION_TYPE_OPTIONS, CONDITION_OPTIONS, GRADER_OPTIONS, GRADE_OPTIONS } from '../lib/types';
+import {
+  CardItemWithImages,
+  CardImage,
+  CATEGORY_OPTIONS,
+  CONDITION_TYPE_OPTIONS,
+  CONDITION_OPTIONS,
+  GRADER_OPTIONS,
+  GRADE_OPTIONS,
+  isPsaImportedCard,
+} from '../lib/types';
 
 // Helper to check if a condition value is valid (one of the dropdown options)
 function isValidCondition(condition: string | null | undefined): boolean {
@@ -86,7 +95,12 @@ function isCardComplete(card: CardItemWithImages): boolean {
   if (!card.setName || card.setName.trim() === '') return false;
   if (!card.name || card.name.trim() === '') return false;
   if (!card.cardNumber || card.cardNumber.trim() === '') return false;
-  if (!card.subsetParallel || card.subsetParallel.trim() === '') return false;
+  if (
+    !isPsaImportedCard(card) &&
+    (!card.subsetParallel || card.subsetParallel.trim() === '')
+  ) {
+    return false;
+  }
   
   // Description is required
   const description = (card as Record<string, unknown>).description as string | undefined;
@@ -139,6 +153,11 @@ function isMandatoryFieldEmpty(field: string, value: unknown, card: CardItemWith
     return false;
   }
   
+  // PSA-imported cards: subset/parallel not required (PSA often sends one Brand line)
+  if (field === 'subsetParallel' && isPsaImportedCard(card)) {
+    return false;
+  }
+
   // Check if field is in mandatory list
   if (!MANDATORY_FIELDS.includes(field as typeof MANDATORY_FIELDS[number])) {
     return false;

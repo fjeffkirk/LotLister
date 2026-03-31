@@ -3,6 +3,8 @@
  * Fetches card data by certification number
  */
 
+import { CATEGORY_OPTIONS } from './types';
+
 export interface PSACertData {
   certNumber: string;
   subject: string;           // Player/Character name
@@ -58,6 +60,8 @@ export interface PSAApiCertRaw {
   specNumber?: string;
   Category?: string;
   category?: string;
+  Sport?: string;
+  sport?: string;
   IsDNA?: boolean;
   isDNA?: boolean;
 }
@@ -101,6 +105,7 @@ function normalizePSACert(raw: PSAApiCertRaw) {
     ReverseBarcode: raw.ReverseBarcode ?? raw.reverseBarcode,
     SpecNumber: raw.SpecNumber ?? raw.specNumber,
     Category: pickStr(raw.Category, raw.category),
+    Sport: pickStr(raw.Sport, raw.sport),
   };
 }
 
@@ -270,7 +275,7 @@ export async function lookupPSACert(certNumber: string): Promise<PSALookupResult
         cardNumber: cert.CardNumber || '',
         grade: cert.CardGrade || '',
         gradeDescription: cert.GradeDescription || '',
-        sport: cert.Category || '',
+        sport: cert.Sport || cert.Category || '',
         category: cert.Category || '',
         labelType: cert.LabelType || 'PSA',
         population: cert.TotalPopulation || 0,
@@ -319,27 +324,98 @@ export async function lookupMultiplePSACerts(
 }
 
 /**
+ * Split PSA "Brand" line (e.g. "2024 TOPPS INCEPTION ROOKIE JUMBO RELICS") into
+ * manufacturer / product / insert-or-parallel text. PSA sends one combined string;
+ * this is our best-effort split (not PSA's separate fields).
+ */
+export function parsePsaBrandLine(brandRaw: string): {
+  brand: string;
+  setName: string;
+  subsetParallel: string;
+} {
+  const parts = brandRaw.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { brand: '', setName: '', subsetParallel: '' };
+  }
+
+  let start = 0;
+  if (/^\d{4}$/.test(parts[0])) {
+    start = 1;
+  }
+
+  const tokens = parts.slice(start);
+  if (tokens.length === 0) {
+    return { brand: '', setName: brandRaw.trim(), subsetParallel: '' };
+  }
+  if (tokens.length === 1) {
+    return { brand: tokens[0], setName: tokens[0], subsetParallel: '' };
+  }
+
+  // First token = manufacturer (TOPPS, PANINI, BOWMAN), second = core set name, rest = insert/parallel/etc.
+  const brand = tokens[0];
+  const setName = tokens[1];
+  const subsetParallel = tokens.length > 2 ? tokens.slice(2).join(' ') : '';
+
+  return { brand, setName, subsetParallel };
+}
+
+/**
+ * Map PSA sport/category text to eBay Sport aspect values (CATEGORY_OPTIONS).
+ */
+export function mapPsaSportToEbayCategory(raw: string | undefined | null): string {
+  if (!raw || !raw.trim()) {
+    return 'Baseball';
+  }
+
+  const t = raw.trim();
+  const lower = t.toLowerCase();
+
+  const exact = CATEGORY_OPTIONS.find((c) => c.toLowerCase() === lower);
+  if (exact) {
+    return exact;
+  }
+
+  const aliases: Record<string, string> = {
+    'basketball cards': 'Basketball',
+    'baseball cards': 'Baseball',
+    'football cards': 'Football',
+    'hockey cards': 'Ice Hockey',
+    'soccer cards': 'Soccer',
+    tcg: 'eSports',
+    'trading card game': 'eSports',
+    'card games': 'eSports',
+    'multi sport': 'Baseball',
+    'multi-sport': 'Baseball',
+  };
+  if (aliases[lower]) {
+    return aliases[lower];
+  }
+
+  const sorted = [...CATEGORY_OPTIONS].sort((a, b) => b.length - a.length);
+  for (const opt of sorted) {
+    if (lower.includes(opt.toLowerCase())) {
+      return opt;
+    }
+  }
+
+  if (lower.includes('basketball')) return 'Basketball';
+  if (lower.includes('baseball')) return 'Baseball';
+  if (lower.includes('football') && !lower.includes('australian')) return 'Football';
+  if (lower.includes('soccer')) return 'Soccer';
+  if (lower.includes('hockey')) return 'Ice Hockey';
+
+  // No confident match — keep PSA text; user may need to pick from Category dropdown
+  return t;
+}
+
+/**
  * Map PSA data to LotLister card fields
  */
 export function mapPSAToCardData(psaData: PSACertData): Record<string, unknown> {
-  // Parse brand - PSA often returns "YEAR BRAND SET" format
-  // e.g., "2023 Topps Chrome" -> brand: "Topps", setName: "Chrome"
-  let brand = '';
-  let setName = psaData.brand;
-  
-  // Try to extract brand from the brand field
-  const brandParts = psaData.brand.split(' ');
-  if (brandParts.length > 1) {
-    // Skip year if it's at the start
-    const startIdx = /^\d{4}$/.test(brandParts[0]) ? 1 : 0;
-    if (brandParts.length > startIdx + 1) {
-      brand = brandParts[startIdx];
-      setName = brandParts.slice(startIdx).join(' ');
-    } else {
-      brand = brandParts[startIdx] || '';
-      setName = psaData.brand;
-    }
-  }
+  const { brand, setName, subsetParallel } = parsePsaBrandLine(psaData.brand || '');
+
+  const sportSource = (psaData.sport || psaData.category || '').trim();
+  const category = mapPsaSportToEbayCategory(sportSource);
 
   // Map PSA grade to our grade options
   const gradeMapping: Record<string, string> = {
@@ -359,16 +435,15 @@ export function mapPSAToCardData(psaData: PSACertData): Record<string, unknown> 
 
   return {
     name: psaData.subject,
-    brand: brand,
-    setName: setName,
+    brand,
+    setName,
     year: psaData.year ? parseInt(psaData.year, 10) : null,
     cardNumber: psaData.cardNumber,
-    category: psaData.sport || psaData.category,
+    category,
+    subsetParallel,
     conditionType: 'Graded: Professionally graded',
     grader: 'Professional Sports Authenticator (PSA)',
     grade: gradeMapping[psaData.grade] || `${psaData.gradeDescription} ${psaData.grade}`,
     certNo: psaData.certNumber,
-    // Additional PSA-specific data stored for reference
-    subsetParallel: '', // User may need to fill this
   };
 }

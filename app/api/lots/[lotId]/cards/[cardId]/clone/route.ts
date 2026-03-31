@@ -75,6 +75,7 @@ export async function POST(
         conditionType: originalCard.conditionType,
         condition: originalCard.condition,
         certNo: originalCard.certNo,
+        psaImport: false,
         sortOrder: newSortOrder,
         // Clone images as well
         images: {

@@ -177,6 +177,7 @@ export async function POST(
             grade: cardData.grade as string,
             certNo: cardData.certNo as string,
             subsetParallel: cardData.subsetParallel as string,
+            psaImport: true,
             images: {
               create: imageRecords,
             },

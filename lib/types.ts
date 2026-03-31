@@ -236,3 +236,8 @@ export const SHIPPING_SERVICE_OPTIONS = [
   'FedEx Ground',
   'FedEx Home Delivery',
 ] as const;
+
+/** Cards created via PSA cert import — subset/parallel is optional for completion/export checks */
+export function isPsaImportedCard(card: { psaImport?: boolean | null }): boolean {
+  return card.psaImport === true;
+}

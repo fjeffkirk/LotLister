@@ -61,6 +61,7 @@ model CardItem {
   condition      String  @default("Near Mint or Better")
   certNo         String?
   description    String? // Custom item description for eBay listing
+  psaImport      Boolean @default(false) // Created via PSA cert import (subset/parallel optional for completion)
 
   @@index([lotId])
 }

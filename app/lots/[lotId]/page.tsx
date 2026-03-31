@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { LotWithCards, CardItemWithImages } from '../../../lib/types';
+import { LotWithCards, CardItemWithImages, isPsaImportedCard } from '../../../lib/types';
 import ExportSettingsModal from '../../../components/ExportSettingsModal';
 import PSAImportModal from '../../../components/PSAImportModal';
 
@@ -29,7 +29,12 @@ function isCardReadyForExport(card: CardItemWithImages): boolean {
   if (!card.setName || card.setName.trim() === '') return false;
   if (!card.name || card.name.trim() === '') return false;
   if (!card.cardNumber || card.cardNumber.trim() === '') return false;
-  if (!card.subsetParallel || card.subsetParallel.trim() === '') return false;
+  if (
+    !isPsaImportedCard(card) &&
+    (!card.subsetParallel || card.subsetParallel.trim() === '')
+  ) {
+    return false;
+  }
   
   // If graded, grader and grade are required
   if (isCardGraded(card)) {
