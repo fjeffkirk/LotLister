@@ -16,6 +16,9 @@ services:
       # This will be set after first deploy when you know your URL
       - key: NEXT_PUBLIC_APP_URL
         sync: false
+      # PSA API token for cert lookup
+      - key: PSA_API_TOKEN
+        sync: false
     disk:
       name: lotlister-data
       mountPath: /data

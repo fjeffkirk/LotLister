@@ -6,6 +6,7 @@ import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { LotWithCards, CardItemWithImages } from '../../../lib/types';
 import ExportSettingsModal from '../../../components/ExportSettingsModal';
+import PSAImportModal from '../../../components/PSAImportModal';
 
 // Check if a card is graded (based on conditionType)
 function isCardGraded(card: CardItemWithImages): boolean {
@@ -65,6 +66,7 @@ export default function LotPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showExportSettings, setShowExportSettings] = useState(false);
   const [exportModeSettings, setExportModeSettings] = useState(false); // True when opened via eBay export
+  const [showPSAImport, setShowPSAImport] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<Map<string, Record<string, unknown>>>(new Map());
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -389,13 +391,25 @@ export default function LotPage() {
               <Link
                 href={`/lots/${lotId}/import`}
                 className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3"
-                title="Import"
+                title="Import Photos"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
                 <span className="hidden md:inline">Import</span>
               </Link>
+
+              {/* PSA Import */}
+              <button
+                onClick={() => setShowPSAImport(true)}
+                className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3 border-blue-600/50 text-blue-400 hover:bg-blue-600/20"
+                title="Import from PSA"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <span className="hidden md:inline">PSA</span>
+              </button>
 
               {/* Export dropdown */}
               <div className="relative">
@@ -559,16 +573,27 @@ export default function LotPage() {
                 </svg>
               </div>
               <h2 className="text-xl font-semibold text-surface-200 mb-2">No cards yet</h2>
-              <p className="text-surface-400 mb-6">Import photos to create card rows</p>
-              <Link
-                href={`/lots/${lotId}/import`}
-                className="btn btn-primary"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Import Photos
-              </Link>
+              <p className="text-surface-400 mb-6">Import photos or pull data from PSA</p>
+              <div className="flex items-center gap-3 justify-center">
+                <Link
+                  href={`/lots/${lotId}/import`}
+                  className="btn btn-primary"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Import Photos
+                </Link>
+                <button
+                  onClick={() => setShowPSAImport(true)}
+                  className="btn btn-secondary border-blue-600 text-blue-400 hover:bg-blue-600/20"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  Import from PSA
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -595,6 +620,17 @@ export default function LotPage() {
         }}
         onExport={exportModeSettings ? () => performExport('ebay') : undefined}
         isExporting={exporting}
+      />
+
+      {/* PSA Import Modal */}
+      <PSAImportModal
+        lotId={lotId}
+        isOpen={showPSAImport}
+        onClose={() => setShowPSAImport(false)}
+        onImportComplete={() => {
+          // Refresh the lot data after import
+          fetchLot();
+        }}
       />
     </div>
   );
