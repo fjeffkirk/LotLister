@@ -756,6 +756,8 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       width: 100,
       minWidth: 100,
       maxWidth: 100,
+      // AG Grid 32+ infers object/array fields and warns without a formatter; custom renderer only needs row data
+      cellDataType: false,
       cellRenderer: ImageCellRenderer,
       sortable: false,
       filter: false,

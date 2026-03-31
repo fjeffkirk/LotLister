@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
 import { getUserEmail } from '../../../../../lib/auth';
-import { lookupPSACert, downloadImage, mapPSAToCardData, PSALookupResult } from '../../../../../lib/psa';
+import {
+  lookupPSACert,
+  downloadImage,
+  mapPSAToCardData,
+  getPSAImageUrls,
+  PSALookupResult,
+} from '../../../../../lib/psa';
 import { saveImage } from '../../../../../lib/storage';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -126,33 +132,30 @@ export async function POST(
       const cardData = mapPSAToCardData(psaResult.data);
       const cardId = uuidv4();
 
-      // Download and save images
+      // Download and save images — always try GET; PSA/CDN often blocks HEAD while GET works
       const imageRecords: { originalPath: string; thumbPath: string; filename: string; sortOrder: number }[] = [];
+      const { front: frontUrl, back: backUrl } = getPSAImageUrls(cleanCert);
 
-      if (psaResult.images?.front) {
-        const frontBuffer = await downloadImage(psaResult.images.front);
-        if (frontBuffer) {
-          const frontResult = await saveImage(lotId, `psa_${cleanCert}_front.jpg`, frontBuffer);
-          imageRecords.push({
-            originalPath: frontResult.originalPath,
-            thumbPath: frontResult.thumbPath,
-            filename: frontResult.filename,
-            sortOrder: 0,
-          });
-        }
+      const frontBuffer = await downloadImage(frontUrl);
+      if (frontBuffer && frontBuffer.length > 100) {
+        const frontResult = await saveImage(lotId, `psa_${cleanCert}_front.jpg`, frontBuffer);
+        imageRecords.push({
+          originalPath: frontResult.originalPath,
+          thumbPath: frontResult.thumbPath,
+          filename: frontResult.filename,
+          sortOrder: 0,
+        });
       }
 
-      if (psaResult.images?.back) {
-        const backBuffer = await downloadImage(psaResult.images.back);
-        if (backBuffer) {
-          const backResult = await saveImage(lotId, `psa_${cleanCert}_back.jpg`, backBuffer);
-          imageRecords.push({
-            originalPath: backResult.originalPath,
-            thumbPath: backResult.thumbPath,
-            filename: backResult.filename,
-            sortOrder: 1,
-          });
-        }
+      const backBuffer = await downloadImage(backUrl);
+      if (backBuffer && backBuffer.length > 100) {
+        const backResult = await saveImage(lotId, `psa_${cleanCert}_back.jpg`, backBuffer);
+        imageRecords.push({
+          originalPath: backResult.originalPath,
+          thumbPath: backResult.thumbPath,
+          filename: backResult.filename,
+          sortOrder: 1,
+        });
       }
 
       // Create the card item with images
