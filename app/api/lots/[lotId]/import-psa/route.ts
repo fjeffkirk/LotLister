@@ -133,7 +133,9 @@ export async function POST(
 
       // Download scans and store under uploads/... (relative paths) so the grid + eBay export use /api/images URLs
       const imageRecords: { originalPath: string; thumbPath: string; filename: string; sortOrder: number }[] = [];
-      const { front: frontBuffer, back: backBuffer } = await downloadPsaCertImages(cleanCert);
+      const { front: frontBuffer, back: backBuffer } = await downloadPsaCertImages(cleanCert, {
+        reverseBarcode: psaResult.data?.reverseBarcode === true,
+      });
 
       if (frontBuffer) {
         const frontResult = await saveImage(lotId, `psa_${cleanCert}_front.jpg`, frontBuffer);

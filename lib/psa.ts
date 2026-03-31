@@ -18,7 +18,8 @@ export interface PSACertData {
   labelType: string;         // Label type (e.g., "PSA")
   population: number;        // Population at this grade
   populationHigher: number;  // Population higher than this grade
-  reverseBarcode?: string;   // Reverse barcode if available
+  /** PSA reverse-barcode slabs: CDN `_f` / `_b` filenames map to opposite physical sides; we swap so sortOrder 0 is the card front */
+  reverseBarcode?: boolean;
   specNumber?: string;       // Spec number if available
 }
 
@@ -54,8 +55,11 @@ export interface PSAApiCertRaw {
   populationHigher?: number;
   LabelType?: string;
   labelType?: string;
-  ReverseBarcode?: string;
-  reverseBarcode?: string;
+  /** .NET API spelling */
+  ReverseBarCode?: boolean;
+  reverseBarCode?: boolean;
+  ReverseBarcode?: boolean | string;
+  reverseBarcode?: boolean | string;
   SpecNumber?: string;
   specNumber?: string;
   Category?: string;
@@ -89,6 +93,18 @@ function pickNum(...vals: (number | undefined)[]): number {
   return 0;
 }
 
+function pickBool(...vals: unknown[]): boolean {
+  for (const v of vals) {
+    if (v === true) return true;
+    if (v === false || v === null || v === undefined) continue;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (s === 'true' || s === '1' || s === 'yes') return true;
+    }
+  }
+  return false;
+}
+
 /** Normalize PSA cert object whether API used PascalCase or camelCase */
 function normalizePSACert(raw: PSAApiCertRaw) {
   return {
@@ -102,7 +118,12 @@ function normalizePSACert(raw: PSAApiCertRaw) {
     TotalPopulation: pickNum(raw.TotalPopulation, raw.totalPopulation),
     PopulationHigher: pickNum(raw.PopulationHigher, raw.populationHigher),
     LabelType: pickStr(raw.LabelType, raw.labelType),
-    ReverseBarcode: raw.ReverseBarcode ?? raw.reverseBarcode,
+    ReverseBarcode: pickBool(
+      raw.ReverseBarCode,
+      raw.reverseBarCode,
+      raw.ReverseBarcode,
+      raw.reverseBarcode
+    ),
     SpecNumber: raw.SpecNumber ?? raw.specNumber,
     Category: pickStr(raw.Category, raw.category),
     Sport: pickStr(raw.Sport, raw.sport),
@@ -171,6 +192,10 @@ function partitionApiImageUrls(urls: string[]): { front: string[]; back: string[
     else if (c === 'back') back.push(u);
     else unknown.push(u);
   }
+  // When PSA returns two bare URLs without _f/_b in the path, order is often back then front
+  if (unknown.length === 2 && front.length === 0 && back.length === 0) {
+    return { front: [unknown[1]], back: [unknown[0]] };
+  }
   if (front.length === 0 && unknown[0]) front.push(unknown[0]);
   if (back.length === 0 && unknown[1]) back.push(unknown[1]);
   return { front, back };
@@ -225,30 +250,44 @@ async function downloadFirstValidImage(urls: string[]): Promise<Buffer | null> {
   return null;
 }
 
+export interface DownloadPsaCertImagesOptions {
+  /** When true, PSA’s `_f` / `_b` files correspond to opposite slab sides; swap so our "front" is the card face */
+  reverseBarcode?: boolean;
+}
+
 /**
  * Download front/back cert scans: try CDN first (browser-like fetch); only then call
  * GetImagesByCertNumber to save PSA API quota when the CDN works.
+ * Reverse-barcode certs need side swap so sortOrder 0 matches the card front in the grid.
  */
-export async function downloadPsaCertImages(certNumber: string): Promise<{
+export async function downloadPsaCertImages(
+  certNumber: string,
+  options?: DownloadPsaCertImagesOptions
+): Promise<{
   front: Buffer | null;
   back: Buffer | null;
 }> {
-  const frontCdn = getPsaCdnImageUrlCandidates(certNumber, 'front');
-  const backCdn = getPsaCdnImageUrlCandidates(certNumber, 'back');
+  const rev = options?.reverseBarcode === true;
+  const psaF = getPsaCdnImageUrlCandidates(certNumber, 'front');
+  const psaB = getPsaCdnImageUrlCandidates(certNumber, 'back');
+  const ourFrontCdn = rev ? psaB : psaF;
+  const ourBackCdn = rev ? psaF : psaB;
 
   let [front, back] = await Promise.all([
-    downloadFirstValidImage(frontCdn),
-    downloadFirstValidImage(backCdn),
+    downloadFirstValidImage(ourFrontCdn),
+    downloadFirstValidImage(ourBackCdn),
   ]);
 
   if (!front || !back) {
     const apiUrls = await fetchPsaApiImageUrlList(certNumber);
-    const { front: frontApi, back: backApi } = partitionApiImageUrls(apiUrls);
+    const { front: urlsPsaF, back: urlsPsaB } = partitionApiImageUrls(apiUrls);
+    const ourFrontApi = rev ? urlsPsaB : urlsPsaF;
+    const ourBackApi = rev ? urlsPsaF : urlsPsaB;
     if (!front) {
-      front = await downloadFirstValidImage([...frontApi, ...frontCdn]);
+      front = await downloadFirstValidImage([...ourFrontApi, ...ourFrontCdn]);
     }
     if (!back) {
-      back = await downloadFirstValidImage([...backApi, ...backCdn]);
+      back = await downloadFirstValidImage([...ourBackApi, ...ourBackCdn]);
     }
   }
 
@@ -435,7 +474,7 @@ export async function lookupPSACert(certNumber: string): Promise<PSALookupResult
         labelType: cert.LabelType || 'PSA',
         population: cert.TotalPopulation || 0,
         populationHigher: cert.PopulationHigher || 0,
-        reverseBarcode: cert.ReverseBarcode,
+        reverseBarcode: cert.ReverseBarcode === true,
         specNumber: cert.SpecNumber,
       },
       images: {
