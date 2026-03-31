@@ -4,10 +4,9 @@ import { getUserEmail } from '../../../../../lib/auth';
 import {
   lookupPSACert,
   mapPSAToCardData,
-  downloadPsaCertImages,
+  getPSAImageUrls,
   PSALookupResult,
 } from '../../../../../lib/psa';
-import { saveImage } from '../../../../../lib/storage';
 import { v4 as uuidv4 } from 'uuid';
 
 interface RouteParams {
@@ -131,29 +130,21 @@ export async function POST(
       const cardData = mapPSAToCardData(psaResult.data);
       const cardId = uuidv4();
 
-      // Download scans: browser-like fetch + PSA GetImagesByCertNumber + CDN size fallbacks (see lib/psa.ts)
+      // Hotlink PSA cert scans (same public URLs as PSA/eBay use) — no download or disk usage
       const imageRecords: { originalPath: string; thumbPath: string; filename: string; sortOrder: number }[] = [];
-      const { front: frontBuffer, back: backBuffer } = await downloadPsaCertImages(cleanCert);
-
-      if (frontBuffer) {
-        const frontResult = await saveImage(lotId, `psa_${cleanCert}_front.jpg`, frontBuffer);
-        imageRecords.push({
-          originalPath: frontResult.originalPath,
-          thumbPath: frontResult.thumbPath,
-          filename: frontResult.filename,
-          sortOrder: 0,
-        });
-      }
-
-      if (backBuffer) {
-        const backResult = await saveImage(lotId, `psa_${cleanCert}_back.jpg`, backBuffer);
-        imageRecords.push({
-          originalPath: backResult.originalPath,
-          thumbPath: backResult.thumbPath,
-          filename: backResult.filename,
-          sortOrder: 1,
-        });
-      }
+      const { front: frontUrl, back: backUrl } = getPSAImageUrls(cleanCert);
+      imageRecords.push({
+        originalPath: frontUrl,
+        thumbPath: frontUrl,
+        filename: `psa_${cleanCert}_front.jpg`,
+        sortOrder: 0,
+      });
+      imageRecords.push({
+        originalPath: backUrl,
+        thumbPath: backUrl,
+        filename: `psa_${cleanCert}_back.jpg`,
+        sortOrder: 1,
+      });
 
       // Create the card item with images
       try {

@@ -26,6 +26,7 @@ import {
   GRADER_OPTIONS,
   GRADE_OPTIONS,
   isPsaImportedCard,
+  resolveCardImagePublicUrl,
 } from '../lib/types';
 
 // Helper to check if a condition value is valid (one of the dropdown options)
@@ -38,11 +39,6 @@ function isValidCondition(condition: string | null | undefined): boolean {
 function isValidCategory(category: string | null | undefined): boolean {
   if (!category || category.trim() === '') return false;
   return CATEGORY_OPTIONS.includes(category as typeof CATEGORY_OPTIONS[number]);
-}
-
-// Get image URL (client-side utility)
-function getImageUrl(relativePath: string): string {
-  return `/api/images/${encodeURIComponent(relativePath)}`;
 }
 
 // Mandatory fields for eBay listings
@@ -282,7 +278,7 @@ function ImagePreviewPopup({
       {/* Main Image */}
       <div className="relative bg-black">
         <img
-          src={getImageUrl(currentImage.originalPath)}
+          src={resolveCardImagePublicUrl(currentImage.originalPath)}
           alt={`Card image ${currentImageIndex + 1}`}
           className="w-full h-auto max-h-[500px] object-contain"
         />
@@ -326,7 +322,7 @@ function ImagePreviewPopup({
               }`}
             >
               <img
-                src={getImageUrl(img.thumbPath)}
+                src={resolveCardImagePublicUrl(img.thumbPath)}
                 alt={`Thumbnail ${idx + 1}`}
                 className="w-full h-full object-cover"
               />
@@ -381,7 +377,7 @@ function ImageCellRenderer(props: ICellRendererParams<CardItemWithImages>) {
       {images.slice(0, 2).map((img, idx) => (
         <div key={img.id} className="w-10 h-10 bg-surface-700 rounded overflow-hidden flex-shrink-0 ring-0 group-hover:ring-2 group-hover:ring-primary-500/50 transition-all">
           <img
-            src={getImageUrl(img.thumbPath)}
+            src={resolveCardImagePublicUrl(img.thumbPath)}
             alt={`Image ${idx + 1}`}
             className="w-full h-full object-cover"
             loading="lazy"

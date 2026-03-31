@@ -3,6 +3,7 @@
  */
 
 import { CardItem, CardImage, ExportProfile } from '@prisma/client';
+import { isRemoteImagePath } from './types';
 import { format, addSeconds, parseISO } from 'date-fns';
 
 type CardItemWithImages = CardItem & { images: CardImage[] };
@@ -323,12 +324,14 @@ export function generateEbayCSV(
     const imageUrls = card.images
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((img) => {
-        if (imageBaseUrl) {
-          // Convert local path to full URL
-          return `${imageBaseUrl}/api/images/${encodeURIComponent(img.originalPath)}`;
+        const p = img.originalPath.trim();
+        if (isRemoteImagePath(p)) {
+          return p;
         }
-        // Return local path (will need to be updated before eBay upload)
-        return img.originalPath;
+        if (imageBaseUrl) {
+          return `${imageBaseUrl}/api/images/${encodeURIComponent(p)}`;
+        }
+        return p;
       })
       .join('|');
     

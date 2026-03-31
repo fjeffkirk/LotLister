@@ -241,3 +241,15 @@ export const SHIPPING_SERVICE_OPTIONS = [
 export function isPsaImportedCard(card: { psaImport?: boolean | null }): boolean {
   return card.psaImport === true;
 }
+
+/** Stored image path is an absolute URL (e.g. PSA cert-images hotlink) vs local uploads/... */
+export function isRemoteImagePath(path: string): boolean {
+  return /^https?:\/\//i.test(path.trim());
+}
+
+/** Grid / preview: local paths use /api/images; remote URLs (PSA) load directly */
+export function resolveCardImagePublicUrl(path: string): string {
+  const p = path.trim();
+  if (isRemoteImagePath(p)) return p;
+  return `/api/images/${encodeURIComponent(p)}`;
+}

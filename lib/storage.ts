@@ -6,6 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import sharp from 'sharp';
+import { isRemoteImagePath, resolveCardImagePublicUrl } from './types';
 
 // Use environment variable for uploads directory (for Render/production)
 // Falls back to local 'data' folder for development
@@ -104,6 +105,9 @@ export async function deleteLotImages(lotId: string): Promise<void> {
  */
 export async function deleteImage(originalPath: string, thumbPath: string): Promise<void> {
   try {
+    if (isRemoteImagePath(originalPath) || isRemoteImagePath(thumbPath)) {
+      return;
+    }
     // Handle both old format (data/uploads/...) and new format (uploads/...)
     const fullOriginalPath = resolveImagePath(originalPath);
     const fullThumbPath = resolveImagePath(thumbPath);
@@ -129,9 +133,8 @@ export function resolveImagePath(relativePath: string): string {
 }
 
 /**
- * Get the public URL for an image
+ * Get the public URL for an image (local uploads or absolute PSA hotlink)
  */
 export function getImageUrl(relativePath: string): string {
-  // For local storage, serve via API route
-  return `/api/images/${encodeURIComponent(relativePath)}`;
+  return resolveCardImagePublicUrl(relativePath);
 }

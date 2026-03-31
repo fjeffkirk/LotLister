@@ -192,7 +192,7 @@ export default function PSAImportModal({
                 <ul className="text-sm text-surface-300 space-y-1">
                   <li>• Player/Subject name, Year, Brand, Set, Card number</li>
                   <li>• Grade and Grader (auto-set to PSA)</li>
-                  <li>• Front and back images (when available from PSA)</li>
+                  <li>• Front and back image links from PSA (hotlinked to cert-images.psa.com, not stored here)</li>
                   <li>• Certification number for verification</li>
                 </ul>
               </div>
