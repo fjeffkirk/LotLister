@@ -8,6 +8,7 @@ import {
   DURATION_OPTIONS,
   RETURN_WINDOW_OPTIONS,
   SHIPPING_SERVICE_OPTIONS,
+  EBAY_CARD_CATEGORIES,
 } from '../lib/types';
 
 interface ExportSettingsModalProps {
@@ -245,15 +246,20 @@ export default function ExportSettingsModal({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-2">
-                    eBay Category
+                    Card Type (eBay Category)
                   </label>
-                  <input
-                    type="text"
-                    value={profile.ebayCategory || ''}
+                  <select
+                    value={profile.ebayCategory || '261328'}
                     onChange={(e) => updateField('ebayCategory', e.target.value)}
                     className="w-full"
-                    placeholder="261328"
-                  />
+                  >
+                    {EBAY_CARD_CATEGORIES.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.label} ({cat.id})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-surface-500">Per-card overrides apply automatically for TCG &amp; Non-Sport cards</p>
                 </div>
               </div>
 

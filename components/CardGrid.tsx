@@ -21,12 +21,14 @@ import {
   CardItemWithImages,
   CardImage,
   CATEGORY_OPTIONS,
+  ALL_CATEGORIES_SET,
   CONDITION_TYPE_OPTIONS,
   CONDITION_OPTIONS,
   GRADER_OPTIONS,
   GRADE_OPTIONS,
   isPsaImportedCard,
 } from '../lib/types';
+import SearchableSelect from './SearchableSelect';
 import { imagePathToBrowserSrc } from '../lib/imageUrls';
 
 // Helper to check if a condition value is valid (one of the dropdown options)
@@ -457,7 +459,25 @@ function BulkEditModal({
             Set "{column.headerName}" for all {itemCount} items:
           </label>
           
-          {column.type === 'select' || column.type === 'boolean' ? (
+          {column.field === 'category' ? (
+            <SearchableSelect
+              value={value}
+              onChange={setValue}
+              triggerStyle={{
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                background: '#27272a',
+                border: '1px solid #52525b',
+                borderRadius: '6px',
+                color: value ? '#fafafa' : '#a1a1aa',
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '8px 10px',
+                gap: '6px',
+              }}
+            />
+          ) : column.type === 'select' || column.type === 'boolean' ? (
             <select
               value={value}
               onChange={(e) => setValue(e.target.value)}
@@ -984,32 +1004,25 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
         const card = params.data;
         if (!card) return null;
-        
-        const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-          onCellChange(card.id, 'category', e.target.value);
-        };
-        
         return (
-          <select
+          <SearchableSelect
             value={params.value || ''}
-            onChange={handleChange}
-            onClick={(e) => e.stopPropagation()}
-            style={{ 
-              backgroundColor: 'transparent',
+            onChange={(val) => onCellChange(card.id, 'category', val)}
+            triggerStyle={{
+              display: 'flex',
+              alignItems: 'center',
+              width: '100%',
+              height: '100%',
+              background: 'transparent',
               border: 'none',
               color: params.value ? '#fafafa' : '#a1a1aa',
               cursor: 'pointer',
-              outline: 'none',
-              width: '100%',
+              fontSize: '14px',
+              padding: '0 2px',
+              gap: '4px',
+              textAlign: 'left',
             }}
-          >
-            <option value="" style={{ backgroundColor: '#27272a', color: '#a1a1aa' }}>Select a Category...</option>
-            {CATEGORY_OPTIONS.map(opt => (
-              <option key={opt} value={opt} style={{ backgroundColor: '#27272a', color: '#fafafa' }}>
-                {opt}
-              </option>
-            ))}
-          </select>
+          />
         );
       },
       headerTooltip: 'Required - Right-click to bulk edit',
@@ -1017,8 +1030,7 @@ export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard,
       cellClass: (params: CellClassParams<CardItemWithImages>) => {
         if (!params.data) return '';
         const category = params.data.category;
-        // Show error if no category or not a valid option
-        if (!category || !CATEGORY_OPTIONS.includes(category as typeof CATEGORY_OPTIONS[number])) {
+        if (!category || !ALL_CATEGORIES_SET.has(category)) {
           return 'cell-mandatory-empty';
         }
         return '';

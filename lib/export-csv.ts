@@ -5,6 +5,7 @@
 import { CardItem, CardImage, ExportProfile } from '@prisma/client';
 import { format, addSeconds, parseISO } from 'date-fns';
 import { imagePathToEbayPicUrl } from './imageUrls';
+import { isSportsCategory, getCategoryEbayId } from './types';
 
 type CardItemWithImages = CardItem & { images: CardImage[] };
 
@@ -448,14 +449,22 @@ export function generateEbayCSV(
     // Custom label (can be used for internal tracking)
     const customLabel = `${card.lotId.slice(0, 8)}-${String(i + 1).padStart(3, '0')}`;
     
-    // Sport - always Baseball for this app (required field)
-    const sport = card.category || 'Baseball';
+    // Per-card eBay category: sports → profile setting (default 261328),
+    // TCG → 183454, Non-Sport → 183050, overriding the lot-level profile setting
+    const cardCategory = card.category || '';
+    const ebayCategory = isSportsCategory(cardCategory)
+      ? (profile.ebayCategory || '261328')
+      : getCategoryEbayId(cardCategory);
+
+    // *C:Sport is only used for sports trading cards (eBay category 261328)
+    // For TCG and Non-Sport cards this field should be empty
+    const sport = isSportsCategory(cardCategory) ? cardCategory : '';
     
     // Build row matching the official eBay template header order exactly
     const row = [
       'Add',                                    // *Action
       customLabel,                              // CustomLabel
-      profile.ebayCategory,                     // *Category
+      ebayCategory,                             // *Category (per-card: sports=profile setting, TCG=183454, Non-Sport=183050)
       profile.storeCategory || '',              // StoreCategory
       title.slice(0, 80),                       // *Title (max 80 chars)
       '',                                       // Subtitle
