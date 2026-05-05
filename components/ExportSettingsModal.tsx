@@ -117,8 +117,10 @@ export default function ExportSettingsModal({
     if (!profile.templateName?.trim()) errors.push('Template Name');
     if (!profile.ebayCategory?.trim()) errors.push('eBay Category');
     if (!profile.listingType) errors.push('Listing Type');
-    if (profile.startPriceDefault === null || profile.startPriceDefault === undefined) errors.push('Start Price');
-    if (!profile.durationDays) errors.push('Duration');
+    // Start price default is only relevant for Auction as a fallback starting bid
+    if (profile.listingType === 'Auction' && (profile.startPriceDefault === null || profile.startPriceDefault === undefined)) errors.push('Default Start Bid');
+    // Duration is only relevant for Auction (BuyItNow always uses GTC)
+    if (profile.listingType === 'Auction' && !profile.durationDays) errors.push('Duration');
     if (profile.storeCategory === null || profile.storeCategory === undefined || profile.storeCategory === '') errors.push('Store Category');
     
     // Schedule validation
@@ -252,35 +254,45 @@ export default function ExportSettingsModal({
                 </div>
               </div>
 
-              {/* Pricing */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Pricing / Duration */}
+              <div className={`grid gap-4 ${profile.listingType === 'BuyItNow' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                {profile.listingType !== 'BuyItNow' && (
+                  <div>
+                    <label className="block text-sm font-medium text-surface-300 mb-2">
+                      Default Start Bid ($)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={profile.startPriceDefault || ''}
+                      onChange={(e) => updateField('startPriceDefault', parseFloat(e.target.value) || 0)}
+                      className="w-full"
+                      placeholder="4.99"
+                    />
+                    <p className="mt-1 text-xs text-surface-500">Fallback if a card has no price set</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-2">
-                    Start Price ($)
+                    Duration
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={profile.startPriceDefault || ''}
-                    onChange={(e) => updateField('startPriceDefault', parseFloat(e.target.value) || 0)}
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-surface-300 mb-2">
-                    Duration (days)
-                  </label>
-                  <select
-                    value={profile.durationDays || 7}
-                    onChange={(e) => updateField('durationDays', parseInt(e.target.value))}
-                    className="w-full"
-                  >
-                    {DURATION_OPTIONS.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt} days
-                      </option>
-                    ))}
-                  </select>
+                  {profile.listingType === 'BuyItNow' ? (
+                    <div className="flex items-center h-10 px-3 rounded-lg bg-surface-700/50 border border-surface-600 text-surface-300 text-sm">
+                      GTC — Good Till Cancelled
+                    </div>
+                  ) : (
+                    <select
+                      value={profile.durationDays || 7}
+                      onChange={(e) => updateField('durationDays', parseInt(e.target.value))}
+                      className="w-full"
+                    >
+                      {DURATION_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt} days
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-2">

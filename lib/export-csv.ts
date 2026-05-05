@@ -332,12 +332,14 @@ export function generateEbayCSV(
     const description = customDescription || `<p>${title}</p>`;
     
     // Format and pricing
+    // For FixedPrice: *StartPrice IS the listing price; BuyItNowPrice is an auction-only add-on field
+    // For Auction:    *StartPrice is the starting bid; BuyItNowPrice is an optional instant-buy add-on
     const ebayFormat = EBAY_FORMATS[profile.listingType as keyof typeof EBAY_FORMATS] || 'Auction';
-    const startPrice = profile.listingType === 'Auction'
-      ? (card.salePrice || profile.startPriceDefault)
-      : '';
-    const buyItNowPrice = profile.listingType === 'BuyItNow'
-      ? (card.salePrice || profile.buyItNowPrice || profile.startPriceDefault)
+    const startPrice = profile.listingType === 'BuyItNow'
+      ? (card.salePrice ?? '')
+      : (card.salePrice || profile.startPriceDefault);
+    const buyItNowPrice = profile.listingType === 'Auction'
+      ? (profile.buyItNowPrice || '')
       : '';
     
     // Location
@@ -401,7 +403,8 @@ export function generateEbayCSV(
       '',                                       // VideoID
       description,                              // *Description
       ebayFormat,                               // *Format
-      profile.durationDays,                     // *Duration
+      // FixedPrice must use GTC (Good Till Cancelled); Auction uses numeric days
+      profile.listingType === 'BuyItNow' ? 'GTC' : profile.durationDays, // *Duration
       startPrice,                               // *StartPrice
       buyItNowPrice,                            // BuyItNowPrice
       '',                                       // BestOfferEnabled
