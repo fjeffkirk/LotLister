@@ -192,7 +192,7 @@ export const EBAY_CONDITION_IDS = {
 
 // eBay shipping service codes - map human-readable names to API codes
 const EBAY_SHIPPING_SERVICES: Record<string, string> = {
-  'USPS Ground Advantage': 'USPSGroundAdvantage',
+  'USPS Ground Advantage': 'USPSParcel', // eBay uses USPSParcel as the token for Ground Advantage (ShipScript confirmed)
   'USPS First Class': 'USPSFirstClass',
   'USPS Priority Mail': 'USPSPriority',
   'USPS Priority Mail Express': 'USPSPriorityExpress',
