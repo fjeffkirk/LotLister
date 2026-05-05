@@ -412,9 +412,13 @@ export function generateEbayCSV(
       profile.listingType === 'BuyItNow' ? 'GTC' : profile.durationDays, // *Duration
       startPrice,                               // *StartPrice
       buyItNowPrice,                            // BuyItNowPrice (Auction add-on only; empty for FixedPrice)
-      '0',                                      // BestOfferEnabled (explicit false for both formats)
-      '',                                       // BestOfferAutoAcceptPrice
-      '',                                       // MinimumBestOfferPrice
+      profile.bestOfferEnabled ? '1' : '0',    // BestOfferEnabled
+      profile.bestOfferEnabled && profile.bestOfferAutoAcceptPrice
+        ? String(profile.bestOfferAutoAcceptPrice)
+        : '',                                   // BestOfferAutoAcceptPrice
+      profile.bestOfferEnabled && profile.bestOfferMinimumPrice
+        ? String(profile.bestOfferMinimumPrice)
+        : '',                                   // MinimumBestOfferPrice
       '1',                                      // *Quantity
       profile.immediatePayment ? '1' : '0',     // ImmediatePayRequired
       location,                                 // *Location (empty when PostalCode is used)

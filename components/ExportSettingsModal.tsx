@@ -37,6 +37,9 @@ const DEFAULT_PROFILE: Partial<ExportProfile> = {
   shippingCost: 3.99,
   eachAdditionalItemCost: 1.49,
   immediatePayment: false,
+  bestOfferEnabled: false,
+  bestOfferAutoAcceptPrice: null,
+  bestOfferMinimumPrice: null,
   itemLocationCity: '',
   itemLocationState: '',
   itemLocationZip: '',
@@ -570,16 +573,71 @@ export default function ExportSettingsModal({
               </div>
 
               {/* Payment */}
-              <div className="flex items-center gap-6">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={profile.immediatePayment ?? false}
-                    onChange={(e) => updateField('immediatePayment', e.target.checked)}
-                    className="w-4 h-4 rounded border-surface-600"
-                  />
-                  <span className="text-sm text-surface-300">Require Immediate Payment</span>
-                </label>
+              <div className="space-y-3">
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={profile.immediatePayment ?? false}
+                      onChange={(e) => updateField('immediatePayment', e.target.checked)}
+                      className="w-4 h-4 rounded border-surface-600"
+                    />
+                    <span className="text-sm text-surface-300">Require Immediate Payment</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={profile.bestOfferEnabled ?? false}
+                      onChange={(e) => updateField('bestOfferEnabled', e.target.checked)}
+                      className="w-4 h-4 rounded border-surface-600"
+                    />
+                    <span className="text-sm text-surface-300">Allow Best Offers</span>
+                  </label>
+                </div>
+                {profile.bestOfferEnabled && (
+                  <div className="grid grid-cols-2 gap-4 p-3 rounded-lg bg-surface-800/60 border border-surface-700">
+                    <div>
+                      <label className="block text-sm font-medium text-surface-300 mb-1.5">
+                        Auto-Accept Price ($)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={profile.bestOfferAutoAcceptPrice ?? ''}
+                        onChange={(e) =>
+                          updateField(
+                            'bestOfferAutoAcceptPrice',
+                            e.target.value ? parseFloat(e.target.value) : null
+                          )
+                        }
+                        className="w-full"
+                        placeholder="Optional"
+                      />
+                      <p className="mt-1 text-xs text-surface-500">Auto-accept if offer ≥ this</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-surface-300 mb-1.5">
+                        Minimum Offer Price ($)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={profile.bestOfferMinimumPrice ?? ''}
+                        onChange={(e) =>
+                          updateField(
+                            'bestOfferMinimumPrice',
+                            e.target.value ? parseFloat(e.target.value) : null
+                          )
+                        }
+                        className="w-full"
+                        placeholder="Optional"
+                      />
+                      <p className="mt-1 text-xs text-surface-500">Auto-decline if offer &lt; this</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

@@ -115,6 +115,11 @@ model ExportProfile {
   // Payment
   immediatePayment Boolean @default(false)
 
+  // Best Offer
+  bestOfferEnabled          Boolean @default(false)
+  bestOfferAutoAcceptPrice  Float?  // auto-accept any offer >= this amount (optional)
+  bestOfferMinimumPrice     Float?  // auto-decline any offer < this amount (optional)
+
   // Location
   itemLocationCity  String?
   itemLocationState String?
