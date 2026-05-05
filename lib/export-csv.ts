@@ -192,7 +192,7 @@ export const EBAY_CONDITION_IDS = {
 
 // eBay shipping service codes - map human-readable names to API codes
 const EBAY_SHIPPING_SERVICES: Record<string, string> = {
-  'USPS Ground Advantage': 'USPSParcel',
+  'USPS Ground Advantage': 'USPSGroundAdvantage',
   'USPS First Class': 'USPSFirstClass',
   'USPS Priority Mail': 'USPSPriority',
   'USPS Priority Mail Express': 'USPSPriorityExpress',
@@ -345,13 +345,10 @@ export function generateEbayCSV(
       ? (profile.buyItNowPrice || '')
       : '';
     
-    // Location — eBay accepts either *Location (City, State) OR PostalCode (ZIP), not both.
-    // Use ZIP when available (required by eBay for FixedPrice shipping-estimate accuracy).
-    const hasZip = !!(profile.itemLocationZip?.trim());
-    const location = hasZip
-      ? ''
-      : ([profile.itemLocationCity, profile.itemLocationState].filter(Boolean).join(', ') || 'United States');
-    const postalCode = hasZip ? profile.itemLocationZip!.trim() : '';
+    // Location — *Location is a required (starred) eBay field and must never be blank.
+    // PostalCode is optional but improves shipping-estimate accuracy. Provide both when available.
+    const location = [profile.itemLocationCity, profile.itemLocationState].filter(Boolean).join(', ') || 'United States';
+    const postalCode = profile.itemLocationZip?.trim() || '';
     
     // Shipping
     const shippingType = profile.freeShipping ? 'Free' : 'Flat';
