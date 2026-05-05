@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { CATEGORY_GROUPS } from '../lib/types';
 
 interface SearchableSelectProps {
@@ -97,7 +98,7 @@ export default function SearchableSelect({
         </svg>
       </button>
 
-      {open && (
+      {open && typeof document !== 'undefined' && createPortal(
         <div
           ref={dropdownRef}
           style={{
@@ -194,7 +195,8 @@ export default function SearchableSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
