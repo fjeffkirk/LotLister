@@ -209,19 +209,95 @@ const EBAY_SHIPPING_SERVICES: Record<string, string> = {
   'FedEx Express Saver': 'FedExExpressSaver',
 };
 
-// eBay card condition descriptor codes (for descriptor ID 40001)
-// Maps our display values to eBay's numeric value IDs (verified against ShipScript 2024 reference)
+// eBay card condition descriptor codes (for descriptor ID 40001) — ungraded cards only
+// Values must use the full eBay format: "<label> - (ID: <numeric_id>)"
+// Source: eBay staff post on community.ebay.com (confirmed working by ShipScript)
 const EBAY_CARD_CONDITION_CODES: Record<string, string> = {
-  'Near mint or better: Comparable to a fresh pack': '400010',
-  'Near Mint or Better': '400010',
-  'Near mint or better': '400010',
-  'Excellent: Has clearly visible signs of wear': '400011',
-  'Excellent': '400011',
-  'Very good: Has moderate-to-heavy damage all over': '400012',
-  'Very Good': '400012',
-  'Very good': '400012',
-  'Poor: Is extremely worn and displays flaws all over': '400013',
-  'Poor': '400013',
+  'Near mint or better: Comparable to a fresh pack': 'Near mint or better - (ID: 400010)',
+  'Near Mint or Better': 'Near mint or better - (ID: 400010)',
+  'Near mint or better': 'Near mint or better - (ID: 400010)',
+  'Excellent: Has clearly visible signs of wear': 'Excellent - (ID: 400011)',
+  'Excellent': 'Excellent - (ID: 400011)',
+  'Very good: Has moderate-to-heavy damage all over': 'Very good - (ID: 400012)',
+  'Very Good': 'Very good - (ID: 400012)',
+  'Very good': 'Very good - (ID: 400012)',
+  'Poor: Is extremely worn and displays flaws all over': 'Poor - (ID: 400013)',
+  'Poor': 'Poor - (ID: 400013)',
+};
+
+// eBay professional grader descriptor values (for descriptor ID 27501) — graded cards only
+// Values must use the full eBay format: "<label> - (ID: <numeric_id>)"
+// Source: eBay staff post (tools_apps_team@ebay), confirmed by ShipScript working example
+const EBAY_GRADER_IDS: Record<string, string> = {
+  'Professional Sports Authenticator (PSA)': 'Professional Sports Authenticator (PSA) - (ID: 275010)',
+  'PSA': 'Professional Sports Authenticator (PSA) - (ID: 275010)',
+  'Beckett Collectors Club Grading (BCCG)': 'Beckett Collectors Club Grading (BCCG) - (ID: 275011)',
+  'BCCG': 'Beckett Collectors Club Grading (BCCG) - (ID: 275011)',
+  'Beckett Vintage Grading (BVG)': 'Beckett Vintage Grading (BVG) - (ID: 275012)',
+  'BVG': 'Beckett Vintage Grading (BVG) - (ID: 275012)',
+  'Beckett Grading Services (BGS)': 'Beckett Grading Services (BGS) - (ID: 275013)',
+  'BGS': 'Beckett Grading Services (BGS) - (ID: 275013)',
+  'Certified Sports Guaranty (CSG)': 'Certified Sports Guaranty (CSG) - (ID: 275014)',
+  'CSG': 'Certified Sports Guaranty (CSG) - (ID: 275014)',
+  'Certified Guaranty Company (CGC)': 'Certified Guaranty Company (CGC) - (ID: 275015)',
+  'CGC': 'Certified Guaranty Company (CGC) - (ID: 275015)',
+  'Sportscard Guaranty Corporation (SGC)': 'Sportscard Guaranty Corporation (SGC) - (ID: 275016)',
+  'SGC': 'Sportscard Guaranty Corporation (SGC) - (ID: 275016)',
+  'K Sportscard Authentication (KSA)': 'K Sportscard Authentication (KSA) - (ID: 275017)',
+  'KSA': 'K Sportscard Authentication (KSA) - (ID: 275017)',
+  'Gem Mint Authentication (GMA)': 'Gem Mint Authentication (GMA) - (ID: 275018)',
+  'GMA': 'Gem Mint Authentication (GMA) - (ID: 275018)',
+  'Hybrid Grading Approach (HGA)': 'Hybrid Grading Approach (HGA) - (ID: 275019)',
+  'HGA': 'Hybrid Grading Approach (HGA) - (ID: 275019)',
+  'International Sports Authentication (ISA)': 'International Sports Authentication (ISA) - (ID: 2750110)',
+  'ISA': 'International Sports Authentication (ISA) - (ID: 2750110)',
+  'Gold Standard Grading (GSG)': 'Gold Standard Grading (GSG) - (ID: 2750112)',
+  'GSG': 'Gold Standard Grading (GSG) - (ID: 2750112)',
+  'Platin Grading Service (PGS)': 'Platin Grading Service (PGS) - (ID: 2750113)',
+  'PGS': 'Platin Grading Service (PGS) - (ID: 2750113)',
+  'MNT Grading (MNT)': 'MNT Grading (MNT) - (ID: 2750114)',
+  'MNT': 'MNT Grading (MNT) - (ID: 2750114)',
+  'Technical Authentication & Grading (TAG)': 'Technical Authentication & Grading (TAG) - (ID: 2750115)',
+  'TAG': 'Technical Authentication & Grading (TAG) - (ID: 2750115)',
+  'Rare Edition (Rare)': 'Rare Edition (Rare) - (ID: 2750116)',
+  'Rare': 'Rare Edition (Rare) - (ID: 2750116)',
+  'Revolution Card Grading (RCG)': 'Revolution Card Grading (RCG) - (ID: 2750117)',
+  'RCG': 'Revolution Card Grading (RCG) - (ID: 2750117)',
+  'Card Grading Australia (CGA)': 'Card Grading Australia (CGA) - (ID: 2750120)',
+  'CGA': 'Card Grading Australia (CGA) - (ID: 2750120)',
+  'Trading Card Grading (TCG)': 'Trading Card Grading (TCG) - (ID: 2750121)',
+  'TCG': 'Trading Card Grading (TCG) - (ID: 2750121)',
+  'Other': 'Other - (ID: 2750123)',
+};
+
+// eBay grade descriptor values (for descriptor ID 27502) — graded cards only
+// Values must use the full eBay format: "<label> - (ID: <numeric_id>)"
+const EBAY_GRADE_IDS: Record<string, string> = {
+  '10': '10 - (ID: 275020)',
+  '9.5': '9.5 - (ID: 275021)',
+  '9': '9 - (ID: 275022)',
+  '8.5': '8.5 - (ID: 275023)',
+  '8': '8 - (ID: 275024)',
+  '7.5': '7.5 - (ID: 275025)',
+  '7': '7 - (ID: 275026)',
+  '6.5': '6.5 - (ID: 275027)',
+  '6': '6 - (ID: 275028)',
+  '5.5': '5.5 - (ID: 275029)',
+  '5': '5 - (ID: 2750210)',
+  '4.5': '4.5 - (ID: 2750211)',
+  '4': '4 - (ID: 2750212)',
+  '3.5': '3.5 - (ID: 2750213)',
+  '3': '3 - (ID: 2750214)',
+  '2.5': '2.5 - (ID: 2750215)',
+  '2': '2 - (ID: 2750216)',
+  '1.5': '1.5 - (ID: 2750217)',
+  '1': '1 - (ID: 2750218)',
+  'A': 'Authentic - (ID: 2750219)',
+  'Auth': 'Authentic - (ID: 2750219)',
+  'Authentic': 'Authentic - (ID: 2750219)',
+  'Authentic Altered': 'Authentic Altered - (ID: 2750220)',
+  'Authentic - Trimmed': 'Authentic - Trimmed - (ID: 2750221)',
+  'Authentic - Colored': 'Authentic - Colored - (ID: 2750222)',
 };
 
 // eBay format types
@@ -313,14 +389,20 @@ export function generateEbayCSV(
       ? EBAY_CONDITION_IDS.GRADED
       : EBAY_CONDITION_IDS.UNGRADED;
     
-    // Card condition descriptor (only for ungraded) - use eBay's numeric code
+    // Card condition descriptor (only for ungraded)
+    // Must use full eBay format: "<label> - (ID: <numeric_id>)"
     const rawCondition = card.condition || '';
-    const cardCondition = isGraded ? '' : (EBAY_CARD_CONDITION_CODES[rawCondition] || '400010');
-    
-    // Grader info (only for graded)
-    const grader = isGraded ? (card.grader || '') : '';
+    const cardCondition = isGraded
+      ? ''
+      : (EBAY_CARD_CONDITION_CODES[rawCondition] || 'Near mint or better - (ID: 400010)');
+
+    // Grader/grade descriptors (only for graded)
+    // Must use full eBay format: "<label> - (ID: <numeric_id>)"
+    const rawGrader = card.grader || '';
+    const rawGrade = ((card as Record<string, unknown>).grade as string) || '';
+    const grader = isGraded ? (EBAY_GRADER_IDS[rawGrader] || EBAY_GRADER_IDS['Other'] || rawGrader) : '';
+    const grade = isGraded ? (EBAY_GRADE_IDS[rawGrade] || rawGrade) : '';
     const certNo = isGraded ? (card.certNo || '') : '';
-    const grade = isGraded ? ((card as Record<string, unknown>).grade as string || '') : '';
     
     // Image URLs - if base URL provided, convert local paths to full URLs
     // eBay uses pipe (|) separator for multiple images
