@@ -168,6 +168,7 @@ const EBAY_FILE_EXCHANGE_HEADERS = [
   '*Quantity',
   'ImmediatePayRequired',
   '*Location',
+  'PostalCode',
   'ShippingType',
   'ShippingService-1:Option',
   'ShippingService-1:Cost',
@@ -209,16 +210,18 @@ const EBAY_SHIPPING_SERVICES: Record<string, string> = {
 };
 
 // eBay card condition descriptor codes (for descriptor ID 40001)
-// Maps our display values to eBay's numeric codes
+// Maps our display values to eBay's numeric value IDs (verified against ShipScript 2024 reference)
 const EBAY_CARD_CONDITION_CODES: Record<string, string> = {
   'Near mint or better: Comparable to a fresh pack': '400010',
   'Near Mint or Better': '400010',
-  'Excellent: Has clearly visible signs of wear': '400020',
-  'Excellent': '400020',
-  'Very good: Has moderate-to-heavy damage all over': '400030',
-  'Very Good': '400030',
-  'Poor: Is extremely worn and displays flaws all over': '400040',
-  'Poor': '400040',
+  'Near mint or better': '400010',
+  'Excellent: Has clearly visible signs of wear': '400011',
+  'Excellent': '400011',
+  'Very good: Has moderate-to-heavy damage all over': '400012',
+  'Very Good': '400012',
+  'Very good': '400012',
+  'Poor: Is extremely worn and displays flaws all over': '400013',
+  'Poor': '400013',
 };
 
 // eBay format types
@@ -342,11 +345,13 @@ export function generateEbayCSV(
       ? (profile.buyItNowPrice || '')
       : '';
     
-    // Location
-    const location = [
-      profile.itemLocationCity,
-      profile.itemLocationState,
-    ].filter(Boolean).join(', ') || 'United States';
+    // Location — eBay accepts either *Location (City, State) OR PostalCode (ZIP), not both.
+    // Use ZIP when available (required by eBay for FixedPrice shipping-estimate accuracy).
+    const hasZip = !!(profile.itemLocationZip?.trim());
+    const location = hasZip
+      ? ''
+      : ([profile.itemLocationCity, profile.itemLocationState].filter(Boolean).join(', ') || 'United States');
+    const postalCode = hasZip ? profile.itemLocationZip!.trim() : '';
     
     // Shipping
     const shippingType = profile.freeShipping ? 'Free' : 'Flat';
@@ -406,13 +411,14 @@ export function generateEbayCSV(
       // FixedPrice must use GTC (Good Till Cancelled); Auction uses numeric days
       profile.listingType === 'BuyItNow' ? 'GTC' : profile.durationDays, // *Duration
       startPrice,                               // *StartPrice
-      buyItNowPrice,                            // BuyItNowPrice
-      '',                                       // BestOfferEnabled
+      buyItNowPrice,                            // BuyItNowPrice (Auction add-on only; empty for FixedPrice)
+      '0',                                      // BestOfferEnabled (explicit false for both formats)
       '',                                       // BestOfferAutoAcceptPrice
       '',                                       // MinimumBestOfferPrice
       '1',                                      // *Quantity
       profile.immediatePayment ? '1' : '0',     // ImmediatePayRequired
-      location,                                 // *Location
+      location,                                 // *Location (empty when PostalCode is used)
+      postalCode,                               // PostalCode (ZIP — preferred over *Location for FixedPrice)
       shippingType,                             // ShippingType
       EBAY_SHIPPING_SERVICES[profile.shippingService] || 'USPSParcel', // ShippingService-1:Option
       shippingCost,                             // ShippingService-1:Cost
