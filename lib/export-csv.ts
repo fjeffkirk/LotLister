@@ -141,6 +141,7 @@ const EBAY_FILE_EXCHANGE_HEADERS = [
   'CDA:Certification Number - (ID: 27503)',
   'CD:Card Condition - (ID: 40001)',
   '*C:Sport',
+  'C:Game',
   'C:Player/Athlete',
   'C:Season',
   'C:Year Manufactured',
@@ -464,6 +465,11 @@ export function generateEbayCSV(
     // on every TAG/TCG card in export).
     const sport = isSportsCategory(cardCategory) ? cardCategory : 'Non-Sport';
 
+    // CCG category (183454) has its own required item specific: "Game" (e.g. "Pokémon",
+    // "Dragon Ball Super Card Game"). Our category value IS the game name for TCG cards,
+    // so reuse it directly. Not applicable/left blank for Sports and Non-Sport cards.
+    const game = isTcgCategory(cardCategory) ? cardCategory : '';
+
     // C:Type has no real fixed eBay enum, but should still describe the item accurately per group
     const cardType = isSportsCategory(cardCategory)
       ? 'Sports Trading Card'
@@ -488,6 +494,7 @@ export function generateEbayCSV(
       certNo,                                   // CDA:Certification Number - (ID: 27503)
       cardCondition,                            // CD:Card Condition - (ID: 40001)
       sport,                                    // *C:Sport
+      game,                                      // C:Game
       card.name || '',                          // C:Player/Athlete
       card.year || '',                          // C:Season
       card.year || '',                          // C:Year Manufactured
