@@ -220,6 +220,16 @@ export function isSportsCategory(category: string): boolean {
   return (SPORTS_CATEGORIES as readonly string[]).includes(category);
 }
 
+/** Returns true only for TCG/CCG categories (eBay 183454) */
+export function isTcgCategory(category: string): boolean {
+  return (TCG_CATEGORIES as readonly string[]).includes(category);
+}
+
+/** Returns true only for non-sport categories (eBay 183050) */
+export function isNonSportCategory(category: string): boolean {
+  return (NON_SPORT_CATEGORIES as readonly string[]).includes(category);
+}
+
 // eBay category options for the export settings modal
 export const EBAY_CARD_CATEGORIES = [
   { label: 'Sports Trading Cards', id: '261328' },

@@ -5,7 +5,7 @@
 import { CardItem, CardImage, ExportProfile } from '@prisma/client';
 import { format, addSeconds, parseISO } from 'date-fns';
 import { imagePathToEbayPicUrl } from './imageUrls';
-import { isSportsCategory, getCategoryEbayId } from './types';
+import { isSportsCategory, isTcgCategory, getCategoryEbayId } from './types';
 
 type CardItemWithImages = CardItem & { images: CardImage[] };
 
@@ -456,9 +456,20 @@ export function generateEbayCSV(
       ? (profile.ebayCategory || '261328')
       : getCategoryEbayId(cardCategory);
 
-    // *C:Sport is only used for sports trading cards (eBay category 261328)
-    // For TCG and Non-Sport cards this field should be empty
-    const sport = isSportsCategory(cardCategory) ? cardCategory : '';
+    // *C:Sport is a starred (required) column in this single-template export, so eBay's File
+    // Exchange parser rejects ANY row that leaves it blank — even TCG/Non-Sport rows where the
+    // "Sport" aspect doesn't semantically apply and isn't enforced by eBay's own category schema.
+    // "Non-Sport" is eBay's own recognized catch-all value for exactly this case, so we use it
+    // instead of leaving the cell empty (which caused "item specific Sport is missing" failures
+    // on every TAG/TCG card in export).
+    const sport = isSportsCategory(cardCategory) ? cardCategory : 'Non-Sport';
+
+    // C:Type has no real fixed eBay enum, but should still describe the item accurately per group
+    const cardType = isSportsCategory(cardCategory)
+      ? 'Sports Trading Card'
+      : isTcgCategory(cardCategory)
+        ? 'CCG Card'
+        : 'Non-Sport Trading Card';
     
     // Build row matching the official eBay template header order exactly
     const row = [
@@ -489,7 +500,7 @@ export function generateEbayCSV(
       'No',                                     // C:Autographed
       card.name || '',                          // C:Card Name
       card.cardNumber || '',                    // C:Card Number
-      'Sports Trading Card',                    // C:Type
+      cardType,                                 // C:Type
       isGraded ? 'Yes' : 'No',                  // C:Graded
       imageUrls,                                // PicURL
       '',                                       // GalleryType
