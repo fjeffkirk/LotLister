@@ -28,6 +28,8 @@ interface ImportResponse {
   results: ImportResult[];
 }
 
+export const maxDuration = 120;
+
 // POST /api/lots/[lotId]/import-psa - Import cards from PSA cert numbers
 export async function POST(
   request: NextRequest,

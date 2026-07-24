@@ -8,6 +8,16 @@ import path from 'path';
 import sharp from 'sharp';
 import { imagePathToBrowserSrc } from './imageUrls';
 
+// Keep Sharp from caching decoded images across requests (important on small Render instances)
+sharp.cache(false);
+sharp.concurrency(1);
+
+/** Max images accepted per upload request (client batches above this) */
+export const MAX_IMAGES_PER_UPLOAD = 8;
+
+/** Reject individual files larger than this (bytes) */
+export const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024;
+
 // Use environment variable for uploads directory (for Render/production)
 // Falls back to local 'data' folder for development
 const UPLOADS_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'data', 'uploads');
@@ -61,12 +71,12 @@ export async function saveImage(
   const thumbFilename = `thumb_${uniqueFilename}`.replace(ext, '.jpg');
   const thumbPath = path.join(thumbDir, thumbFilename);
   
-  // Save original
+  // Write to disk first so Sharp reads from file — avoids holding buffer + decode in memory
   await fs.writeFile(originalPath, buffer);
-  
+
   // Generate thumbnail (200px width, maintain aspect ratio)
   // .rotate() with no args auto-rotates based on EXIF orientation, then removes the tag
-  await sharp(buffer)
+  await sharp(originalPath)
     .rotate()
     .resize(200, 200, {
       fit: 'inside',

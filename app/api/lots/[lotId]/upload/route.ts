@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
-import { saveImage } from '../../../../../lib/storage';
+import {
+  saveImage,
+  MAX_IMAGES_PER_UPLOAD,
+  MAX_IMAGE_FILE_BYTES,
+} from '../../../../../lib/storage';
 import { groupImages, createCardItemsFromGroups, ImageInfo } from '../../../../../lib/grouping';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiResponse } from '../../../../../lib/types';
@@ -14,6 +18,9 @@ interface UploadResult {
   totalImages: number;
   cardsCreated: number;
 }
+
+/** Allow long-running batches on Render (image decode + thumb generation) */
+export const maxDuration = 120;
 
 // POST /api/lots/[lotId]/upload - Upload images and create card items
 export async function POST(
@@ -51,13 +58,33 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    if (files.length > MAX_IMAGES_PER_UPLOAD) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Maximum ${MAX_IMAGES_PER_UPLOAD} images per upload request. Send smaller batches.`,
+        },
+        { status: 400 }
+      );
+    }
     
-    // Process each file
+    // Process each file sequentially — one buffer + one Sharp job at a time
     const uploadedImages: ImageInfo[] = [];
     
     for (const file of files) {
       if (!file.type.startsWith('image/')) {
         continue;
+      }
+
+      if (file.size > MAX_IMAGE_FILE_BYTES) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Image "${file.name}" exceeds the ${Math.round(MAX_IMAGE_FILE_BYTES / (1024 * 1024))}MB limit`,
+          },
+          { status: 413 }
+        );
       }
       
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -81,9 +108,16 @@ export async function POST(
     
     // Group images into card groups
     const groups = groupImages(uploadedImages, imagesPerCard);
+
+    const lastCard = await prisma.cardItem.findFirst({
+      where: { lotId },
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    });
+    const startSortOrder = (lastCard?.sortOrder ?? -1) + 1;
     
-    // Create card items from groups
-    await createCardItemsFromGroups(lotId, groups);
+    // Create card items from groups (append after existing cards when batching)
+    await createCardItemsFromGroups(lotId, groups, startSortOrder);
     
     return NextResponse.json({
       success: true,

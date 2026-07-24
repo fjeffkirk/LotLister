@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createReadStream } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
+import { Readable } from 'stream';
 import { resolveImagePath } from '../../../../lib/storage';
 
 interface RouteParams {
@@ -16,13 +18,9 @@ export async function GET(
     const { path: pathParts } = await params;
     const relativePath = decodeURIComponent(pathParts.join('/'));
     
-    // Resolve the path using storage helper (handles both old and new formats)
     const fullPath = resolveImagePath(relativePath);
+    const stats = await fs.stat(fullPath);
     
-    // Read the file
-    const fileBuffer = await fs.readFile(fullPath);
-    
-    // Determine content type
     const ext = path.extname(fullPath).toLowerCase();
     const contentTypes: Record<string, string> = {
       '.jpg': 'image/jpeg',
@@ -33,10 +31,14 @@ export async function GET(
     };
     const contentType = contentTypes[ext] || 'application/octet-stream';
     
-    return new NextResponse(fileBuffer, {
+    const nodeStream = createReadStream(fullPath);
+    const webStream = Readable.toWeb(nodeStream) as ReadableStream;
+    
+    return new NextResponse(webStream, {
       status: 200,
       headers: {
         'Content-Type': contentType,
+        'Content-Length': String(stats.size),
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });

@@ -46,7 +46,8 @@ export function groupImages(images: ImageInfo[], imagesPerCard: number): CardGro
  */
 export async function createCardItemsFromGroups(
   lotId: string,
-  groups: CardGroup[]
+  groups: CardGroup[],
+  startSortOrder = 0
 ): Promise<void> {
   // Use a transaction to ensure all items are created together
   await prisma.$transaction(async (tx) => {
@@ -58,7 +59,7 @@ export async function createCardItemsFromGroups(
         data: {
           id: group.cardItemId,
           lotId,
-          sortOrder: i,
+          sortOrder: startSortOrder + i,
         },
       });
       

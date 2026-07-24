@@ -139,6 +139,7 @@ export default function ImportPage() {
   const [filesWithUrls, setFilesWithUrls] = useState<FileWithUrl[]>([]);
   const [imagesPerCard, setImagesPerCard] = useState(2);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // Refs for drag state
@@ -260,35 +261,65 @@ export default function ImportPage() {
     },
   }).current;
 
+  /** Match server MAX_IMAGES_PER_UPLOAD — batch so each request stays within memory budget */
+  const MAX_IMAGES_PER_REQUEST = 8;
+
+  function uploadBatchSize(perCard: number): number {
+    const cardsPerBatch = Math.max(1, Math.floor(MAX_IMAGES_PER_REQUEST / perCard));
+    return cardsPerBatch * perCard;
+  }
+
   const handleUpload = async () => {
     if (filesWithUrls.length === 0) return;
 
     setUploading(true);
     setError(null);
+    setUploadProgress(null);
+
+    const allFiles = filesWithUrls.map(({ file }) => file);
+    const batchSize = uploadBatchSize(imagesPerCard);
 
     try {
-      const formData = new FormData();
-      formData.append('imagesPerCard', String(imagesPerCard));
-      filesWithUrls.forEach(({ file }) => {
-        formData.append('images', file);
-      });
+      for (let i = 0; i < allFiles.length; i += batchSize) {
+        const batch = allFiles.slice(i, i + batchSize);
+        setUploadProgress({ done: i, total: allFiles.length });
 
-      const res = await fetch(`/api/lots/${lotId}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+        const formData = new FormData();
+        formData.append('imagesPerCard', String(imagesPerCard));
+        batch.forEach((file) => {
+          formData.append('images', file);
+        });
 
-      const data = await res.json();
+        const res = await fetch(`/api/lots/${lotId}/upload`, {
+          method: 'POST',
+          body: formData,
+        });
 
-      if (data.success) {
-        router.push(`/lots/${lotId}`);
-      } else {
-        setError(data.error || 'Upload failed');
+        let data: { success?: boolean; error?: string };
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(
+            res.status === 502
+              ? 'Server ran out of memory processing images. Try uploading fewer photos at once.'
+              : `Upload failed (${res.status}). Please try again.`
+          );
+        }
+
+        if (!res.ok || !data.success) {
+          setError(data.error || `Upload failed (${res.status})`);
+          return;
+        }
+
+        setUploadProgress({ done: i + batch.length, total: allFiles.length });
       }
+
+      router.push(`/lots/${lotId}`);
     } catch (err) {
-      setError('Upload failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -324,7 +355,11 @@ export default function ImportPage() {
                 {uploading ? (
                   <>
                     <div className="spinner w-4 h-4"></div>
-                    <span className="hidden sm:inline">Uploading...</span>
+                    <span className="hidden sm:inline">
+                      {uploadProgress
+                        ? `Uploading ${uploadProgress.done} / ${uploadProgress.total}…`
+                        : 'Uploading…'}
+                    </span>
                   </>
                 ) : (
                   <>

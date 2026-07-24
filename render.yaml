@@ -7,6 +7,9 @@ services:
     buildCommand: npm ci --include=dev && npx prisma generate && NODE_OPTIONS="--max-old-space-size=512" npm run build
     startCommand: npx prisma db push --skip-generate && npm start
     envVars:
+      # Cap Node heap below Render's 512MB container limit (Sharp/native memory sits outside heap)
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
       - key: DATABASE_URL
         value: file:/data/lotlister.sqlite
       - key: UPLOAD_DIR

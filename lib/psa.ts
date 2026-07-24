@@ -313,11 +313,9 @@ export async function downloadPsaCertImages(
   const clean = certNumber.replace(/\D/g, '');
   const variants = certNumberUrlVariants(clean);
 
+  // Sequential downloads — avoid holding API + CDN buffers in memory at once
   const apiUrls = await fetchPsaApiImageUrlsOrdered(clean);
-  const [apiBufs, { f: bufF, b: bufB }] = await Promise.all([
-    downloadDistinctFromUrls(apiUrls, 4),
-    downloadCdnBothSides(variants),
-  ]);
+  const apiBufs = await downloadDistinctFromUrls(apiUrls, 2);
 
   let front: Buffer | null = null;
   let back: Buffer | null = null;
@@ -327,6 +325,7 @@ export async function downloadPsaCertImages(
     back = apiBufs[1];
   } else if (apiBufs.length === 1) {
     front = apiBufs[0];
+    const { f: bufF, b: bufB } = await downloadCdnBothSides(variants);
     for (const c of [bufF, bufB]) {
       if (c && bufferSig(c) !== bufferSig(front)) {
         back = c;
@@ -334,6 +333,7 @@ export async function downloadPsaCertImages(
       }
     }
   } else {
+    const { f: bufF, b: bufB } = await downloadCdnBothSides(variants);
     if (bufF && bufB && bufferSig(bufF) !== bufferSig(bufB)) {
       front = bufB;
       back = bufF;
