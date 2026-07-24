@@ -12,9 +12,6 @@ import { imagePathToBrowserSrc } from './imageUrls';
 sharp.cache(false);
 sharp.concurrency(1);
 
-/** Max images accepted per upload request (client batches above this) */
-export const MAX_IMAGES_PER_UPLOAD = 8;
-
 /** Reject individual files larger than this (bytes) */
 export const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024;
 

@@ -175,6 +175,7 @@ export default function ImportPage() {
       'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
     },
     multiple: true,
+    disabled: uploading,
   });
 
   const removeFile = useCallback((index: number) => {
@@ -261,57 +262,67 @@ export default function ImportPage() {
     },
   }).current;
 
-  /** Match server MAX_IMAGES_PER_UPLOAD — batch so each request stays within memory budget */
-  const MAX_IMAGES_PER_REQUEST = 8;
-
-  function uploadBatchSize(perCard: number): number {
-    const cardsPerBatch = Math.max(1, Math.floor(MAX_IMAGES_PER_REQUEST / perCard));
-    return cardsPerBatch * perCard;
+  interface UploadedImageInfo {
+    originalPath: string;
+    thumbPath: string;
+    filename: string;
   }
 
+  // Upload one image per request — keeps server memory flat no matter how many photos
+  // are being imported (no artificial cap on total count). A progress bar tracks all of them.
   const handleUpload = async () => {
     if (filesWithUrls.length === 0) return;
 
     setUploading(true);
     setError(null);
-    setUploadProgress(null);
+    const total = filesWithUrls.length;
+    setUploadProgress({ done: 0, total });
 
-    const allFiles = filesWithUrls.map(({ file }) => file);
-    const batchSize = uploadBatchSize(imagesPerCard);
+    const uploaded: UploadedImageInfo[] = [];
 
     try {
-      for (let i = 0; i < allFiles.length; i += batchSize) {
-        const batch = allFiles.slice(i, i + batchSize);
-        setUploadProgress({ done: i, total: allFiles.length });
+      for (let i = 0; i < filesWithUrls.length; i++) {
+        const { file } = filesWithUrls[i];
 
         const formData = new FormData();
-        formData.append('imagesPerCard', String(imagesPerCard));
-        batch.forEach((file) => {
-          formData.append('images', file);
-        });
+        formData.append('image', file);
 
-        const res = await fetch(`/api/lots/${lotId}/upload`, {
+        const res = await fetch(`/api/lots/${lotId}/upload/image`, {
           method: 'POST',
           body: formData,
         });
 
-        let data: { success?: boolean; error?: string };
+        let data: { success?: boolean; error?: string; data?: UploadedImageInfo };
         try {
           data = await res.json();
         } catch {
           throw new Error(
             res.status === 502
-              ? 'Server ran out of memory processing images. Try uploading fewer photos at once.'
-              : `Upload failed (${res.status}). Please try again.`
+              ? `Server ran out of memory on "${file.name}" (image ${i + 1} of ${total}). Please try again.`
+              : `Upload failed on "${file.name}" (image ${i + 1} of ${total}, status ${res.status}).`
           );
         }
 
-        if (!res.ok || !data.success) {
-          setError(data.error || `Upload failed (${res.status})`);
-          return;
+        if (!res.ok || !data.success || !data.data) {
+          throw new Error(
+            data.error || `Failed to upload "${file.name}" (image ${i + 1} of ${total})`
+          );
         }
 
-        setUploadProgress({ done: i + batch.length, total: allFiles.length });
+        uploaded.push(data.data);
+        setUploadProgress({ done: i + 1, total });
+      }
+
+      // All files are saved on disk — now group them into cards in one lightweight call
+      const finalizeRes = await fetch(`/api/lots/${lotId}/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: uploaded, imagesPerCard }),
+      });
+
+      const finalizeData = await finalizeRes.json();
+      if (!finalizeRes.ok || !finalizeData.success) {
+        throw new Error(finalizeData.error || 'Images uploaded, but failed to create cards. Try again.');
       }
 
       router.push(`/lots/${lotId}`);
@@ -341,7 +352,10 @@ export default function ImportPage() {
           
           {filesWithUrls.length > 0 && (
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              <Link href={`/lots/${lotId}`} className="btn btn-secondary text-sm py-1.5 sm:py-2 px-2 sm:px-3">
+              <Link
+                href={`/lots/${lotId}`}
+                className={`btn btn-secondary text-sm py-1.5 sm:py-2 px-2 sm:px-3 ${uploading ? 'pointer-events-none opacity-50' : ''}`}
+              >
                 <span className="hidden sm:inline">Cancel</span>
                 <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -355,11 +369,7 @@ export default function ImportPage() {
                 {uploading ? (
                   <>
                     <div className="spinner w-4 h-4"></div>
-                    <span className="hidden sm:inline">
-                      {uploadProgress
-                        ? `Uploading ${uploadProgress.done} / ${uploadProgress.total}…`
-                        : 'Uploading…'}
-                    </span>
+                    <span className="hidden sm:inline">Uploading…</span>
                   </>
                 ) : (
                   <>
@@ -375,6 +385,28 @@ export default function ImportPage() {
           )}
         </div>
       </header>
+
+      {/* Upload progress bar — one request per image, so this tracks the whole batch */}
+      {uploading && uploadProgress && (
+        <div className="sticky top-0 z-10 bg-surface-900 border-b border-surface-800 px-4 sm:px-6 py-2.5">
+          <div className="max-w-[1600px] mx-auto">
+            <div className="flex items-center justify-between text-xs text-surface-300 mb-1.5">
+              <span>Uploading images…</span>
+              <span className="tabular-nums">
+                {uploadProgress.done} / {uploadProgress.total}
+              </span>
+            </div>
+            <div className="h-2 w-full bg-surface-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary-500 rounded-full transition-all duration-200"
+                style={{
+                  width: `${Math.round((uploadProgress.done / uploadProgress.total) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main content */}
       <main className="max-w-[1600px] mx-auto px-6 py-6">
@@ -454,13 +486,14 @@ export default function ImportPage() {
               </div>
               <button
                 onClick={clearFiles}
-                className="text-sm text-surface-400 hover:text-red-400 transition-colors"
+                disabled={uploading}
+                className="text-sm text-surface-400 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-surface-400"
                 type="button"
               >
                 Clear all
               </button>
             </div>
-            <div className="p-4">
+            <div className={`p-4 ${uploading ? 'pointer-events-none opacity-60' : ''}`}>
               <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-3">
                 {filesWithUrls.map((fileData, index) => {
                   const cardNumber = Math.floor(index / imagesPerCard) + 1;
