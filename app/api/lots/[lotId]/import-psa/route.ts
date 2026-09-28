@@ -65,9 +65,9 @@ export async function POST(
       );
     }
 
-    if (certNumbers.length > 50) {
+    if (certNumbers.length > 100) {
       return NextResponse.json(
-        { success: false, error: 'Maximum 50 cert numbers per import' },
+        { success: false, error: 'Maximum 100 cert numbers per import' },
         { status: 400 }
       );
     }
