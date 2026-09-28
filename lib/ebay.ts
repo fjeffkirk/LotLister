@@ -116,7 +116,7 @@ export async function getEbayPublicStatus(userEmail: string): Promise<EbayPublic
     configured: missingEnvVars.length === 0,
     missingEnvVars,
     connected: Boolean(connection),
-    ebayUserId: connection?.ebayUserId ?? null,
+    ebayUserId: connection?.ebayUsername ?? connection?.ebayUserId ?? null,
   };
 }
 
@@ -193,7 +193,34 @@ async function refreshEbayAccessToken(creds: EbayCredentials, refreshToken: stri
   );
 }
 
-export async function fetchEbayUsername(accessToken: string): Promise<string | null> {
+let cachedAppToken: { token: string; expiresAt: number } | null = null;
+
+/** Client-credentials token for app-level calls such as the Notification API public key lookup. */
+export async function getEbayApplicationToken(): Promise<string> {
+  if (cachedAppToken && cachedAppToken.expiresAt > Date.now() + 60_000) {
+    return cachedAppToken.token;
+  }
+  const creds = await getEbayCredentials();
+  if (!creds) {
+    throw new Error(`eBay is not configured on the server. Missing: ${missingEbayEnvVars().join(', ')}`);
+  }
+  const token = await requestEbayToken(
+    creds,
+    new URLSearchParams({
+      grant_type: 'client_credentials',
+      scope: 'https://api.ebay.com/oauth/api_scope',
+    })
+  );
+  cachedAppToken = { token: token.access_token, expiresAt: Date.now() + token.expires_in * 1000 };
+  return token.access_token;
+}
+
+export interface EbayIdentity {
+  userId: string | null;
+  username: string | null;
+}
+
+export async function fetchEbayIdentity(accessToken: string): Promise<EbayIdentity> {
   try {
     const response = await fetch(IDENTITY_URL, {
       headers: {
@@ -201,18 +228,18 @@ export async function fetchEbayUsername(accessToken: string): Promise<string | n
         Accept: 'application/json',
       },
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { userId: null, username: null };
     const data = (await response.json()) as { username?: string; userId?: string };
-    return data.username || data.userId || null;
+    return { userId: data.userId || null, username: data.username || null };
   } catch {
-    return null;
+    return { userId: null, username: null };
   }
 }
 
 export async function saveEbayConnection(
   userEmail: string,
   token: TokenResponse,
-  ebayUserId: string | null
+  identity: EbayIdentity | null
 ): Promise<void> {
   const existing = await prisma.ebayConnection.findUnique({ where: { userEmail } });
   const refreshToken = token.refresh_token || existing?.refreshToken;
@@ -227,13 +254,15 @@ export async function saveEbayConnection(
       accessToken: token.access_token,
       refreshToken,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
-      ebayUserId,
+      ebayUserId: identity?.userId ?? null,
+      ebayUsername: identity?.username ?? null,
     },
     update: {
       accessToken: token.access_token,
       refreshToken,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
-      ebayUserId: ebayUserId ?? existing?.ebayUserId ?? null,
+      ebayUserId: identity?.userId ?? existing?.ebayUserId ?? null,
+      ebayUsername: identity?.username ?? existing?.ebayUsername ?? null,
     },
   });
 }
@@ -254,7 +283,7 @@ export async function getValidEbayAccessToken(userEmail: string): Promise<string
   }
 
   const refreshed = await refreshEbayAccessToken(creds, connection.refreshToken);
-  await saveEbayConnection(userEmail, refreshed, connection.ebayUserId);
+  await saveEbayConnection(userEmail, refreshed, null);
   return refreshed.access_token;
 }
 

@@ -145,6 +145,19 @@ model EbayConnection {
   accessToken     String
   refreshToken    String
   accessExpiresAt DateTime
-  ebayUserId      String?
+  ebayUserId      String? // Immutable eBay user id from the Identity API
+  ebayUsername    String?
   updatedAt       DateTime @updatedAt
+
+  @@index([ebayUserId])
+  @@index([ebayUsername])
+}
+
+// Processed Marketplace Account Deletion notifications, used to make eBay retries idempotent.
+// Holds no personal data from the notification payload.
+model EbayDeletionNotification {
+  notificationId     String   @id
+  processedAt        DateTime @default(now())
+  connectionsDeleted Int
+  cardsCleared       Int
 }

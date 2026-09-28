@@ -32,6 +32,12 @@ services:
       # Production RuName from User Tokens → Get a Token from eBay via Your Application
       - key: EBAY_RU_NAME
         sync: false
+      # Marketplace Account Deletion notifications (eBay → Alerts & Notifications)
+      - key: EBAY_DELETION_VERIFICATION_TOKEN
+        sync: false
+      # Exact URL entered in eBay, e.g. https://<your-app>.onrender.com/api/ebay/account-deletion
+      - key: EBAY_DELETION_ENDPOINT_URL
+        sync: false
     disk:
       name: lotlister-data
       mountPath: /data

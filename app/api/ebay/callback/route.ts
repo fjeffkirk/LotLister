@@ -3,7 +3,7 @@ import { getUserEmail } from '../../../../lib/auth';
 import {
   EBAY_OAUTH_STATE_COOKIE,
   exchangeEbayAuthCode,
-  fetchEbayUsername,
+  fetchEbayIdentity,
   getEbayCredentials,
   getPublicBaseUrl,
   saveEbayConnection,
@@ -45,8 +45,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const token = await exchangeEbayAuthCode(creds, code);
-    const ebayUserId = await fetchEbayUsername(token.access_token);
-    await saveEbayConnection(userEmail, token, ebayUserId);
+    const identity = await fetchEbayIdentity(token.access_token);
+    await saveEbayConnection(userEmail, token, identity);
     return settingsRedirect(base, { ebay: 'connected' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'eBay connection failed';
