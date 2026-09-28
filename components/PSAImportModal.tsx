@@ -289,7 +289,7 @@ export default function PSAImportModal({
                       <div key={index} className="relative min-w-0">
                         <label
                           htmlFor={`psa-cert-${index}`}
-                          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-medium text-surface-500 tabular-nums pointer-events-none"
+                          className="absolute left-0 inset-y-0 w-8 flex items-center justify-center border-r border-surface-700 text-[11px] font-medium text-surface-400 tabular-nums pointer-events-none"
                         >
                           {index + 1}
                         </label>
@@ -311,7 +311,7 @@ export default function PSAImportModal({
                                 ? `Too short — needs ${MIN_CERT_DIGITS}+ digits`
                                 : undefined
                           }
-                          className={`w-full min-h-[44px] pl-8 pr-2.5 py-2 text-sm sm:text-base bg-surface-800 border rounded-lg text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono tabular-nums ${
+                          className={`w-full min-h-[44px] pl-10 pr-2.5 py-2 text-sm sm:text-base bg-surface-800 border rounded-lg text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono tabular-nums ${
                             flagged ? 'border-amber-500/70 text-amber-200' : 'border-surface-600'
                           }`}
                         />

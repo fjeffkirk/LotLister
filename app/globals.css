@@ -112,36 +112,34 @@ body {
   @apply bg-surface-500;
 }
 
-/* Dropdown styles */
-select {
-  @apply bg-surface-800 border border-surface-600 text-surface-100 rounded px-3 py-2;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-  background-position: right 0.5rem center;
-  background-repeat: no-repeat;
-  background-size: 1.5em 1.5em;
-  padding-right: 2.5rem;
+/* Form element defaults stay at element-only specificity so utility classes on a component, like pl-10, win */
+@layer base {
+  select {
+    @apply bg-surface-800 border border-surface-600 text-surface-100 rounded px-3 py-2;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+  }
+
+  input:where(:not([type]), [type="text"], [type="number"], [type="date"], [type="time"]),
+  textarea {
+    @apply bg-surface-800 border border-surface-600 text-surface-100 rounded px-3 py-2;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    @apply outline-none ring-2 ring-primary-500 border-primary-500;
+  }
 }
 
-/* Input styles */
-input:not([type]):not(.grid-editor-input),
-input[type="text"],
-input[type="number"],
-input[type="date"],
-input[type="time"],
-textarea,
-.input {
-  @apply bg-surface-800 border border-surface-600 text-surface-100 rounded px-3 py-2;
-}
-
-.input {
-  @apply w-full;
-}
-
-input:focus,
-select:focus,
-textarea:focus {
-  @apply outline-none ring-2 ring-primary-500 border-primary-500;
+@layer components {
+  .input {
+    @apply w-full bg-surface-800 border border-surface-600 text-surface-100 rounded px-3 py-2;
+  }
 }
 
 /* Button base */
