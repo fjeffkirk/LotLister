@@ -1,22 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { LotWithCount } from '../../lib/types';
 import { COMPLETED_DELETE_DAYS, lotDeletesAt, MAX_LOT_AGE_DAYS } from '../../lib/card-fields';
-import { useUser } from '../../components/UserProvider';
-
-interface StorageInfo {
-  usedMB: number;
-  maxGB: number;
-  percentUsed: number;
-}
-
-interface UserStats {
-  completedCount: number;
-}
+import { AppHeader } from '../../components/ui/AppHeader';
+import {
+  CheckCircleIcon,
+  ClockIcon,
+  ImageIcon,
+  LayersIcon,
+  PlusIcon,
+  RotateIcon,
+  TagIcon,
+  TrashIcon,
+  BoltIcon,
+  CloseIcon,
+} from '../../components/ui/icons';
 
 const DELETE_WARNING_DAYS = 7;
+
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 function daysUntilDeleted(lot: LotWithCount): number {
   const completedAt = (lot as { completedAt?: string | Date | null }).completedAt ?? null;
@@ -29,25 +33,24 @@ function daysUntilDeleted(lot: LotWithCount): number {
 }
 
 function deletesInLabel(days: number): string {
-  if (days === 0) return 'Auto-deletes today';
-  return `Auto-deletes in ${days} ${days === 1 ? 'day' : 'days'}`;
+  if (days === 0) return 'Deletes today';
+  return `Deletes in ${days}d`;
 }
 
 export default function LotsPage() {
-  const { username, signOut } = useUser();
   const [lots, setLots] = useState<LotWithCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newLotName, setNewLotName] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [storage, setStorage] = useState<StorageInfo | null>(null);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
 
   useEffect(() => {
     fetchLots();
-    fetchStorage();
-    fetchUserStats();
+    if (new URLSearchParams(window.location.search).get('new') === '1') {
+      setShowCreateModal(true);
+      window.history.replaceState({}, '', '/lots');
+    }
   }, []);
 
   async function fetchLots() {
@@ -56,38 +59,13 @@ export default function LotsPage() {
       const data = await res.json();
       if (data.success) {
         setLots(data.data);
-      } else if (data.error === 'User email not set') {
-        // Email cookie might have been cleared, will show modal
+      } else {
         setLots([]);
       }
     } catch (err) {
       setError('Failed to load lots');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function fetchStorage() {
-    try {
-      const res = await fetch('/api/storage');
-      const data = await res.json();
-      if (data.success) {
-        setStorage(data.data);
-      }
-    } catch (err) {
-      // Silently fail - storage indicator is optional
-    }
-  }
-
-  async function fetchUserStats() {
-    try {
-      const res = await fetch('/api/user');
-      const data = await res.json();
-      if (data.success) {
-        setUserStats(data.data);
-      }
-    } catch (err) {
-      // Silently fail - stats are optional
     }
   }
 
@@ -105,7 +83,7 @@ export default function LotsPage() {
         body: JSON.stringify({ name: newLotName.trim() }),
       });
       const data = await res.json();
-      
+
       if (data.success) {
         setLots((prev) => [data.data, ...prev]);
         setNewLotName('');
@@ -130,7 +108,7 @@ export default function LotsPage() {
         method: 'DELETE',
       });
       const data = await res.json();
-      
+
       if (data.success) {
         setLots((prev) => prev.filter((lot) => lot.id !== id));
       } else {
@@ -149,15 +127,11 @@ export default function LotsPage() {
         body: JSON.stringify({ completed: !currentStatus }),
       });
       const data = await res.json();
-      
+
       if (data.success) {
-        setLots((prev) => prev.map((lot) => 
+        setLots((prev) => prev.map((lot) =>
           lot.id === id ? { ...lot, completed: !currentStatus, completedAt: currentStatus ? null : new Date() } : lot
         ));
-        // Refresh user stats if marking as completed
-        if (!currentStatus) {
-          fetchUserStats();
-        }
       } else {
         setError(data.error || 'Failed to update lot');
       }
@@ -166,327 +140,114 @@ export default function LotsPage() {
     }
   }
 
-  // Separate lots into in-progress and completed
   const inProgressLots = lots.filter(lot => !lot.completed);
   const completedLots = lots.filter(lot => lot.completed);
 
+  const stats = useMemo(() => {
+    let cards = 0;
+    let ready = 0;
+    let listed = 0;
+    let value = 0;
+    for (const lot of inProgressLots) {
+      cards += lot._count.cardItems;
+      ready += lot.summary?.readyCount ?? 0;
+      listed += lot.summary?.listedCount ?? 0;
+      value += lot.summary?.totalValue ?? 0;
+    }
+    return { cards, ready, listed, value };
+  }, [inProgressLots]);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
-      {/* Header */}
-      <header className="border-b border-surface-800 bg-surface-950/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
-          {/* Desktop: single row / Mobile: two rows */}
-          <div className="flex items-center justify-between gap-4">
-            {/* Logo */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
-              </div>
-              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-200 bg-clip-text text-transparent">
-                LotLister
-              </h1>
-            </div>
+    <div className="min-h-screen">
+      <AppHeader
+        actions={
+          <button onClick={() => setShowCreateModal(true)} className="btn btn-primary px-3 sm:px-4" aria-label="New lot">
+            <PlusIcon size={16} strokeWidth={2.25} />
+            <span className="hidden sm:inline">New lot</span>
+          </button>
+        }
+      />
 
-            {/* Right side: Storage, User info, New Lot button */}
-            <div className="flex items-center gap-3 sm:gap-4">
-              {/* Storage Indicator - hidden on mobile */}
-              {storage && (
-                <div className="hidden sm:flex items-center gap-2 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
-                  <svg className="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                  </svg>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-20 h-2 bg-surface-700 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all ${
-                          storage.percentUsed > 90 ? 'bg-red-500' : 
-                          storage.percentUsed > 70 ? 'bg-yellow-500' : 'bg-green-500'
-                        }`}
-                        style={{ width: `${storage.percentUsed}%` }}
-                      />
-                    </div>
-                    <span className={`text-xs ${
-                      storage.percentUsed > 90 ? 'text-red-400' : 
-                      storage.percentUsed > 70 ? 'text-yellow-400' : 'text-surface-400'
-                    }`}>
-                      {storage.percentUsed}%
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* User info with completed count - hidden on mobile */}
-              <div className="hidden sm:flex items-center gap-2 text-sm text-surface-400">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span className="max-w-[200px] truncate">{username}</span>
-                {userStats && (
-                  <div className="flex items-center gap-1 px-2 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    {userStats.completedCount}
-                  </div>
-                )}
-              </div>
-
-              <Link href="/settings" className="btn btn-ghost text-sm" title="eBay account">
-                eBay
-              </Link>
-
-              <button onClick={signOut} className="btn btn-ghost text-sm" title="Sign out">
-                Sign out
-              </button>
-
-              {/* New Lot button */}
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="btn btn-primary text-sm sm:text-base"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span className="hidden sm:inline">New Lot</span>
-              </button>
-            </div>
-          </div>
-          
-          {/* Mobile only: Storage and User info row */}
-          <div className="flex sm:hidden items-center justify-between mt-2 pt-2 border-t border-surface-800/50 gap-3">
-            {/* Storage Indicator */}
-            {storage && (
-              <div className="flex items-center gap-1.5 text-sm" title={`${storage.usedMB} MB of ${storage.maxGB} GB used`}>
-                <svg className="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                </svg>
-                <div className="flex items-center gap-1">
-                  <div className="w-12 h-2 bg-surface-700 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all ${
-                        storage.percentUsed > 90 ? 'bg-red-500' : 
-                        storage.percentUsed > 70 ? 'bg-yellow-500' : 'bg-green-500'
-                      }`}
-                      style={{ width: `${storage.percentUsed}%` }}
-                    />
-                  </div>
-                  <span className={`text-xs ${
-                    storage.percentUsed > 90 ? 'text-red-400' : 
-                    storage.percentUsed > 70 ? 'text-yellow-400' : 'text-surface-400'
-                  }`}>
-                    {storage.percentUsed}%
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* User info with completed count */}
-            <div className="flex items-center gap-2 text-sm text-surface-400">
-              <span className="max-w-[120px] truncate text-xs">{username}</span>
-              {userStats && (
-                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  {userStats.completedCount}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10">
         {error && (
-          <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-300">
+          <div className="mb-6 flex items-center justify-between gap-4 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-200 text-sm animate-slide-up">
             {error}
-            <button onClick={() => setError(null)} className="ml-4 text-red-400 hover:text-red-300">
-              ✕
+            <button onClick={() => setError(null)} className="text-red-300 hover:text-red-100" aria-label="Dismiss">
+              <CloseIcon />
             </button>
           </div>
         )}
 
+        <div className="mb-8">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Your lots</h1>
+          <p className="mt-1 text-sm text-surface-400">Photograph, fill in, and list whole lots of cards at once.</p>
+        </div>
+
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="spinner w-8 h-8"></div>
-          </div>
+          <DashboardSkeleton />
         ) : lots.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-20 h-20 mx-auto mb-6 bg-surface-800 rounded-full flex items-center justify-center">
-              <svg className="w-10 h-10 text-surface-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-surface-200 mb-2">No lots yet</h2>
-            <p className="text-surface-400 mb-6">Create your first lot to get started</p>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn btn-primary"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Create Lot
-            </button>
-          </div>
+          <EmptyState onCreate={() => setShowCreateModal(true)} />
         ) : (
-          <div className="space-y-8">
-            {/* In Progress Section */}
+          <div className="space-y-12">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <StatTile icon={<LayersIcon size={16} />} label="Active lots" value={String(inProgressLots.length)} />
+              <StatTile icon={<ImageIcon size={16} />} label="Cards in progress" value={String(stats.cards)} />
+              <StatTile icon={<BoltIcon size={16} />} label="Ready to list" value={String(stats.ready)} tone="emerald" />
+              <StatTile icon={<TagIcon size={16} />} label="Asking value" value={currency.format(stats.value)} tone="primary" />
+            </div>
+
             <section>
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold text-surface-200 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  In Progress ({inProgressLots.length})
-                </h2>
-                <p className="text-xs text-surface-500 mt-1">Lots are auto-deleted {MAX_LOT_AGE_DAYS} days after they&apos;re created</p>
-              </div>
+              <SectionHeader
+                icon={<ClockIcon size={16} className="text-amber-300" />}
+                title="In progress"
+                count={inProgressLots.length}
+                note={`Lots delete automatically ${MAX_LOT_AGE_DAYS} days after they're created`}
+              />
               {inProgressLots.length === 0 ? (
-                <div className="panel p-6 text-center text-surface-400">
-                  No lots in progress. Create a new lot or move one from completed.
+                <div className="panel p-8 text-center text-sm text-surface-400">
+                  Nothing in progress. Start a new lot or reopen a completed one.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
                   {inProgressLots.map((lot, index) => (
-                    <div
+                    <LotCard
                       key={lot.id}
-                      className="panel p-5 hover:border-surface-600 transition-all duration-200 group animate-slide-up"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1 min-w-0">
-                          <Link href={`/lots/${lot.id}`} className="block">
-                            <h3 className="font-semibold text-lg text-surface-100 truncate hover:text-primary-400 transition-colors cursor-pointer">
-                              {lot.name}
-                            </h3>
-                          </Link>
-                          <p className="text-sm text-surface-400">
-                            {lot._count.cardItems} {lot._count.cardItems === 1 ? 'card' : 'cards'}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => toggleComplete(lot.id, lot.completed || false)}
-                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            title={`Mark as completed. Completed lots are deleted automatically after ${COMPLETED_DELETE_DAYS} days.`}
-                          >
-                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => deleteLot(lot.id)}
-                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Delete lot"
-                          >
-                            <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-surface-500">
-                        {daysUntilDeleted(lot) <= DELETE_WARNING_DAYS ? (
-                          <span className={daysUntilDeleted(lot) <= 3 ? 'text-red-400' : 'text-yellow-400'}>
-                            {deletesInLabel(daysUntilDeleted(lot))}
-                          </span>
-                        ) : (
-                          <span>Created {new Date(lot.createdAt).toLocaleDateString()}</span>
-                        )}
-                        <Link
-                          href={`/lots/${lot.id}`}
-                          className="btn btn-secondary text-sm py-1.5"
-                        >
-                          Open
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </Link>
-                      </div>
-                    </div>
+                      lot={lot}
+                      index={index}
+                      onToggleComplete={() => toggleComplete(lot.id, false)}
+                      onDelete={() => deleteLot(lot.id)}
+                    />
                   ))}
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="hidden sm:flex min-h-[18rem] flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-white/[0.08] text-surface-400 hover:text-white hover:border-primary-500/40 hover:bg-primary-500/[0.04] transition-all"
+                  >
+                    <span className="w-11 h-11 rounded-full bg-white/[0.05] flex items-center justify-center">
+                      <PlusIcon size={20} />
+                    </span>
+                    <span className="text-sm font-medium">New lot</span>
+                  </button>
                 </div>
               )}
             </section>
 
-            {/* Completed Section */}
             {completedLots.length > 0 && (
               <section>
-                <div className="mb-4">
-                  <h2 className="text-lg font-semibold text-surface-200 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Completed ({completedLots.length})
-                  </h2>
-                  <p className="text-xs text-surface-500 mt-1 flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Completed lots are automatically deleted after {COMPLETED_DELETE_DAYS} days to free up storage
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SectionHeader
+                  icon={<CheckCircleIcon size={16} className="text-emerald-300" />}
+                  title="Completed"
+                  count={completedLots.length}
+                  note={`Completed lots delete automatically after ${COMPLETED_DELETE_DAYS} days to free up storage`}
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
                   {completedLots.map((lot, index) => (
-                    <div
+                    <LotCard
                       key={lot.id}
-                      className="panel p-5 hover:border-surface-600 transition-all duration-200 group animate-slide-up opacity-75"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1 min-w-0">
-                          <Link href={`/lots/${lot.id}`} className="block">
-                            <h3 className="font-semibold text-lg text-surface-100 truncate hover:text-primary-400 transition-colors cursor-pointer flex items-center gap-2">
-                              <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                              </svg>
-                              {lot.name}
-                            </h3>
-                          </Link>
-                          <p className="text-sm text-surface-400">
-                            {lot._count.cardItems} {lot._count.cardItems === 1 ? 'card' : 'cards'}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => toggleComplete(lot.id, lot.completed || false)}
-                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Move back to in progress"
-                          >
-                            <svg className="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => deleteLot(lot.id)}
-                            className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Delete lot"
-                          >
-                            <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className={daysUntilDeleted(lot) <= 3 ? 'text-red-400' : 'text-surface-500'}>
-                          {deletesInLabel(daysUntilDeleted(lot))}
-                        </span>
-                        <Link
-                          href={`/lots/${lot.id}`}
-                          className="btn btn-secondary text-sm py-1.5"
-                        >
-                          Open
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </Link>
-                      </div>
-                    </div>
+                      lot={lot}
+                      index={index}
+                      onToggleComplete={() => toggleComplete(lot.id, true)}
+                      onDelete={() => deleteLot(lot.id)}
+                    />
                   ))}
                 </div>
               </section>
@@ -495,43 +256,44 @@ export default function LotsPage() {
         )}
       </main>
 
-      {/* Create Lot Modal */}
       {showCreateModal && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setShowCreateModal(false)}>
+        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
           <div
-            className="modal-content w-full max-w-md mx-4 sm:mx-auto p-4 sm:p-6 animate-slide-up"
+            className="modal-content w-full max-w-md mx-4 sm:mx-auto p-5 sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg sm:text-xl font-semibold mb-4">Create New Lot</h2>
+            <div className="flex items-center gap-3 mb-5">
+              <span className="w-10 h-10 rounded-xl bg-primary-500/15 text-primary-300 flex items-center justify-center">
+                <LayersIcon size={20} />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold text-white">New lot</h2>
+                <p className="text-xs text-surface-400">A lot is a batch of cards you list together.</p>
+              </div>
+            </div>
             <form onSubmit={createLot}>
+              <label className="block text-xs font-medium text-surface-300 mb-1.5" htmlFor="lot-name">Lot name</label>
               <input
+                id="lot-name"
                 type="text"
                 value={newLotName}
                 onChange={(e) => setNewLotName(e.target.value)}
-                placeholder="Lot name (e.g., 2024 Topps Baseball)"
-                className="w-full mb-4 text-sm sm:text-base"
+                placeholder="e.g. 2024 Topps Series 1 break"
+                className="w-full mb-5"
                 autoFocus
               />
-              <div className="flex justify-end gap-2 sm:gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="btn btn-secondary text-sm sm:text-base"
-                >
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setShowCreateModal(false)} className="btn btn-ghost">
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={!newLotName.trim() || creating}
-                  className="btn btn-primary text-sm sm:text-base"
-                >
+                <button type="submit" disabled={!newLotName.trim() || creating} className="btn btn-primary">
                   {creating ? (
                     <>
-                      <div className="spinner"></div>
-                      Creating...
+                      <div className="spinner w-4 h-4"></div>
+                      Creating…
                     </>
                   ) : (
-                    'Create Lot'
+                    'Create lot'
                   )}
                 </button>
               </div>
@@ -539,6 +301,197 @@ export default function LotsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatTile({ icon, label, value, tone = 'neutral' }: { icon: React.ReactNode; label: string; value: string; tone?: 'neutral' | 'emerald' | 'primary' }) {
+  const iconTone =
+    tone === 'emerald' ? 'bg-emerald-500/10 text-emerald-300' : tone === 'primary' ? 'bg-primary-500/15 text-primary-300' : 'bg-white/[0.05] text-surface-300';
+  return (
+    <div className="panel px-4 py-4 sm:px-5 animate-slide-up">
+      <div className="flex items-center gap-2.5">
+        <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconTone}`}>{icon}</span>
+        <span className="text-xs sm:text-sm text-surface-400">{label}</span>
+      </div>
+      <div className="mt-3 text-2xl sm:text-[28px] font-semibold tracking-tight text-white tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function SectionHeader({ icon, title, count, note }: { icon: React.ReactNode; title: string; count: number; note: string }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 mb-4">
+      <h2 className="flex items-center gap-2 text-base font-semibold text-white">
+        {icon}
+        {title}
+        <span className="chip chip-neutral">{count}</span>
+      </h2>
+      <p className="text-xs text-surface-500">{note}</p>
+    </div>
+  );
+}
+
+function Mosaic({ thumbnails }: { thumbnails: string[] }) {
+  if (thumbnails.length === 0) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-surface-500 bg-[radial-gradient(circle_at_30%_20%,rgba(74,118,251,0.14),transparent_60%),radial-gradient(circle_at_80%_90%,rgba(154,102,255,0.12),transparent_55%)]">
+        <ImageIcon size={26} />
+        <span className="text-xs">No photos yet</span>
+      </div>
+    );
+  }
+  const layout =
+    thumbnails.length === 1 ? 'grid-cols-1' : thumbnails.length === 2 ? 'grid-cols-2' : 'grid-cols-2 grid-rows-2';
+  return (
+    <div className={`absolute inset-0 grid gap-0.5 ${layout}`}>
+      {thumbnails.map((src, i) => (
+        <div key={src + i} className={`relative overflow-hidden bg-surface-800 ${thumbnails.length === 3 && i === 0 ? 'row-span-2' : ''}`}>
+          <img src={src} alt="" loading="lazy" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LotCard({
+  lot,
+  index,
+  onToggleComplete,
+  onDelete,
+}: {
+  lot: LotWithCount;
+  index: number;
+  onToggleComplete: () => void;
+  onDelete: () => void;
+}) {
+  const total = lot._count.cardItems;
+  const summary = lot.summary ?? { readyCount: 0, listedCount: 0, totalValue: 0, thumbnails: [] };
+  const done = summary.readyCount + summary.listedCount;
+  const pct = (n: number) => (total === 0 ? 0 : (n / total) * 100);
+  const days = daysUntilDeleted(lot);
+  const warn = lot.completed || days <= DELETE_WARNING_DAYS;
+  const completed = Boolean(lot.completed);
+
+  return (
+    <div
+      className={`group relative panel overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lift animate-slide-up ${completed ? 'opacity-80 hover:opacity-100' : ''}`}
+      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+    >
+      <Link href={`/lots/${lot.id}`} className="absolute inset-0 z-[1]" aria-label={`Open ${lot.name}`} />
+
+      <div className="relative h-40 bg-surface-850 overflow-hidden">
+        <Mosaic thumbnails={summary.thumbnails} />
+        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-surface-900/90 to-transparent pointer-events-none" />
+        <div className="absolute top-3 left-3 flex gap-1.5">
+          {completed ? (
+            <span className="chip chip-ready backdrop-blur-md"><CheckCircleIcon size={12} /> Completed</span>
+          ) : total > 0 && done === total ? (
+            <span className="chip chip-ready backdrop-blur-md"><BoltIcon size={12} /> All ready</span>
+          ) : null}
+        </div>
+        <div className="absolute top-2.5 right-2.5 z-[2] flex gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button
+            onClick={onToggleComplete}
+            className="w-8 h-8 rounded-lg bg-black/55 backdrop-blur-md text-surface-100 hover:text-emerald-300 flex items-center justify-center"
+            title={completed ? 'Move back to in progress' : `Mark completed. Completed lots delete automatically after ${COMPLETED_DELETE_DAYS} days.`}
+          >
+            {completed ? <RotateIcon size={15} /> : <CheckCircleIcon size={15} />}
+          </button>
+          <button
+            onClick={onDelete}
+            className="w-8 h-8 rounded-lg bg-black/55 backdrop-blur-md text-surface-100 hover:text-red-300 flex items-center justify-center"
+            title="Delete lot"
+          >
+            <TrashIcon size={15} />
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 pt-3">
+        <h3 className="font-semibold text-[15px] text-white truncate group-hover:text-primary-100 transition-colors" title={lot.name}>
+          {lot.name}
+        </h3>
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-surface-400">
+          <span>{total} {total === 1 ? 'card' : 'cards'}</span>
+          {summary.totalValue > 0 && (
+            <>
+              <span className="text-surface-600">•</span>
+              <span className="tabular-nums">{currency.format(summary.totalValue)}</span>
+            </>
+          )}
+        </div>
+
+        <div className="mt-3.5">
+          <div className="flex h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+            <div className="h-full bg-primary-500 transition-all duration-700" style={{ width: `${pct(summary.listedCount)}%` }} />
+            <div className="h-full bg-emerald-400 transition-all duration-700" style={{ width: `${pct(summary.readyCount)}%` }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px]">
+            <span className="text-surface-400">
+              {total === 0
+                ? 'Add cards to get started'
+                : summary.listedCount > 0
+                  ? `${summary.listedCount} listed · ${summary.readyCount} ready`
+                  : `${summary.readyCount} of ${total} ready`}
+            </span>
+            {warn ? (
+              <span className={`chip ${days <= 3 ? 'chip-danger' : 'chip-warn'}`}>
+                <ClockIcon size={11} /> {deletesInLabel(days)}
+              </span>
+            ) : (
+              <span className="text-surface-500">{new Date(lot.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-12">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="panel p-5 space-y-4">
+            <div className="skeleton h-4 w-24" />
+            <div className="skeleton h-7 w-16" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="panel overflow-hidden">
+            <div className="skeleton h-40 rounded-none" />
+            <div className="p-4 space-y-3">
+              <div className="skeleton h-4 w-3/4" />
+              <div className="skeleton h-3 w-1/3" />
+              <div className="skeleton h-1.5 w-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="panel relative overflow-hidden px-6 py-16 sm:py-20 text-center">
+      <div className="absolute inset-0 bg-[radial-gradient(600px_300px_at_50%_0%,rgba(74,118,251,0.16),transparent_70%)] pointer-events-none" />
+      <div className="relative">
+        <div className="mx-auto mb-6 w-16 h-16 rounded-2xl bg-primary-500/15 text-primary-300 flex items-center justify-center shadow-glow animate-float">
+          <LayersIcon size={30} />
+        </div>
+        <h2 className="text-xl font-semibold text-white">Start your first lot</h2>
+        <p className="mt-2 text-sm text-surface-400 max-w-sm mx-auto">
+          Drop in photos or PSA cert numbers, fill in the details in a spreadsheet-style grid, then list everything on eBay in one go.
+        </p>
+        <button onClick={onCreate} className="btn btn-primary mt-7 px-5 py-2.5">
+          <PlusIcon size={16} strokeWidth={2.25} /> Create a lot
+        </button>
+      </div>
     </div>
   );
 }

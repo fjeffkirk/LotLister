@@ -1,12 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
 import { createLotSchema } from '../../../lib/validation';
-import { ApiResponse, LotWithCount } from '../../../lib/types';
+import { ApiResponse, CardItemWithImages, LotSummary, LotWithCount } from '../../../lib/types';
+import { isCardComplete } from '../../../lib/card-completeness';
+import { imagePathToBrowserSrc } from '../../../lib/imageUrls';
 import { getUserEmail } from '../../../lib/auth';
 import { deleteLotImages } from '../../../lib/storage';
 import { COMPLETED_DELETE_DAYS, MAX_LOT_AGE_DAYS } from '../../../lib/card-fields';
 
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const SUMMARY_THUMBNAILS = 4;
+
+function summarizeCards(cards: CardItemWithImages[]): LotSummary {
+  let readyCount = 0;
+  let listedCount = 0;
+  let totalValue = 0;
+  const thumbnails: string[] = [];
+  for (const card of cards) {
+    if (card.ebayItemId) listedCount++;
+    else if (isCardComplete(card)) readyCount++;
+    if (typeof card.salePrice === 'number') totalValue += card.salePrice;
+    const image = card.images[0];
+    if (image && thumbnails.length < SUMMARY_THUMBNAILS) thumbnails.push(imagePathToBrowserSrc(image.thumbPath || image.originalPath));
+  }
+  return { readyCount, listedCount, totalValue: Math.round(totalValue * 100) / 100, thumbnails };
+}
 let lastCleanupAt = 0;
 
 // Deletes lots past their retention (see lotDeletesAt). Runs at most hourly, triggered by the lots list.
@@ -79,11 +97,16 @@ export async function GET(): Promise<NextResponse<ApiResponse<LotWithCount[]>>> 
         _count: {
           select: { cardItems: true },
         },
+        cardItems: {
+          orderBy: { sortOrder: 'asc' },
+          include: { images: { orderBy: { sortOrder: 'asc' }, take: 1 } },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({ success: true, data: lots });
+    const data = lots.map(({ cardItems, ...lot }) => ({ ...lot, summary: summarizeCards(cardItems) }));
+    return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('Failed to fetch lots:', error);
     return NextResponse.json(

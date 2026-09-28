@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useUser } from '../../components/UserProvider';
+import { AppHeader } from '../../components/ui/AppHeader';
+import { Avatar } from '../../components/ui/AccountMenu';
+import { AlertIcon, CheckCircleIcon, ChevronDownIcon, ChevronLeftIcon, CopyIcon, LogOutIcon } from '../../components/ui/icons';
 
 interface EbaySettings {
   configured: boolean;
@@ -30,79 +33,127 @@ export default function SettingsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
-      <header className="border-b border-surface-800 bg-surface-950/80 backdrop-blur-sm">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
-          <Link href="/lots" className="text-sm text-surface-400 hover:text-surface-200">
-            ← Lots
-          </Link>
-          <h1 className="text-xl sm:text-2xl font-bold mt-1">eBay</h1>
-        </div>
-      </header>
+  const listingReady = Boolean(settings?.configured && settings.imagesReachable);
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+  return (
+    <div className="min-h-screen">
+      <AppHeader maxWidth="max-w-3xl" />
+
+      <main className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
+        <div>
+          <Link href="/lots" className="inline-flex items-center gap-1 text-sm text-surface-400 hover:text-surface-200">
+            <ChevronLeftIcon size={14} /> All lots
+          </Link>
+          <h1 className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight text-white">Account</h1>
+        </div>
+
         {error && (
-          <div className="p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>
+          <div className="flex items-center gap-2 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-200 text-sm">
+            <AlertIcon /> {error}
+          </div>
         )}
 
-        <section className="p-5 rounded-xl border border-surface-700 bg-surface-900/60 space-y-3">
-          <h2 className="font-medium text-surface-100">Your account</h2>
-          <p className="text-sm text-surface-400 leading-6">
-            Signed in with eBay as <span className="text-surface-100">{username}</span>. Listings are created on this
-            seller account.
-          </p>
-          <button type="button" onClick={signOut} className="btn btn-secondary text-sm">
-            Sign out
+        <section className="panel p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4">
+          <Avatar name={username} size={52} />
+          <div className="flex-1 min-w-0">
+            <div className="text-lg font-semibold text-white truncate">{username}</div>
+            <p className="text-sm text-surface-400">Signed in with eBay. Listings are created on this seller account.</p>
+          </div>
+          <button type="button" onClick={signOut} className="btn btn-secondary">
+            <LogOutIcon /> Sign out
           </button>
         </section>
 
-        {loading ? (
-          <div className="py-8 flex justify-center">
-            <div className="spinner w-8 h-8"></div>
-          </div>
-        ) : settings ? (
-          <>
-            {!settings.configured && (
-              <section className="p-5 rounded-xl border border-amber-700/60 bg-amber-900/20 space-y-2">
-                <h2 className="font-medium text-amber-200">eBay is not fully configured on the server</h2>
-                <ul className="text-sm font-mono text-amber-100 space-y-1">
-                  {settings.missingEnvVars.map((name) => (
-                    <li key={name}>{name}</li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {!settings.imagesReachable && (
-              <p className="text-sm text-amber-300 leading-6">
-                This site is not on a public https address, so eBay cannot download card photos. Listing only works from
-                the deployed site with NEXT_PUBLIC_APP_URL set.
-              </p>
-            )}
+        <section className="panel p-5 sm:p-6">
+          <h2 className="font-semibold text-white">eBay listing</h2>
+          {loading ? (
+            <div className="mt-4 space-y-2">
+              <div className="skeleton h-4 w-2/3" />
+              <div className="skeleton h-4 w-1/2" />
+            </div>
+          ) : settings ? (
+            <div className="mt-4 space-y-3">
+              <StatusRow ok={settings.configured} okText="eBay keys are set on the server" badText="eBay isn't fully set up on the server yet" />
+              <StatusRow
+                ok={settings.imagesReachable}
+                okText="Card photos are reachable by eBay"
+                badText="eBay can't download photos from this address. Listing only works from the deployed site."
+              />
+              {!listingReady && (
+                <p className="text-xs text-surface-500 pt-1">Details for whoever runs the server are under Advanced below.</p>
+              )}
+            </div>
+          ) : null}
+        </section>
 
-            <section className="p-5 rounded-xl border border-surface-700 bg-surface-900/60 space-y-3">
-              <h2 className="font-medium text-surface-100">RuName URLs</h2>
-              <p className="text-sm text-surface-400 leading-6">
-                These are the addresses configured on the production RuName in the eBay developer portal.
-              </p>
-              <UrlRow label="Auth accepted URL" value={settings.callbackUrl} />
-              <UrlRow label="Auth declined URL" value={settings.declinedUrl} />
-              <UrlRow label="Privacy policy URL" value={settings.privacyUrl} />
-            </section>
-          </>
-        ) : null}
+        {settings && (
+          <details className="panel group">
+            <summary className="flex items-center justify-between gap-3 p-5 sm:px-6 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
+              <span>
+                <span className="block font-semibold text-white">Advanced</span>
+                <span className="block text-sm text-surface-400">Server configuration and eBay developer portal addresses</span>
+              </span>
+              <ChevronDownIcon className="text-surface-400 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="px-5 sm:px-6 pb-6 space-y-5 border-t border-white/[0.06] pt-5">
+              {settings.missingEnvVars.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-amber-300 mb-2">Missing environment variables</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {settings.missingEnvVars.map((name) => (
+                      <code key={name} className="chip chip-warn font-mono">{name}</code>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!settings.imagesReachable && (
+                <p className="text-sm text-surface-400 leading-6">
+                  Set <code className="font-mono text-surface-200">NEXT_PUBLIC_APP_URL</code> to the public https address so eBay can fetch card photos.
+                </p>
+              )}
+              <div className="space-y-3">
+                <p className="text-sm text-surface-400">These addresses are configured on the production RuName in the eBay developer portal.</p>
+                <UrlRow label="Auth accepted URL" value={settings.callbackUrl} />
+                <UrlRow label="Auth declined URL" value={settings.declinedUrl} />
+                <UrlRow label="Privacy policy URL" value={settings.privacyUrl} />
+              </div>
+            </div>
+          </details>
+        )}
       </main>
     </div>
   );
 }
 
+function StatusRow({ ok, okText, badText }: { ok: boolean; okText: string; badText: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className={`mt-0.5 ${ok ? 'text-emerald-300' : 'text-amber-300'}`}>{ok ? <CheckCircleIcon size={18} /> : <AlertIcon size={18} />}</span>
+      <span className={`text-sm ${ok ? 'text-surface-200' : 'text-amber-100'}`}>{ok ? okText : badText}</span>
+    </div>
+  );
+}
+
 function UrlRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
   return (
     <div>
-      <div className="text-xs font-medium text-surface-400 mb-1">{label}</div>
-      <code className="block text-xs sm:text-sm break-all bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-surface-200">
-        {value}
-      </code>
+      <div className="text-xs font-medium text-surface-400 mb-1.5">{label}</div>
+      <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-surface-950/60 pl-3 pr-1 py-1">
+        <code className="flex-1 text-xs sm:text-sm break-all font-mono text-surface-200">{value}</code>
+        <button
+          onClick={() => {
+            navigator.clipboard?.writeText(value).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+          className="btn btn-ghost btn-sm"
+          title="Copy"
+        >
+          {copied ? <CheckCircleIcon size={14} className="text-emerald-300" /> : <CopyIcon size={14} />}
+        </button>
+      </div>
     </div>
   );
 }

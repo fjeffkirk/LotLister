@@ -12,7 +12,17 @@ export type LotWithCount = Lot & {
   _count: {
     cardItems: number;
   };
+  summary?: LotSummary;
 };
+
+export interface LotSummary {
+  /** Complete cards not yet listed on eBay */
+  readyCount: number;
+  listedCount: number;
+  totalValue: number;
+  /** Browser URLs of the first few card photos */
+  thumbnails: string[];
+}
 
 export type LotWithCards = Lot & {
   cardItems: CardItemWithImages[];

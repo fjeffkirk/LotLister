@@ -337,34 +337,38 @@ export default function ImportPage() {
   const cardsToCreate = Math.ceil(filesWithUrls.length / imagesPerCard);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
+    <div className="min-h-screen">
       {/* Header */}
-      <header className="border-b border-surface-800 bg-surface-950/80 backdrop-blur-sm sticky top-0 z-20">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-            <Link href={`/lots/${lotId}`} className="btn-ghost p-1.5 sm:p-2 rounded-lg flex-shrink-0">
+      <header className="glass border-b border-white/[0.06] sticky top-0 z-20">
+        <div className="max-w-[1600px] mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Link href={`/lots/${lotId}`} className="btn btn-ghost btn-icon flex-shrink-0" aria-label="Back to lot">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
-            <h1 className="text-lg sm:text-xl font-semibold truncate">Import Photos</h1>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold text-white truncate leading-tight">Import photos</h1>
+              <p className="text-xs text-surface-400">
+                {filesWithUrls.length > 0
+                  ? `${filesWithUrls.length} ${filesWithUrls.length === 1 ? 'image' : 'images'} → ${cardsToCreate} ${cardsToCreate === 1 ? 'card' : 'cards'}`
+                  : 'Each front/back pair becomes a card'}
+              </p>
+            </div>
           </div>
-          
-          {filesWithUrls.length > 0 && (
-            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              <Link
-                href={`/lots/${lotId}`}
-                className={`btn btn-secondary text-sm py-1.5 sm:py-2 px-2 sm:px-3 ${uploading ? 'pointer-events-none opacity-50' : ''}`}
-              >
-                <span className="hidden sm:inline">Cancel</span>
-                <svg className="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </Link>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Link
+              href={`/lots/${lotId}`}
+              className={`btn btn-ghost ${uploading ? 'pointer-events-none opacity-50' : ''}`}
+            >
+              Cancel
+            </Link>
+            {filesWithUrls.length > 0 && (
               <button
                 onClick={handleUpload}
                 disabled={uploading}
-                className="btn btn-primary text-sm py-1.5 sm:py-2 px-2 sm:px-3"
+                className="btn btn-primary px-3 sm:px-4"
               >
                 {uploading ? (
                   <>
@@ -381,14 +385,14 @@ export default function ImportPage() {
                   </>
                 )}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </header>
 
       {/* Upload progress bar — one request per image, so this tracks the whole batch */}
       {uploading && uploadProgress && (
-        <div className="sticky top-0 z-10 bg-surface-900 border-b border-surface-800 px-4 sm:px-6 py-2.5">
+        <div className="sticky top-16 z-10 glass border-b border-white/[0.06] px-4 sm:px-6 py-2.5">
           <div className="max-w-[1600px] mx-auto">
             <div className="flex items-center justify-between text-xs text-surface-300 mb-1.5">
               <span>Uploading images…</span>
@@ -420,27 +424,46 @@ export default function ImportPage() {
         {/* Dropzone */}
         <div
           {...getRootProps()}
-          className={`dropzone cursor-pointer mb-6 ${isDragActive ? 'active' : ''} ${filesWithUrls.length > 0 ? 'py-4' : 'py-8'}`}
+          className={`dropzone cursor-pointer mb-6 ${isDragActive ? 'active' : ''} ${
+            filesWithUrls.length > 0 ? 'py-4' : 'min-h-[52vh] flex items-center justify-center py-12'
+          }`}
         >
           <input {...getInputProps()} />
           <div className="flex flex-col items-center gap-3">
             {filesWithUrls.length === 0 && (
-              <div className="w-16 h-16 bg-surface-800 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className={`w-20 h-20 rounded-2xl bg-primary-500/15 text-primary-300 flex items-center justify-center shadow-glow mb-2 transition-transform duration-300 ${isDragActive ? 'scale-110 -rotate-6' : 'animate-float'}`}>
+                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
             )}
             <div className="text-center">
-              <p className={`font-medium text-surface-200 ${filesWithUrls.length > 0 ? 'text-sm' : 'text-lg'}`}>
-                {isDragActive ? 'Drop images here' : filesWithUrls.length > 0 ? 'Drop more images or click to add' : 'Drag & drop images here'}
+              <p className={`font-semibold text-white ${filesWithUrls.length > 0 ? 'text-sm' : 'text-xl'}`}>
+                {isDragActive ? 'Drop to add them' : filesWithUrls.length > 0 ? 'Drop more images or click to add' : 'Drop your card photos here'}
               </p>
               {filesWithUrls.length === 0 && (
-                <p className="text-sm text-surface-400 mt-1">or click to select files</p>
+                <p className="text-sm text-surface-400 mt-1.5">JPEG, PNG, GIF, or WebP. Name files in scan order and they stay paired.</p>
               )}
             </div>
             {filesWithUrls.length === 0 && (
-              <p className="text-xs text-surface-500">Supports: JPEG, PNG, GIF, WebP</p>
+              <>
+                <span className="btn btn-secondary mt-3">Browse files</span>
+                <ol className="mt-8 grid sm:grid-cols-3 gap-3 text-left max-w-2xl">
+                  {[
+                    ['Drop photos', 'Fronts and backs, in scan order'],
+                    ['Check the pairs', 'Drag to fix any out-of-order scans'],
+                    ['Import', 'Each pair becomes a card in the grid'],
+                  ].map(([title, text], i) => (
+                    <li key={title} className="flex gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                      <span className="w-6 h-6 rounded-full bg-white/[0.06] text-xs font-semibold text-surface-200 flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                      <span>
+                        <span className="block text-sm font-medium text-surface-100">{title}</span>
+                        <span className="block text-xs text-surface-400">{text}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </>
             )}
           </div>
         </div>
@@ -519,12 +542,6 @@ export default function ImportPage() {
                 })}
               </div>
             </div>
-          </div>
-        )}
-
-        {filesWithUrls.length === 0 && (
-          <div className="flex justify-center gap-3 mt-8">
-            <Link href={`/lots/${lotId}`} className="btn btn-secondary">Cancel</Link>
           </div>
         )}
       </main>

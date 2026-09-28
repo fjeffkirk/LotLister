@@ -10,6 +10,45 @@ import { parseCardDefaults, CardDefaults, COMPLETED_DELETE_DAYS } from '../../..
 import ExportSettingsModal from '../../../components/ExportSettingsModal';
 import PSAImportModal from '../../../components/PSAImportModal';
 import LotDefaultsModal from '../../../components/LotDefaultsModal';
+import MobileCardList from '../../../components/MobileCardList';
+import { Command, useRegisterCommands } from '../../../components/CommandPalette';
+import { Dropdown } from '../../../components/ui/Dropdown';
+import { Confetti } from '../../../components/ui/Confetti';
+import {
+  AlertIcon,
+  CheckCircleIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  CloseIcon,
+  ExternalIcon,
+  FileIcon,
+  GearIcon,
+  MoreIcon,
+  PlusIcon,
+  RotateIcon,
+  SearchIcon,
+  ShieldIcon,
+  SlidersIcon,
+  SparklesIcon,
+  TableIcon,
+  TagIcon,
+  UploadIcon,
+} from '../../../components/ui/icons';
+
+const MOBILE_QUERY = '(max-width: 767px)';
+
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches);
+  useEffect(() => {
+    const query = window.matchMedia(MOBILE_QUERY);
+    const update = () => setMobile(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return mobile;
+}
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -43,7 +82,8 @@ export default function LotPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
-  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const isMobile = useIsMobile();
   const [showExportSettings, setShowExportSettings] = useState(false);
   const [exportModeSettings, setExportModeSettings] = useState(false); // True when opened via eBay export
   const [settingsPurpose, setSettingsPurpose] = useState<'csv' | 'list'>('csv');
@@ -368,7 +408,6 @@ export default function LotPage() {
   }, [lotId, notify, dismissToast]);
 
   function handleListClick() {
-    setShowExportMenu(false);
     if (!ebayReady) {
       router.push('/settings');
       return;
@@ -379,8 +418,7 @@ export default function LotPage() {
   }
 
   function handleExportClick(type: 'raw' | 'ebay') {
-    setShowExportMenu(false);
-    
+
     if (type === 'ebay') {
       // Open settings modal in export mode for eBay
       setSettingsPurpose('csv');
@@ -405,6 +443,7 @@ export default function LotPage() {
       
       if (data.success) {
         setLot(prev => prev ? { ...prev, completed: !prev.completed } : null);
+        notify(lot.completed ? 'Moved back to in progress' : `Lot completed. It deletes automatically in ${COMPLETED_DELETE_DAYS} days.`);
       } else {
         setError(data.error || 'Failed to update lot');
       }
@@ -504,338 +543,288 @@ export default function LotPage() {
     notify(fillExisting ? 'Defaults saved and applied to empty fields' : 'Defaults saved for new cards');
   }
 
+  const readiness = useMemo(() => {
+    const cards = lot?.cardItems ?? [];
+    const listed = cards.filter((card) => card.ebayItemId).length;
+    return { total: cards.length, listed, ready: listableCount, done: listed + listableCount };
+  }, [lot, listableCount]);
+
+  const commands = useMemo<Command[]>(() => {
+    if (!lot) return [];
+    const group = lot.name;
+    return [
+      { id: 'lot-list', label: listableCount > 0 ? `List ${listableCount} ready cards on eBay` : 'List on eBay', group, icon: <TagIcon />, disabled: ebayReady === true && listableCount === 0, run: handleListClick },
+      { id: 'lot-import', label: 'Import photos', group, icon: <UploadIcon />, keywords: 'upload add cards', run: () => router.push(`/lots/${lotId}/import`) },
+      { id: 'lot-psa', label: 'Import from PSA cert numbers', group, icon: <ShieldIcon />, keywords: 'add cards graded', run: () => setShowPSAImport(true) },
+      { id: 'lot-defaults', label: 'Lot defaults', group, icon: <SlidersIcon />, keywords: 'template', run: () => setShowDefaults(true) },
+      { id: 'lot-csv', label: 'Export eBay File Exchange CSV', group, icon: <FileIcon />, disabled: !exportReadiness.ready, run: () => handleExportClick('ebay') },
+      { id: 'lot-raw', label: 'Export raw CSV', group, icon: <TableIcon />, run: () => handleExportClick('raw') },
+      { id: 'lot-settings', label: 'Listing & export settings', group, icon: <GearIcon />, keywords: 'shipping returns', run: () => setShowExportSettings(true) },
+      { id: 'lot-complete', label: lot.completed ? 'Mark lot in progress' : 'Mark lot completed', group, icon: <CheckCircleIcon />, run: toggleLotComplete },
+    ];
+  }, [lot?.name, lot?.completed, listableCount, ebayReady, exportReadiness.ready, lotId]);
+  useRegisterCommands('lot', commands);
+
+  useEffect(() => {
+    if (listResult && listResult.listedCount > 0 && listResult.failedCount === 0) {
+      setCelebrate(true);
+      const timer = setTimeout(() => setCelebrate(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [listResult]);
+
   const saveIndicator =
     saveState === 'error' ? (
       <button
         onClick={() => flushSavesRef.current()}
-        className="text-xs text-red-300 hover:text-red-200 underline decoration-dotted"
+        className="flex items-center gap-1.5 text-xs text-red-300 hover:text-red-200"
         title={saveError ?? undefined}
       >
+        <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
         {saveError?.startsWith("Couldn't") ? saveError : 'Not saved — retry'}
       </button>
     ) : saveState === 'saving' ? (
-      <span className="text-xs text-surface-400">Saving…</span>
+      <span className="flex items-center gap-1.5 text-xs text-surface-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+        Saving…
+      </span>
     ) : saveState === 'saved' ? (
-      <span className="text-xs text-surface-500">All changes saved</span>
+      <span className="flex items-center gap-1.5 text-xs text-surface-500">
+        <CheckIcon size={12} className="text-emerald-400" />
+        Saved
+      </span>
     ) : null;
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-surface-950 flex items-center justify-center">
-        <div className="spinner w-8 h-8"></div>
-      </div>
-    );
+    return <WorkspaceSkeleton />;
   }
 
   if (!lot) {
     return (
-      <div className="min-h-screen bg-surface-950 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-400 mb-4">{error || 'Lot not found'}</p>
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="panel p-8 text-center max-w-sm">
+          <AlertIcon size={28} className="mx-auto mb-3 text-red-300" />
+          <p className="text-surface-200 mb-5">{error || 'Lot not found'}</p>
           <Link href="/lots" className="btn btn-secondary">
-            Back to Lots
+            <ChevronLeftIcon /> Back to lots
           </Link>
         </div>
       </div>
     );
   }
 
+  const listDisabled = exporting || listing || (ebayReady === true && listableCount === 0);
+  const listTitle =
+    ebayReady === false
+      ? 'Connect eBay on the server first'
+      : listableCount === 0
+        ? 'No ready cards left to list'
+        : `Publish ${listableCount} ready ${listableCount === 1 ? 'card' : 'cards'}`;
+
+  const searchBox = (className: string) => (
+    <div className={`relative items-center ${className}`}>
+      <SearchIcon size={15} className="absolute left-3 text-surface-500 pointer-events-none" />
+      <input
+        type="search"
+        placeholder="Search cards"
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        className="w-full h-9 pl-9 pr-3 py-0 text-sm"
+      />
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-surface-950 flex flex-col">
-      {/* Header */}
-      <header className="border-b border-surface-800 bg-surface-900/80 backdrop-blur-sm sticky top-0 z-20">
-        <div className="px-3 sm:px-4 py-2 sm:py-3">
-          {/* Main header row */}
-          <div className="flex items-center justify-between gap-2">
-            {/* Left: Back + Lot info */}
-            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-              <Link
-                href="/lots"
-                className="btn-ghost p-1.5 sm:p-2 rounded-lg flex-shrink-0"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </Link>
-              <div className="min-w-0">
-                <h1 className="font-semibold text-base sm:text-lg truncate">{lot.name}</h1>
-                <p className="text-xs sm:text-sm text-surface-400 flex items-center gap-2">
-                  <span>
-                    {lot.cardItems.length} {lot.cardItems.length === 1 ? 'card' : 'cards'}
-                  </span>
-                  {saveIndicator && <span className="text-surface-600">·</span>}
-                  {saveIndicator}
-                </p>
+    <div className="min-h-screen flex flex-col">
+      <header className="glass sticky top-0 z-30 border-b border-white/[0.06]">
+        <div className="px-3 sm:px-5 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Link href="/lots" className="btn btn-ghost btn-icon flex-shrink-0" aria-label="Back to lots" title="All lots">
+              <ChevronLeftIcon size={18} />
+            </Link>
+            <ReadinessRing done={readiness.done} total={readiness.total} />
+            <div className="min-w-0">
+              <h1 className="font-semibold text-[15px] sm:text-base text-white truncate leading-tight">{lot.name}</h1>
+              <div className="flex items-center gap-2 text-xs text-surface-400 mt-0.5 whitespace-nowrap">
+                <span className="tabular-nums">
+                  {readiness.total === 0
+                    ? 'No cards yet'
+                    : `${readiness.done} of ${readiness.total} ready`}
+                  {readiness.listed > 0 && <span className="hidden sm:inline"> · {readiness.listed} listed</span>}
+                </span>
+                {saveIndicator && <span className="text-surface-600">·</span>}
+                {saveIndicator}
               </div>
-            </div>
-
-            {/* Right: Actions */}
-            <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
-              {/* Search - hidden on mobile, shown on sm+ */}
-              <div className="hidden sm:flex relative items-center">
-                <svg className="w-4 h-4 absolute left-3 text-surface-400 pointer-events-none z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  style={{ paddingLeft: '2.5rem' }}
-                  className="pr-4 py-2 w-40 lg:w-56 text-sm bg-surface-800 border border-surface-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-
-              {/* Import */}
-              <Link
-                href={`/lots/${lotId}/import`}
-                className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3"
-                title="Import Photos"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                <span className="hidden md:inline">Import</span>
-              </Link>
-
-              {/* PSA Import */}
-              <button
-                onClick={() => setShowPSAImport(true)}
-                className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3 border-blue-600/50 text-blue-400 hover:bg-blue-600/20"
-                title="Import from PSA"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-                <span className="hidden md:inline">PSA</span>
-              </button>
-
-              {/* Lot defaults */}
-              <button
-                onClick={() => setShowDefaults(true)}
-                className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3"
-                title="Values every card in this lot starts with"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h7" />
-                </svg>
-                <span className="hidden md:inline">Defaults</span>
-              </button>
-
-              {/* Export dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowExportMenu(!showExportMenu)}
-                  disabled={exporting || listing || lot.cardItems.length === 0}
-                  className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3"
-                  title="Export"
-                >
-                  {exporting || listing ? (
-                    <div className="spinner w-4 h-4"></div>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      <span className="hidden md:inline">Export</span>
-                      <svg className="w-3 h-3 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </>
-                  )}
-                </button>
-                {showExportMenu && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setShowExportMenu(false)}
-                    />
-                    <div className="absolute right-0 mt-2 w-72 bg-surface-800 border border-surface-700 rounded-lg shadow-xl z-20 overflow-hidden animate-slide-up">
-                      <button
-                        onClick={handleListClick}
-                        disabled={ebayReady === true && listableCount === 0}
-                        className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 border-b border-surface-700 ${
-                          ebayReady === true && listableCount === 0
-                            ? 'opacity-50 cursor-not-allowed'
-                            : 'hover:bg-surface-700'
-                        }`}
-                      >
-                        <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h10M7 12h10M7 17h6" />
-                        </svg>
-                        <div className="flex-1">
-                          <div className="font-medium">List on eBay</div>
-                          <div className="text-xs text-surface-400">
-                            {ebayReady
-                              ? listableCount > 0
-                                ? `Publish ${listableCount} ready ${listableCount === 1 ? 'card' : 'cards'}`
-                                : 'No ready cards left to list'
-                              : 'eBay is not configured on the server'}
-                          </div>
-                        </div>
-                      </button>
-                      <div className="relative group">
-                        <button
-                          onClick={() => exportReadiness.ready && handleExportClick('ebay')}
-                          disabled={!exportReadiness.ready}
-                          className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 ${
-                            exportReadiness.ready 
-                              ? 'hover:bg-surface-700 cursor-pointer' 
-                              : 'opacity-50 cursor-not-allowed'
-                          }`}
-                        >
-                          <svg className={`w-5 h-5 ${exportReadiness.ready ? 'text-primary-400' : 'text-surface-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <div className="flex-1">
-                            <div className={`font-medium ${!exportReadiness.ready ? 'text-surface-400' : ''}`}>eBay File Exchange CSV</div>
-                            <div className="text-xs text-surface-400">
-                              {exportReadiness.ready 
-                                ? 'For bulk upload to eBay' 
-                                : `${exportReadiness.incompleteCount} of ${exportReadiness.totalCount} cards missing required fields`
-                              }
-                            </div>
-                          </div>
-                          {!exportReadiness.ready && (
-                            <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                          )}
-                        </button>
-                        {!exportReadiness.ready && (
-                          <div className="px-4 py-2 bg-surface-900/80 border-t border-surface-700 text-xs text-amber-400">
-                            <span className="flex items-center gap-1">
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              Fill out all required fields (marked with *) to export
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleExportClick('raw')}
-                        className="w-full px-4 py-3 text-left text-sm hover:bg-surface-700 flex items-center gap-3 border-t border-surface-700"
-                      >
-                        <svg className="w-5 h-5 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <div>
-                          <div className="font-medium">Raw CSV</div>
-                          <div className="text-xs text-surface-400">All fields as-is</div>
-                        </div>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Export Settings */}
-              <button
-                onClick={() => setShowExportSettings(true)}
-                className="btn btn-ghost text-sm py-1.5 px-2 sm:px-3"
-                title="Settings"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span className="hidden lg:inline">Settings</span>
-              </button>
-
-              {/* Mark as Completed */}
-              <button
-                onClick={toggleLotComplete}
-                className={`btn text-sm py-1.5 px-2 sm:px-3 ${lot?.completed ? 'btn-secondary' : 'btn-ghost border border-green-600 text-green-400 hover:bg-green-600/20'}`}
-                title={
-                  lot?.completed
-                    ? 'Mark as In Progress'
-                    : `Mark as Completed. Completed lots are deleted automatically after ${COMPLETED_DELETE_DAYS} days.`
-                }
-              >
-                {lot?.completed ? (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="hidden lg:inline">Mark In Progress</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="hidden lg:inline">Mark Completed</span>
-                  </>
-                )}
-              </button>
             </div>
           </div>
 
-          {/* Mobile search row - only on small screens */}
-          <div className="sm:hidden mt-2 pt-2 border-t border-surface-800/50">
-            <div className="relative flex items-center">
-              <svg className="w-4 h-4 absolute left-3 text-surface-400 pointer-events-none z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search cards..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                style={{ paddingLeft: '2.5rem' }}
-                className="w-full pr-4 py-2 text-sm bg-surface-800 border border-surface-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+            {searchBox('hidden md:flex w-44 lg:w-64')}
+
+            <Dropdown
+              trigger={({ open, toggle }) => (
+                <button onClick={toggle} className={`btn btn-secondary px-2.5 sm:px-3 ${open ? 'bg-white/[0.08]' : ''}`} aria-haspopup="menu" title="Add cards">
+                  <PlusIcon size={16} />
+                  <span className="hidden lg:inline">Add cards</span>
+                  <ChevronDownIcon size={14} className="hidden lg:block text-surface-400" />
+                </button>
+              )}
+            >
+              {(close) => (
+                <>
+                  <Link href={`/lots/${lotId}/import`} onClick={close} className="menu-item">
+                    <MenuIcon tone="primary"><UploadIcon /></MenuIcon>
+                    <span>
+                      <span className="block font-medium">Import photos</span>
+                      <span className="block text-xs text-surface-400">Front and back scans become cards</span>
+                    </span>
+                  </Link>
+                  <button onClick={() => { close(); setShowPSAImport(true); }} className="menu-item">
+                    <MenuIcon tone="accent"><ShieldIcon /></MenuIcon>
+                    <span>
+                      <span className="block font-medium">PSA cert numbers</span>
+                      <span className="block text-xs text-surface-400">Pull slab details and images from PSA</span>
+                    </span>
+                  </button>
+                </>
+              )}
+            </Dropdown>
+
+            <button onClick={() => setShowDefaults(true)} className="hidden lg:inline-flex btn btn-ghost" title="Values every card in this lot starts with">
+              <SlidersIcon />
+              Defaults
+            </button>
+
+            <Dropdown
+              menuClassName="w-72"
+              trigger={({ open, toggle }) => (
+                <button
+                  onClick={toggle}
+                  disabled={exporting || listing}
+                  className={`btn btn-ghost btn-icon ${open ? 'bg-white/[0.08] text-white' : ''}`}
+                  aria-haspopup="menu"
+                  title="More"
+                >
+                  {exporting ? <div className="spinner w-4 h-4" /> : <MoreIcon size={18} />}
+                </button>
+              )}
+            >
+              {(close) => (
+                <>
+                  <div className="menu-label">Export</div>
+                  <button
+                    onClick={() => { close(); handleExportClick('ebay'); }}
+                    disabled={!exportReadiness.ready || lot.cardItems.length === 0}
+                    className="menu-item"
+                  >
+                    <MenuIcon><FileIcon /></MenuIcon>
+                    <span className="min-w-0">
+                      <span className="block font-medium">eBay File Exchange CSV</span>
+                      <span className={`block text-xs ${exportReadiness.ready ? 'text-surface-400' : 'text-amber-300/90'}`}>
+                        {exportReadiness.ready
+                          ? 'For bulk upload to eBay'
+                          : `${exportReadiness.incompleteCount} of ${exportReadiness.totalCount} cards still need fields`}
+                      </span>
+                    </span>
+                  </button>
+                  <button onClick={() => { close(); handleExportClick('raw'); }} disabled={lot.cardItems.length === 0} className="menu-item">
+                    <MenuIcon><TableIcon /></MenuIcon>
+                    <span>
+                      <span className="block font-medium">Raw CSV</span>
+                      <span className="block text-xs text-surface-400">Every field as-is</span>
+                    </span>
+                  </button>
+                  <div className="menu-divider" />
+                  <button onClick={() => { close(); setShowDefaults(true); }} className="menu-item lg:hidden">
+                    <MenuIcon><SlidersIcon /></MenuIcon> Lot defaults
+                  </button>
+                  <button onClick={() => { close(); setShowExportSettings(true); }} className="menu-item">
+                    <MenuIcon><GearIcon /></MenuIcon> Listing &amp; export settings
+                  </button>
+                  <div className="menu-divider" />
+                  <button
+                    onClick={() => { close(); toggleLotComplete(); }}
+                    className="menu-item"
+                    title={lot.completed ? undefined : `Completed lots are deleted automatically after ${COMPLETED_DELETE_DAYS} days.`}
+                  >
+                    <MenuIcon tone={lot.completed ? 'neutral' : 'emerald'}>{lot.completed ? <RotateIcon /> : <CheckCircleIcon />}</MenuIcon>
+                    <span>
+                      <span className="block font-medium">{lot.completed ? 'Move back to in progress' : 'Mark lot completed'}</span>
+                      {!lot.completed && <span className="block text-xs text-surface-400">Deletes after {COMPLETED_DELETE_DAYS} days</span>}
+                    </span>
+                  </button>
+                </>
+              )}
+            </Dropdown>
+
+            <button
+              onClick={handleListClick}
+              disabled={listDisabled || lot.cardItems.length === 0}
+              className="btn btn-primary px-3 sm:px-4"
+              title={listTitle}
+            >
+              {listing ? <div className="spinner w-4 h-4 border-white/30 border-t-white" /> : <TagIcon size={16} />}
+              <span className="hidden sm:inline">List on eBay</span>
+              {ebayReady && listableCount > 0 && (
+                <span className="ml-0.5 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-white/20 text-[11px] font-semibold flex items-center justify-center tabular-nums">
+                  {listableCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
+
+        <div className="md:hidden px-3 pb-3">{searchBox('flex')}</div>
       </header>
 
-      {/* Grid */}
-      <main className="flex-1 p-4">
+      <main className="flex-1 p-3 sm:p-4 min-h-0">
         {error && (
-          <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">
-            {error}
-            <button onClick={() => setError(null)} className="ml-4 text-red-400 hover:text-red-300">
-              ✕
+          <div className="mb-3 flex items-center justify-between gap-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-200 text-sm animate-slide-up">
+            <span className="flex items-center gap-2"><AlertIcon className="flex-shrink-0" /> {error}</span>
+            <button onClick={() => setError(null)} className="text-red-300 hover:text-red-100" aria-label="Dismiss">
+              <CloseIcon />
             </button>
           </div>
         )}
 
         {lot.cardItems.length === 0 ? (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center py-20">
-              <div className="w-20 h-20 mx-auto mb-6 bg-surface-800 rounded-full flex items-center justify-center">
-                <svg className="w-10 h-10 text-surface-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <h2 className="text-xl font-semibold text-surface-200 mb-2">No cards yet</h2>
-              <p className="text-surface-400 mb-6">Import photos or pull data from PSA</p>
-              <div className="flex items-center gap-3 justify-center">
-                <Link
-                  href={`/lots/${lotId}/import`}
-                  className="btn btn-primary"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  Import Photos
+          <div className="panel relative overflow-hidden min-h-[60vh] flex items-center justify-center px-6 py-16">
+            <div className="absolute inset-0 bg-[radial-gradient(600px_300px_at_50%_0%,rgba(74,118,251,0.14),transparent_70%)] pointer-events-none" />
+            <div className="relative text-center max-w-xl w-full">
+              <h2 className="text-xl font-semibold text-white">Add cards to this lot</h2>
+              <p className="mt-2 text-sm text-surface-400">Pick how you want to bring them in. You can mix both.</p>
+              <div className="mt-8 grid sm:grid-cols-2 gap-3 text-left">
+                <Link href={`/lots/${lotId}/import`} className="group panel p-5 hover:shadow-lift hover:-translate-y-0.5 transition-all">
+                  <span className="w-10 h-10 rounded-xl bg-primary-500/15 text-primary-300 flex items-center justify-center mb-4 group-hover:shadow-glow transition-shadow">
+                    <UploadIcon size={20} />
+                  </span>
+                  <span className="block font-medium text-white">Import photos</span>
+                  <span className="block mt-1 text-xs text-surface-400">Drop front and back scans; each pair becomes a card.</span>
                 </Link>
-                <button
-                  onClick={() => setShowPSAImport(true)}
-                  className="btn btn-secondary border-blue-600 text-blue-400 hover:bg-blue-600/20"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                  </svg>
-                  Import from PSA
+                <button onClick={() => setShowPSAImport(true)} className="group panel p-5 text-left hover:shadow-lift hover:-translate-y-0.5 transition-all">
+                  <span className="w-10 h-10 rounded-xl bg-accent-500/15 text-accent-300 flex items-center justify-center mb-4">
+                    <ShieldIcon size={20} />
+                  </span>
+                  <span className="block font-medium text-white">PSA cert numbers</span>
+                  <span className="block mt-1 text-xs text-surface-400">Paste up to 100 certs and we fill in the details.</span>
                 </button>
               </div>
+              <button onClick={() => setShowDefaults(true)} className="mt-6 text-xs text-surface-400 hover:text-surface-200 inline-flex items-center gap-1.5">
+                <SlidersIcon size={13} /> Set lot defaults first
+              </button>
             </div>
           </div>
+        ) : isMobile ? (
+          <MobileCardList
+            cards={lot.cardItems}
+            searchText={searchText}
+            onCardsChange={handleCardsChange}
+            onCloneCard={handleCloneCard}
+            onDeleteCard={handleDeleteCard}
+            notify={notify}
+          />
         ) : (
-          <div className="h-[calc(100vh-120px)] panel flex flex-col">
+          <div className="h-[calc(100vh-96px)] panel overflow-hidden flex flex-col">
             <CardGrid
               cards={lot.cardItems}
               onCellChange={handleCellChange}
@@ -870,26 +859,39 @@ export default function LotPage() {
       />
 
       {listResult && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setListResult(null)}>
+        <div className="modal-overlay" onClick={() => setListResult(null)}>
           <div
-            className="modal-content w-full max-w-lg mx-4 sm:mx-auto animate-slide-up max-h-[85vh] flex flex-col"
+            className="modal-content w-full max-w-lg mx-4 sm:mx-auto max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-700">
-              <h2 className="text-lg font-semibold">eBay listing results</h2>
-              <button onClick={() => setListResult(null)} className="btn-ghost p-2 rounded-lg">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-white/[0.07]">
+              <div className="flex items-center gap-3">
+                <span className={`w-11 h-11 rounded-xl flex items-center justify-center ${
+                  listResult.failedCount === 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'
+                }`}>
+                  {listResult.failedCount === 0 ? <SparklesIcon size={22} /> : <AlertIcon size={22} />}
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    {listResult.failedCount === 0 && listResult.listedCount > 0
+                      ? `${listResult.listedCount} ${listResult.listedCount === 1 ? 'card is' : 'cards are'} live on eBay`
+                      : 'eBay listing results'}
+                  </h2>
+                  <p className="text-sm text-surface-400">
+                    Listed {listResult.listedCount} · Failed {listResult.failedCount}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setListResult(null)} className="btn btn-ghost btn-icon" aria-label="Close">
+                <CloseIcon size={18} />
               </button>
             </div>
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 text-sm">
-              <p className="text-surface-200">
-                Listed {listResult.listedCount}. Failed {listResult.failedCount}.
-                {listResult.remainingReady > 0
-                  ? ` ${listResult.remainingReady} more ready ${listResult.remainingReady === 1 ? 'card is' : 'cards are'} waiting — list again to publish them.`
-                  : ''}
-              </p>
+            <div className="p-5 overflow-y-auto space-y-3 text-sm">
+              {listResult.remainingReady > 0 && (
+                <p className="text-surface-200">
+                  {listResult.remainingReady} more ready {listResult.remainingReady === 1 ? 'card is' : 'cards are'} waiting. List again to publish them.
+                </p>
+              )}
               {(listResult.skippedAlreadyListed > 0 || listResult.skippedNotReady > 0) && (
                 <p className="text-surface-400">
                   Skipped {listResult.skippedAlreadyListed} already listed and {listResult.skippedNotReady} missing required fields.
@@ -897,14 +899,18 @@ export default function LotPage() {
               )}
               <ul className="space-y-2">
                 {listResult.results.map((result) => (
-                  <li key={result.cardId} className="border border-surface-700 rounded-lg px-3 py-2">
-                    <div className="font-medium text-surface-100">{result.title}</div>
-                    {result.success && result.listingUrl ? (
-                      <a href={result.listingUrl} target="_blank" rel="noreferrer" className="text-primary-400 hover:text-primary-300">
-                        View on eBay
+                  <li key={result.cardId} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
+                    <span className={result.success ? 'text-emerald-300' : 'text-red-300'}>
+                      {result.success ? <CheckCircleIcon /> : <AlertIcon />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-surface-100 truncate">{result.title}</div>
+                      {!result.success && <div className="text-xs text-red-300">{result.error}</div>}
+                    </div>
+                    {result.success && result.listingUrl && (
+                      <a href={result.listingUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm text-primary-300">
+                        View <ExternalIcon size={13} />
                       </a>
-                    ) : (
-                      <div className="text-red-300">{result.error}</div>
                     )}
                   </li>
                 ))}
@@ -913,6 +919,8 @@ export default function LotPage() {
           </div>
         </div>
       )}
+
+      {celebrate && <Confetti />}
 
       <LotDefaultsModal
         isOpen={showDefaults}
@@ -923,17 +931,21 @@ export default function LotPage() {
       />
 
       {toasts.length > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] flex flex-col items-center gap-2 pointer-events-none">
           {toasts.map((toast) => (
             <div
               key={toast.id}
               role="status"
-              className="pointer-events-auto flex items-center gap-4 px-4 py-2.5 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-100 animate-slide-up"
+              className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2 rounded-full border border-white/10 bg-surface-850/95 backdrop-blur-xl shadow-pop text-sm text-surface-100 animate-slide-up"
             >
               <span className="max-w-[60vw] truncate">{toast.message}</span>
-              {toast.actionLabel && (
-                <button onClick={toast.onAction} className="font-medium text-primary-400 hover:text-primary-300">
+              {toast.actionLabel ? (
+                <button onClick={toast.onAction} className="btn btn-sm bg-primary-500/20 text-primary-200 hover:bg-primary-500/30 rounded-full">
                   {toast.actionLabel}
+                </button>
+              ) : (
+                <button onClick={() => dismissToast(toast.id)} className="p-1 rounded-full text-surface-500 hover:text-surface-200" aria-label="Dismiss">
+                  <CloseIcon size={14} />
                 </button>
               )}
             </div>
@@ -951,6 +963,82 @@ export default function LotPage() {
           fetchLot();
         }}
       />
+    </div>
+  );
+}
+
+function MenuIcon({ tone = 'neutral', children }: { tone?: 'neutral' | 'primary' | 'accent' | 'emerald'; children: React.ReactNode }) {
+  const tones = {
+    neutral: 'bg-white/[0.05] text-surface-300',
+    primary: 'bg-primary-500/15 text-primary-300',
+    accent: 'bg-accent-500/15 text-accent-300',
+    emerald: 'bg-emerald-500/15 text-emerald-300',
+  };
+  return <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tones[tone]}`}>{children}</span>;
+}
+
+/** Circular progress of cards that are ready or already listed. */
+function ReadinessRing({ done, total }: { done: number; total: number }) {
+  const size = 36;
+  const stroke = 3.5;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const fraction = total === 0 ? 0 : done / total;
+  const complete = total > 0 && done === total;
+  return (
+    <div className="relative flex-shrink-0 hidden sm:block" style={{ width: size, height: size }} title={`${done} of ${total} cards ready or listed`}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} fill="none" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={complete ? '#34d399' : 'url(#readiness-gradient)'}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - fraction)}
+          style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)' }}
+        />
+        <defs>
+          <linearGradient id="readiness-gradient" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#6b95ff" />
+            <stop offset="100%" stopColor="#9a66ff" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold tabular-nums text-surface-200">
+        {complete ? <CheckIcon size={14} className="text-emerald-300" /> : `${Math.round(fraction * 100)}`}
+      </span>
+    </div>
+  );
+}
+
+function WorkspaceSkeleton() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <div className="h-16 border-b border-white/[0.06] px-5 flex items-center gap-3">
+        <div className="skeleton w-8 h-8 rounded-lg" />
+        <div className="skeleton w-9 h-9 rounded-full" />
+        <div className="space-y-1.5">
+          <div className="skeleton h-4 w-48" />
+          <div className="skeleton h-3 w-24" />
+        </div>
+        <div className="ml-auto flex gap-2">
+          <div className="skeleton h-9 w-56 hidden md:block" />
+          <div className="skeleton h-9 w-28" />
+          <div className="skeleton h-9 w-32" />
+        </div>
+      </div>
+      <div className="p-4 flex-1">
+        <div className="panel h-full p-3 space-y-2">
+          <div className="skeleton h-8 w-full" />
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="skeleton h-12 w-full" style={{ opacity: 1 - i * 0.1 }} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

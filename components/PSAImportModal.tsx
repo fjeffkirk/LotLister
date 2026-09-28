@@ -230,7 +230,7 @@ export default function PSAImportModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-700 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-accent-600 rounded-xl flex items-center justify-center shadow-glow">
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
@@ -357,28 +357,21 @@ export default function PSAImportModal({
                   <p className="mt-2 text-xs text-surface-500">Keep this window open until it finishes.</p>
                 </div>
               ) : (
-                <>
-                  {/* Info Box */}
-                  <div className="p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg mb-4">
-                    <h4 className="font-medium text-blue-300 mb-2 flex items-center gap-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      What gets imported
-                    </h4>
-                    <ul className="text-sm text-surface-300 space-y-1">
-                      <li>• Player/Subject name, Year, Brand, Set, Card number</li>
-                      <li>• Grade and Grader (auto-set to PSA)</li>
-                      <li>• Front and back images (when available from PSA)</li>
-                      <li>• Certification number for verification</li>
-                    </ul>
-                  </div>
-
-                  {/* Rate Limit Notice */}
-                  <div className="p-3 bg-surface-800/50 border border-surface-700 rounded-lg text-xs text-surface-400">
-                    <strong className="text-surface-300">Note:</strong> PSA API has a daily limit; each cert uses one lookup.
-                  </div>
-                </>
+                <details className="group text-xs text-surface-400">
+                  <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none hover:text-surface-200 [&::-webkit-details-marker]:hidden">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    What gets imported
+                    <svg className="w-3 h-3 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </summary>
+                  <p className="mt-2 leading-5">
+                    Name, year, brand, set, and card number; grade with the grader set to PSA; front and back images when PSA has
+                    them; and the cert number. PSA limits lookups per day, and each cert uses one.
+                  </p>
+                </details>
               )}
 
               {error && (

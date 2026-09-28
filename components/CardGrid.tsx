@@ -33,8 +33,10 @@ import {
   isCardComplete,
   isCardGraded,
   isMandatoryFieldEmpty,
+  missingFieldLabels,
   TITLE_MAX_LENGTH,
 } from '../lib/card-completeness';
+import { CheckIcon, ImageIcon, PhotosIcon } from './ui/icons';
 import {
   CATEGORY_FIELD_OPTIONS,
   CONDITION_FIELD_OPTIONS,
@@ -166,25 +168,44 @@ function ImageCell(props: ICellRendererParams<CardItemWithImages>) {
   const images = sortCardImages(props.data?.images || []);
   if (images.length === 0) {
     return (
-      <div className="flex items-center gap-1 py-1">
-        <div className="w-10 h-10 bg-surface-700 rounded flex items-center justify-center">
-          <svg className="w-5 h-5 text-surface-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
+      <div className="flex items-center py-1">
+        <div className="w-10 h-10 rounded-lg border border-dashed border-white/[0.12] flex items-center justify-center text-surface-600">
+          <ImageIcon size={16} />
         </div>
       </div>
     );
   }
   return (
-    <div className="flex items-center gap-1 py-1 cursor-pointer group">
+    <div className="relative flex items-center py-1 cursor-pointer group">
       {images.slice(0, 2).map((img, idx) => (
-        <div key={img.id} className="w-10 h-10 bg-surface-700 rounded overflow-hidden flex-shrink-0 group-hover:ring-2 group-hover:ring-primary-500/50 transition-all">
+        <div
+          key={img.id}
+          className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-surface-800 ring-1 ring-black/40 shadow-md transition-transform duration-200 ${
+            idx === 1 ? '-ml-4 rotate-6 group-hover:rotate-12 group-hover:translate-x-1' : '-rotate-2 group-hover:-rotate-6'
+          }`}
+        >
           <img src={imagePathToBrowserSrc(img.thumbPath || img.originalPath)} alt={`Image ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
         </div>
       ))}
-      {images.length > 2 && <span className="text-xs text-surface-400 ml-1">+{images.length - 2}</span>}
+      {images.length > 2 && <span className="ml-1.5 text-[11px] text-surface-400">+{images.length - 2}</span>}
     </div>
   );
+}
+
+/** Ready / Listed / "N to fill" chip; hovering lists the missing fields. */
+function StatusCell(props: ICellRendererParams<CardItemWithImages>) {
+  const card = props.data;
+  if (!card) return null;
+  if (card.ebayItemId) return <span className="chip chip-info">Listed</span>;
+  const missing = missingFieldLabels(card);
+  if (missing.length === 0) {
+    return (
+      <span className="chip chip-ready">
+        <CheckIcon size={11} strokeWidth={2.5} /> Ready
+      </span>
+    );
+  }
+  return <span className="chip chip-warn">{missing.length} to fill</span>;
 }
 
 function TitleCell(props: ICellRendererParams<CardItemWithImages>) {
@@ -458,6 +479,25 @@ export default function CardGrid({
         tooltipValueGetter: () => 'Click to show photos',
         cellClass: (params: CellClassParams<CardItemWithImages>) =>
           params.data && params.data.images.length === 0 ? 'cell-mandatory-empty' : '',
+      },
+      {
+        headerName: 'Status',
+        colId: 'status',
+        width: 104,
+        maxWidth: 120,
+        pinned: 'left',
+        cellDataType: false,
+        cellRenderer: StatusCell,
+        valueGetter: (params) => (params.data ? (params.data.ebayItemId ? -1 : missingFieldLabels(params.data).length) : 0),
+        tooltipValueGetter: (params) => {
+          if (!params.data || params.data.ebayItemId) return undefined;
+          const missing = missingFieldLabels(params.data);
+          return missing.length > 0 ? `Still needs: ${missing.join(', ')}` : 'Ready to list';
+        },
+        filter: false,
+        suppressNavigable: true,
+        suppressSizeToFit: true,
+        headerTooltip: 'Sort to bring the cards that need the most work to the top',
       },
       {
         headerName: 'Title*',
@@ -892,37 +932,41 @@ export default function CardGrid({
       : `No rows are selected, so this applies to all ${displayedCount} ${displayedCount === 1 ? 'card' : 'cards'} shown.`;
 
   const toolbarButton = (active: boolean) =>
-    `px-2.5 py-1 rounded-md border text-xs font-medium transition-colors ${
+    `inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
       active
-        ? 'border-primary-500 bg-primary-500/15 text-primary-300'
-        : 'border-surface-700 bg-surface-800 text-surface-300 hover:border-surface-500 hover:text-surface-100'
+        ? 'bg-primary-500/15 text-primary-200 ring-1 ring-inset ring-primary-500/40'
+        : 'text-surface-300 hover:text-white hover:bg-white/[0.06]'
     }`;
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-surface-700 bg-surface-900/60">
+      <div className="flex flex-wrap items-center gap-1 px-2.5 py-2 border-b border-white/[0.06] bg-white/[0.015]">
         <button onClick={toggleIncompleteOnly} className={toolbarButton(incompleteOnly)} title="Show only cards that still need fields">
-          Incomplete only{incompleteCount > 0 ? ` (${incompleteCount})` : ''}
+          <span className={`w-1.5 h-1.5 rounded-full ${incompleteCount > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+          Needs work
+          {incompleteCount > 0 && <span className="tabular-nums text-surface-400">{incompleteCount}</span>}
         </button>
         <button onClick={goToNextIncomplete} className={toolbarButton(false)} title="Jump to the next empty required field (Alt+N)">
-          Next incomplete
+          Next empty field
+          <kbd className="kbd">Alt N</kbd>
         </button>
-        <span className="w-px h-5 bg-surface-700 mx-1" />
-        <button onClick={() => openBulkEdit(api()?.getFocusedCell()?.column.getColId() ?? null)} className={toolbarButton(false)}>
+        <span className="w-px h-4 bg-white/10 mx-1.5" />
+        <button onClick={() => openBulkEdit(api()?.getFocusedCell()?.column.getColId() ?? null)} className={toolbarButton(selectedCount > 0)}>
           {selectedCount > 0 ? `Edit ${selectedCount} selected` : 'Bulk edit'}
         </button>
         {selectedCount > 0 && (
-          <button onClick={() => api()?.deselectAll()} className="text-xs text-surface-400 hover:text-surface-200">
-            Clear selection
+          <button onClick={() => api()?.deselectAll()} className="text-xs text-surface-400 hover:text-surface-200 px-1.5">
+            Clear
           </button>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <span className="hidden lg:inline text-xs text-surface-500" title="Paste works from Excel or Google Sheets starting at the focused cell">
-            Ctrl+D fills down · Ctrl+V pastes cells
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="hidden xl:flex items-center gap-1.5 text-[11px] text-surface-500 mr-1.5" title="Paste works from Excel or Google Sheets starting at the focused cell">
+            <kbd className="kbd">Ctrl D</kbd> fill down
+            <kbd className="kbd ml-1.5">Ctrl V</kbd> paste cells
           </span>
-          <div className="flex rounded-md border border-surface-700 overflow-hidden text-xs" title="Where Tab moves after you enter a value">
-            <span className="px-2 py-1 bg-surface-800 text-surface-500">Tab</span>
+          <div className="flex items-center p-0.5 rounded-lg bg-white/[0.04] ring-1 ring-inset ring-white/[0.06] text-xs" title="Where Tab moves after you enter a value">
+            <span className="px-2 text-surface-500">Tab</span>
             {(['down', 'across'] as const).map((direction) => (
               <button
                 key={direction}
@@ -930,8 +974,8 @@ export default function CardGrid({
                   setTabDirection(direction);
                   writeSetting(STORAGE_KEYS.tab, direction);
                 }}
-                className={`px-2 py-1 capitalize ${
-                  tabDirection === direction ? 'bg-primary-600 text-white' : 'bg-surface-800 text-surface-300 hover:text-surface-100'
+                className={`h-6 px-2 rounded-md capitalize transition-colors ${
+                  tabDirection === direction ? 'bg-white/[0.1] text-white shadow-sm' : 'text-surface-400 hover:text-surface-100'
                 }`}
               >
                 {direction}
@@ -957,6 +1001,7 @@ export default function CardGrid({
             }}
             className={toolbarButton(showPhotos)}
           >
+            <PhotosIcon size={14} />
             Photos
           </button>
         </div>
@@ -1021,11 +1066,11 @@ export default function CardGrid({
 
       {contextMenu && (
         <div
-          className="fixed z-50 bg-surface-800 border border-surface-600 rounded-lg shadow-xl overflow-hidden animate-fade-in"
-          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: '180px' }}
+          className="fixed z-50 rounded-xl border border-white/10 bg-surface-850/95 backdrop-blur-xl p-1.5 shadow-pop animate-scale-in"
+          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: '190px' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-2 border-b border-surface-700 bg-surface-900/50">
+          <div className="px-2.5 pt-1.5 pb-2">
             <span className="text-xs text-surface-400 truncate block max-w-[200px]">{contextMenu.label}</span>
           </div>
           <button
@@ -1033,7 +1078,7 @@ export default function CardGrid({
               onCloneCard(contextMenu.cardId);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-2.5 text-left text-sm hover:bg-surface-700 flex items-center gap-3 transition-colors"
+            className="menu-item"
           >
             <svg className="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -1045,7 +1090,7 @@ export default function CardGrid({
               onDeleteCard(contextMenu.cardId);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-2.5 text-left text-sm hover:bg-red-900/30 text-red-400 flex items-center gap-3 transition-colors border-t border-surface-700"
+            className="menu-item text-red-300 hover:!text-red-200 hover:!bg-red-500/10"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

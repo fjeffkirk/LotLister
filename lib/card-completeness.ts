@@ -38,6 +38,34 @@ export const COMPLETENESS_FIELDS = [
   'subsetParallel', 'conditionType', 'grader', 'grade', 'condition', 'description',
 ] as const;
 
+export const COMPLETENESS_LABELS: Record<(typeof COMPLETENESS_FIELDS)[number], string> = {
+  images: 'Photos',
+  title: 'Title',
+  salePrice: 'Price',
+  category: 'Category',
+  year: 'Year',
+  brand: 'Brand',
+  setName: 'Set',
+  cardNumber: 'Card #',
+  name: 'Name',
+  subsetParallel: 'Subset/Parallel',
+  conditionType: 'Graded/Raw',
+  grader: 'Grader',
+  grade: 'Grade',
+  condition: 'Condition',
+  description: 'Description',
+};
+
+/** Labels of every required field this card is still missing, in grid column order. */
+export function missingFieldLabels(card: CardItemWithImages): string[] {
+  const missing: string[] = COMPLETENESS_FIELDS.filter((field) => {
+    const value = field === 'images' ? card.images : (card as Record<string, unknown>)[field];
+    return isMandatoryFieldEmpty(field, value, card);
+  }).map((field) => COMPLETENESS_LABELS[field]);
+  if ((card.title ?? '').length > TITLE_MAX_LENGTH && !missing.includes('Title')) missing.push('Title (over 80 characters)');
+  return missing;
+}
+
 export function firstMissingField(card: CardItemWithImages): string | null {
   for (const field of COMPLETENESS_FIELDS) {
     const value = field === 'images' ? card.images : (card as Record<string, unknown>)[field];
