@@ -250,6 +250,10 @@ export default function LotsPage() {
                 )}
               </div>
 
+              <Link href="/settings" className="btn btn-ghost text-sm" title="Connect eBay account">
+                eBay
+              </Link>
+
               {/* New Lot button */}
               <button
                 onClick={() => setShowCreateModal(true)}

@@ -17,6 +17,7 @@ interface ExportSettingsModalProps {
   onClose: () => void;
   onExport?: () => void; // If provided, shows export button (export mode)
   isExporting?: boolean;
+  purpose?: 'csv' | 'list';
 }
 
 const DEFAULT_PROFILE: Partial<ExportProfile> = {
@@ -57,8 +58,10 @@ export default function ExportSettingsModal({
   onClose,
   onExport,
   isExporting = false,
+  purpose = 'csv',
 }: ExportSettingsModalProps) {
   const isExportMode = !!onExport;
+  const isListMode = isExportMode && purpose === 'list';
   const [profile, setProfile] = useState<Partial<ExportProfile>>(DEFAULT_PROFILE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -181,11 +184,13 @@ export default function ExportSettingsModal({
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-700 flex-shrink-0">
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-semibold truncate">
-              {isExportMode ? 'eBay File Exchange Export' : 'Export Settings'}
+              {isListMode ? 'List on eBay' : isExportMode ? 'eBay File Exchange Export' : 'Export Settings'}
             </h2>
             {isExportMode && (
               <p className="text-xs sm:text-sm text-surface-400 mt-1">
-                Review your settings before exporting
+                {isListMode
+                  ? 'Review listing settings, then publish ready cards that are not already listed'
+                  : 'Review your settings before exporting'}
               </p>
             )}
           </div>
@@ -679,14 +684,14 @@ export default function ExportSettingsModal({
               {isExporting || saving ? (
                 <>
                   <div className="spinner"></div>
-                  {saving ? 'Saving...' : 'Exporting...'}
+                  {saving ? 'Saving...' : isListMode ? 'Listing...' : 'Exporting...'}
                 </>
               ) : (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  Export eBay CSV
+                  {isListMode ? 'List on eBay' : 'Export eBay CSV'}
                 </>
               )}
             </button>

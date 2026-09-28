@@ -302,6 +302,43 @@ const EBAY_GRADE_IDS: Record<string, string> = {
   'Authentic - Colored': 'Authentic - Colored - (ID: 2750222)',
 };
 
+function descriptorNumericId(formatted: string): string | null {
+  const match = formatted.match(/\(ID:\s*(\d+)\)/);
+  return match?.[1] ?? null;
+}
+
+/** Numeric value id for condition descriptor 40001 (ungraded card condition). */
+export function ebayCardConditionValueId(condition: string): string {
+  const formatted = EBAY_CARD_CONDITION_CODES[condition] || 'Near mint or better - (ID: 400010)';
+  return descriptorNumericId(formatted) || '400010';
+}
+
+/** Numeric value id for condition descriptor 27501 (professional grader). */
+export function ebayGraderValueId(grader: string): string {
+  const formatted = EBAY_GRADER_IDS[grader] || EBAY_GRADER_IDS['Other'];
+  return descriptorNumericId(formatted) || '2750123';
+}
+
+/** Numeric value id for condition descriptor 27502, or null when the grade is not a known eBay value. */
+export function ebayGradeValueId(grade: string): string | null {
+  const formatted = EBAY_GRADE_IDS[grade];
+  if (!formatted) return null;
+  return descriptorNumericId(formatted);
+}
+
+export function ebayShippingServiceCode(serviceName: string): string {
+  return EBAY_SHIPPING_SERVICES[serviceName] || 'USPSParcel';
+}
+
+/** UTC timestamp without a Z suffix, matching File Exchange ScheduleTime. Empty when listing immediately. */
+export function ebayScheduleTimestamp(
+  profile: ExportProfile,
+  index: number,
+  clientTzOffsetMinutes: number = 0
+): string {
+  return calculateScheduleTime(profile, index, clientTzOffsetMinutes);
+}
+
 // eBay format types
 export const EBAY_FORMATS = {
   Auction: 'Auction',

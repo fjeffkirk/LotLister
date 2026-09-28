@@ -22,6 +22,16 @@ services:
       # PSA API token for cert lookup
       - key: PSA_API_TOKEN
         sync: false
+      # eBay production keysets (developer.ebay.com → Application Keys → Production)
+      - key: EBAY_APP_ID
+        sync: false
+      - key: EBAY_DEV_ID
+        sync: false
+      - key: EBAY_CERT_ID
+        sync: false
+      # Production RuName from User Tokens → Get a Token from eBay via Your Application
+      - key: EBAY_RU_NAME
+        sync: false
     disk:
       name: lotlister-data
       mountPath: /data

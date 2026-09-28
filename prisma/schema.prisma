@@ -62,6 +62,8 @@ model CardItem {
   certNo         String?
   description    String? // Custom item description for eBay listing
   psaImport      Boolean @default(false) // Created via PSA cert import (subset/parallel optional for completion)
+  ebayItemId     String? // Set after a successful Trading API AddItem
+  ebayListedAt   DateTime?
 
   @@index([lotId])
 }
@@ -135,4 +137,14 @@ model ExportProfile {
   salesTaxEnabled Boolean @default(false)
 
   @@index([lotId])
+}
+
+// Each LotLister user connects their own eBay seller account.
+model EbayConnection {
+  userEmail       String   @id
+  accessToken     String
+  refreshToken    String
+  accessExpiresAt DateTime
+  ebayUserId      String?
+  updatedAt       DateTime @updatedAt
 }

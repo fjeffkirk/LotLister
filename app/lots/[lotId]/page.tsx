@@ -71,8 +71,19 @@ export default function LotPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showExportSettings, setShowExportSettings] = useState(false);
   const [exportModeSettings, setExportModeSettings] = useState(false); // True when opened via eBay export
+  const [settingsPurpose, setSettingsPurpose] = useState<'csv' | 'list'>('csv');
   const [showPSAImport, setShowPSAImport] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [listing, setListing] = useState(false);
+  const [ebayReady, setEbayReady] = useState<boolean | null>(null);
+  const [listResult, setListResult] = useState<{
+    listedCount: number;
+    failedCount: number;
+    skippedNotReady: number;
+    skippedAlreadyListed: number;
+    remainingReady: number;
+    results: { cardId: string; title: string; success: boolean; listingUrl?: string; error?: string }[];
+  } | null>(null);
   const [pendingChanges, setPendingChanges] = useState<Map<string, Record<string, unknown>>>(new Map());
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
 
@@ -89,8 +100,21 @@ export default function LotPage() {
     };
   }, [lot]);
 
+  const listableCount = useMemo(() => {
+    if (!lot) return 0;
+    return lot.cardItems.filter((card) => isCardReadyForExport(card) && !card.ebayItemId).length;
+  }, [lot]);
+
   useEffect(() => {
     fetchLot();
+    fetch('/api/ebay/settings')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          setEbayReady(Boolean(data.data.configured && data.data.connected));
+        }
+      })
+      .catch(() => setEbayReady(false));
   }, [lotId]);
 
   async function fetchLot() {
@@ -247,11 +271,23 @@ export default function LotPage() {
     }
   }, [lotId]);
 
+  function handleListClick() {
+    setShowExportMenu(false);
+    if (!ebayReady) {
+      router.push('/settings');
+      return;
+    }
+    setSettingsPurpose('list');
+    setExportModeSettings(true);
+    setShowExportSettings(true);
+  }
+
   function handleExportClick(type: 'raw' | 'ebay') {
     setShowExportMenu(false);
     
     if (type === 'ebay') {
       // Open settings modal in export mode for eBay
+      setSettingsPurpose('csv');
       setExportModeSettings(true);
       setShowExportSettings(true);
     } else {
@@ -329,6 +365,33 @@ export default function LotPage() {
     }
   }
 
+  async function performList() {
+    setListing(true);
+    setError(null);
+    try {
+      const timezoneOffset = new Date().getTimezoneOffset();
+      const res = await fetch(`/api/lots/${lotId}/list-ebay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tzOffset: timezoneOffset }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Listing failed');
+      }
+      setShowExportSettings(false);
+      setExportModeSettings(false);
+      setListResult(data.data);
+      fetchLot();
+    } catch (err) {
+      setShowExportSettings(false);
+      setExportModeSettings(false);
+      setError(err instanceof Error ? err.message : 'Listing failed. Please try again.');
+    } finally {
+      setListing(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-surface-950 flex items-center justify-center">
@@ -337,7 +400,7 @@ export default function LotPage() {
     );
   }
 
-  if (error || !lot) {
+  if (!lot) {
     return (
       <div className="min-h-screen bg-surface-950 flex items-center justify-center">
         <div className="text-center">
@@ -420,11 +483,11 @@ export default function LotPage() {
               <div className="relative">
                 <button
                   onClick={() => setShowExportMenu(!showExportMenu)}
-                  disabled={exporting || lot.cardItems.length === 0}
+                  disabled={exporting || listing || lot.cardItems.length === 0}
                   className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3"
                   title="Export"
                 >
-                  {exporting ? (
+                  {exporting || listing ? (
                     <div className="spinner w-4 h-4"></div>
                   ) : (
                     <>
@@ -445,6 +508,29 @@ export default function LotPage() {
                       onClick={() => setShowExportMenu(false)}
                     />
                     <div className="absolute right-0 mt-2 w-72 bg-surface-800 border border-surface-700 rounded-lg shadow-xl z-20 overflow-hidden animate-slide-up">
+                      <button
+                        onClick={handleListClick}
+                        disabled={ebayReady === true && listableCount === 0}
+                        className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 border-b border-surface-700 ${
+                          ebayReady === true && listableCount === 0
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'hover:bg-surface-700'
+                        }`}
+                      >
+                        <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h10M7 12h10M7 17h6" />
+                        </svg>
+                        <div className="flex-1">
+                          <div className="font-medium">List on eBay</div>
+                          <div className="text-xs text-surface-400">
+                            {ebayReady
+                              ? listableCount > 0
+                                ? `Publish ${listableCount} ready ${listableCount === 1 ? 'card' : 'cards'}`
+                                : 'No ready cards left to list'
+                              : 'Connect your eBay account first'}
+                          </div>
+                        </div>
+                      </button>
                       <div className="relative group">
                         <button
                           onClick={() => exportReadiness.ready && handleExportClick('ebay')}
@@ -623,9 +709,61 @@ export default function LotPage() {
           setShowExportSettings(false);
           setExportModeSettings(false);
         }}
-        onExport={exportModeSettings ? () => performExport('ebay') : undefined}
-        isExporting={exporting}
+        purpose={settingsPurpose}
+        onExport={
+          exportModeSettings
+            ? settingsPurpose === 'list'
+              ? performList
+              : () => performExport('ebay')
+            : undefined
+        }
+        isExporting={exporting || listing}
       />
+
+      {listResult && (
+        <div className="modal-overlay animate-fade-in" onClick={() => setListResult(null)}>
+          <div
+            className="modal-content w-full max-w-lg mx-4 sm:mx-auto animate-slide-up max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-700">
+              <h2 className="text-lg font-semibold">eBay listing results</h2>
+              <button onClick={() => setListResult(null)} className="btn-ghost p-2 rounded-lg">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 text-sm">
+              <p className="text-surface-200">
+                Listed {listResult.listedCount}. Failed {listResult.failedCount}.
+                {listResult.remainingReady > 0
+                  ? ` ${listResult.remainingReady} more ready ${listResult.remainingReady === 1 ? 'card is' : 'cards are'} waiting — list again to publish them.`
+                  : ''}
+              </p>
+              {(listResult.skippedAlreadyListed > 0 || listResult.skippedNotReady > 0) && (
+                <p className="text-surface-400">
+                  Skipped {listResult.skippedAlreadyListed} already listed and {listResult.skippedNotReady} missing required fields.
+                </p>
+              )}
+              <ul className="space-y-2">
+                {listResult.results.map((result) => (
+                  <li key={result.cardId} className="border border-surface-700 rounded-lg px-3 py-2">
+                    <div className="font-medium text-surface-100">{result.title}</div>
+                    {result.success && result.listingUrl ? (
+                      <a href={result.listingUrl} target="_blank" rel="noreferrer" className="text-primary-400 hover:text-primary-300">
+                        View on eBay
+                      </a>
+                    ) : (
+                      <div className="text-red-300">{result.error}</div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PSA Import Modal */}
       <PSAImportModal
