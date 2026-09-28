@@ -461,12 +461,17 @@ export async function lookupPSACert(certNumber: string): Promise<PSALookupResult
             : 'PSA API daily quota exceeded (100 calls/day on free tier). Try again tomorrow or upgrade.';
         return { success: false, error: msg };
       }
+      const body = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
       const detail =
         typeof parsed === 'string'
           ? parsed
-          : parsed && typeof parsed === 'object' && 'ServerMessage' in parsed
-            ? String((parsed as PSAApiResponse).ServerMessage ?? (parsed as PSAApiResponse).serverMessage ?? '')
-            : '';
+          : String(body?.ServerMessage ?? body?.serverMessage ?? body?.Message ?? body?.message ?? '');
+      if (response.status === 403) {
+        return {
+          success: false,
+          error: `PSA refused the token (403)${detail ? `: ${detail}` : ''}. The PSA account needs API access approved by PSA (collectors-apis@collectors.com).`,
+        };
+      }
       return {
         success: false,
         error: detail || `PSA API error (${response.status})`,
