@@ -124,7 +124,8 @@ export async function deleteImage(originalPath: string, thumbPath: string): Prom
 }
 
 /**
- * Resolve a relative image path to absolute filesystem path
+ * Resolve a relative image path to absolute filesystem path.
+ * Throws if the path escapes UPLOADS_DIR: the database lives next to it on the same disk.
  */
 export function resolveImagePath(relativePath: string): string {
   // Remove 'data/' prefix if present (old format)
@@ -133,7 +134,12 @@ export function resolveImagePath(relativePath: string): string {
   // Remove 'uploads/' prefix since UPLOADS_DIR already points to uploads folder
   const pathWithoutUploads = cleanPath.replace(/^uploads\//, '');
   
-  return path.join(UPLOADS_DIR, pathWithoutUploads);
+  const root = path.resolve(UPLOADS_DIR);
+  const resolved = path.resolve(root, pathWithoutUploads);
+  if (!resolved.startsWith(root + path.sep)) {
+    throw new Error('Image path is outside the uploads directory');
+  }
+  return resolved;
 }
 
 /**

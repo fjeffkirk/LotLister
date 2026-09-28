@@ -19,7 +19,6 @@ export async function GET(
     const relativePath = decodeURIComponent(pathParts.join('/'));
     
     const fullPath = resolveImagePath(relativePath);
-    const stats = await fs.stat(fullPath);
     
     const ext = path.extname(fullPath).toLowerCase();
     const contentTypes: Record<string, string> = {
@@ -29,7 +28,14 @@ export async function GET(
       '.gif': 'image/gif',
       '.webp': 'image/webp',
     };
-    const contentType = contentTypes[ext] || 'application/octet-stream';
+    const contentType = contentTypes[ext];
+    if (!contentType) {
+      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
+    }
+    const stats = await fs.stat(fullPath);
+    if (!stats.isFile()) {
+      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
+    }
     
     const nodeStream = createReadStream(fullPath);
     const webStream = Readable.toWeb(nodeStream) as ReadableStream;
