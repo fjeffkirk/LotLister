@@ -52,4 +52,9 @@ export const InfoIcon = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r
 export const ExternalIcon = (p: IconProps) => <Icon {...p}><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5" /></Icon>;
 export const RotateIcon = (p: IconProps) => <Icon {...p}><path d="M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.8L3 8" /><path d="M3 3v5h5" /></Icon>;
 export const CommandIcon = (p: IconProps) => <Icon {...p}><path d="M9 6a3 3 0 10-3 3h12a3 3 0 10-3-3v12a3 3 0 103-3H6a3 3 0 103 3V6z" /></Icon>;
+export const TrendIcon = (p: IconProps) => <Icon {...p}><path d="M3 17l6-6 4 4 8-8" /><path d="M15 7h6v6" /></Icon>;
+export const WalletIcon = (p: IconProps) => <Icon {...p}><path d="M19 7V5a1 1 0 00-1-1H5a2 2 0 000 4h15a1 1 0 011 1v4M21 17v3a1 1 0 01-1 1H5a2 2 0 01-2-2V6" /><path d="M17 12h4v5h-4a2.5 2.5 0 010-5z" /></Icon>;
+export const TruckIcon = (p: IconProps) => <Icon {...p}><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></Icon>;
+export const EyeIcon = (p: IconProps) => <Icon {...p}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></Icon>;
+export const TrophyIcon = (p: IconProps) => <Icon {...p}><path d="M8 4h8v5a4 4 0 01-8 0V4zM8 6H5a3 3 0 003 4M16 6h3a3 3 0 01-3 4M12 13v4M8 21h8M9 17h6" /></Icon>;
 export const PhotosIcon = (p: IconProps) => <Icon {...p}><rect x="7" y="3" width="14" height="14" rx="2" /><path d="M3 7v12a2 2 0 002 2h12" /><path d="M21 13l-4-4-7 7" /></Icon>;

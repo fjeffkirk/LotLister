@@ -91,7 +91,7 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
     const pageCommands = Object.values(sources).flat();
     const navigation: Command[] = [
       { id: 'nav-new-lot', label: 'Create a new lot', group: 'General', icon: <PlusIcon />, keywords: 'add', run: () => router.push('/lots?new=1') },
-      { id: 'nav-lots', label: 'Go to all lots', group: 'General', icon: <LayersIcon />, keywords: 'home dashboard', run: () => router.push('/lots') },
+      { id: 'nav-lots', label: 'Go to dashboard', group: 'General', icon: <LayersIcon />, keywords: 'home lots sales ebay', run: () => router.push('/lots') },
       { id: 'nav-settings', label: 'Account & eBay settings', group: 'General', icon: <GearIcon />, keywords: 'preferences', run: () => router.push('/settings') },
       { id: 'nav-signout', label: 'Sign out', group: 'General', icon: <LogOutIcon />, keywords: 'logout', run: () => void signOut() },
     ];

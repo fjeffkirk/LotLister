@@ -42,7 +42,7 @@ export default function SettingsPage() {
       <main className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
         <div>
           <Link href="/lots" className="inline-flex items-center gap-1 text-sm text-surface-400 hover:text-surface-200">
-            <ChevronLeftIcon size={14} /> All lots
+            <ChevronLeftIcon size={14} /> Dashboard
           </Link>
           <h1 className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight text-white">Account</h1>
         </div>

@@ -28,10 +28,13 @@ const IDENTITY_URL = 'https://apiz.ebay.com/commerce/identity/v1/user/';
 const TRADING_URL = 'https://api.ebay.com/ws/api.dll';
 const TRADING_COMPAT_LEVEL = '1193';
 
-/** Trading API user token, plus identity so we can show which account is connected. */
+export const EBAY_FULFILLMENT_READ_SCOPE = 'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly';
+
+/** Trading API user token, identity so we can show which account is connected, and read-only orders for the dashboard. */
 export const EBAY_OAUTH_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
   'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly',
+  EBAY_FULFILLMENT_READ_SCOPE,
 ];
 
 export const MAX_LISTINGS_PER_REQUEST = 25;
@@ -183,13 +186,14 @@ export async function exchangeEbayAuthCode(creds: EbayCredentials, code: string)
   );
 }
 
+// No scope parameter: eBay then reuses exactly what the account consented to. Sending
+// scopes added after that consent would make the refresh fail with invalid_scope.
 async function refreshEbayAccessToken(creds: EbayCredentials, refreshToken: string): Promise<TokenResponse> {
   return requestEbayToken(
     creds,
     new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      scope: EBAY_OAUTH_SCOPES.join(' '),
     })
   );
 }
@@ -529,7 +533,7 @@ function buildAddItemXml(
   return { xml };
 }
 
-function decodeXml(value: string): string {
+export function decodeXml(value: string): string {
   return value
     .replace(/&apos;/g, "'")
     .replace(/&quot;/g, '"')
@@ -564,16 +568,18 @@ function parseAddItemResponse(xml: string): { ok: boolean; itemId?: string; erro
   };
 }
 
-async function addItem(
+/** Raw Trading API call. Returns the response XML and HTTP status. */
+export async function tradingCall(
   creds: EbayCredentials,
   accessToken: string,
+  callName: string,
   xml: string
-): Promise<{ ok: boolean; itemId?: string; error?: string }> {
+): Promise<{ status: number; text: string }> {
   const response = await fetch(TRADING_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'text/xml',
-      'X-EBAY-API-CALL-NAME': 'AddItem',
+      'X-EBAY-API-CALL-NAME': callName,
       'X-EBAY-API-SITEID': '0',
       'X-EBAY-API-COMPATIBILITY-LEVEL': TRADING_COMPAT_LEVEL,
       'X-EBAY-API-IAF-TOKEN': accessToken,
@@ -582,11 +588,19 @@ async function addItem(
       'X-EBAY-API-CERT-NAME': creds.certId,
     },
     body: xml,
+    cache: 'no-store',
   });
+  return { status: response.status, text: await response.text() };
+}
 
-  const text = await response.text();
+async function addItem(
+  creds: EbayCredentials,
+  accessToken: string,
+  xml: string
+): Promise<{ ok: boolean; itemId?: string; error?: string }> {
+  const { status, text } = await tradingCall(creds, accessToken, 'AddItem', xml);
   if (!text.includes('<Ack>')) {
-    return { ok: false, error: `eBay request failed (${response.status})` };
+    return { ok: false, error: `eBay request failed (${status})` };
   }
   return parseAddItemResponse(text);
 }

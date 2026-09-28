@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { LotWithCount } from '../../lib/types';
 import { COMPLETED_DELETE_DAYS, lotDeletesAt, MAX_LOT_AGE_DAYS } from '../../lib/card-fields';
 import { AppHeader } from '../../components/ui/AppHeader';
+import { EbayOverview } from '../../components/dashboard/EbayOverview';
 import {
   CheckCircleIcon,
   ClockIcon,
@@ -178,9 +179,26 @@ export default function LotsPage() {
           </div>
         )}
 
-        <div className="mb-8">
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Your lots</h1>
-          <p className="mt-1 text-sm text-surface-400">Photograph, fill in, and list whole lots of cards at once.</p>
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Dashboard</h1>
+          <p className="mt-1 text-sm text-surface-400">How your eBay store is doing, and the lots you are working on.</p>
+        </div>
+
+        <EbayOverview />
+
+        <div className="mt-12 mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-t border-white/[0.06] pt-8">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-white">Your lots</h2>
+            <p className="mt-1 text-sm text-surface-400">Photograph, fill in, and list whole lots of cards at once.</p>
+          </div>
+          {!loading && lots.length > 0 && (
+            <dl className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+              <LotStat icon={<LayersIcon size={14} />} label="active lots" value={String(inProgressLots.length)} />
+              <LotStat icon={<ImageIcon size={14} />} label="cards in progress" value={String(stats.cards)} />
+              <LotStat icon={<BoltIcon size={14} className="text-emerald-300" />} label="ready to list" value={String(stats.ready)} />
+              <LotStat icon={<TagIcon size={14} className="text-primary-300" />} label="asking" value={currency.format(stats.value)} />
+            </dl>
+          )}
         </div>
 
         {loading ? (
@@ -189,13 +207,6 @@ export default function LotsPage() {
           <EmptyState onCreate={() => setShowCreateModal(true)} />
         ) : (
           <div className="space-y-12">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <StatTile icon={<LayersIcon size={16} />} label="Active lots" value={String(inProgressLots.length)} />
-              <StatTile icon={<ImageIcon size={16} />} label="Cards in progress" value={String(stats.cards)} />
-              <StatTile icon={<BoltIcon size={16} />} label="Ready to list" value={String(stats.ready)} tone="emerald" />
-              <StatTile icon={<TagIcon size={16} />} label="Asking value" value={currency.format(stats.value)} tone="primary" />
-            </div>
-
             <section>
               <SectionHeader
                 icon={<ClockIcon size={16} className="text-amber-300" />}
@@ -305,16 +316,12 @@ export default function LotsPage() {
   );
 }
 
-function StatTile({ icon, label, value, tone = 'neutral' }: { icon: React.ReactNode; label: string; value: string; tone?: 'neutral' | 'emerald' | 'primary' }) {
-  const iconTone =
-    tone === 'emerald' ? 'bg-emerald-500/10 text-emerald-300' : tone === 'primary' ? 'bg-primary-500/15 text-primary-300' : 'bg-white/[0.05] text-surface-300';
+function LotStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="panel px-4 py-4 sm:px-5 animate-slide-up">
-      <div className="flex items-center gap-2.5">
-        <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconTone}`}>{icon}</span>
-        <span className="text-xs sm:text-sm text-surface-400">{label}</span>
-      </div>
-      <div className="mt-3 text-2xl sm:text-[28px] font-semibold tracking-tight text-white tabular-nums">{value}</div>
+    <div className="flex items-center gap-1.5 text-surface-400">
+      <span className="text-surface-400">{icon}</span>
+      <dd className="font-semibold text-white tabular-nums">{value}</dd>
+      <dt>{label}</dt>
     </div>
   );
 }
@@ -451,15 +458,7 @@ function LotCard({
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-12">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="panel p-5 space-y-4">
-            <div className="skeleton h-4 w-24" />
-            <div className="skeleton h-7 w-16" />
-          </div>
-        ))}
-      </div>
+    <div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {Array.from({ length: 4 }, (_, i) => (
           <div key={i} className="panel overflow-hidden">

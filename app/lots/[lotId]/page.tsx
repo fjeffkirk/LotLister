@@ -606,7 +606,7 @@ export default function LotPage() {
           <AlertIcon size={28} className="mx-auto mb-3 text-red-300" />
           <p className="text-surface-200 mb-5">{error || 'Lot not found'}</p>
           <Link href="/lots" className="btn btn-secondary">
-            <ChevronLeftIcon /> Back to lots
+            <ChevronLeftIcon /> Back to dashboard
           </Link>
         </div>
       </div>
@@ -639,7 +639,7 @@ export default function LotPage() {
       <header className="glass sticky top-0 z-30 border-b border-white/[0.06]">
         <div className="px-3 sm:px-5 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Link href="/lots" className="btn btn-ghost btn-icon flex-shrink-0" aria-label="Back to lots" title="All lots">
+            <Link href="/lots" className="btn btn-ghost btn-icon flex-shrink-0" aria-label="Back to dashboard" title="Dashboard">
               <ChevronLeftIcon size={18} />
             </Link>
             <ReadinessRing done={readiness.done} total={readiness.total} />
