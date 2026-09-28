@@ -5,6 +5,7 @@
 import { CardImage } from '@prisma/client';
 import prisma from './prisma';
 import { v4 as uuidv4 } from 'uuid';
+import { newCardData, parseCardDefaults } from './card-fields';
 
 export interface ImageInfo {
   id: string;
@@ -47,36 +48,30 @@ export function groupImages(images: ImageInfo[], imagesPerCard: number): CardGro
 export async function createCardItemsFromGroups(
   lotId: string,
   groups: CardGroup[],
-  startSortOrder = 0
+  startSortOrder = 0,
+  cardData: Record<string, unknown> = {}
 ): Promise<void> {
-  // Use a transaction to ensure all items are created together
-  await prisma.$transaction(async (tx) => {
-    for (let i = 0; i < groups.length; i++) {
-      const group = groups[i];
-      
-      // Create the CardItem
-      const cardItem = await tx.cardItem.create({
-        data: {
-          id: group.cardItemId,
-          lotId,
-          sortOrder: startSortOrder + i,
-        },
-      });
-      
-      // Create CardImage records
-      for (const img of group.images) {
-        await tx.cardImage.create({
-          data: {
-            cardItemId: cardItem.id,
-            originalPath: img.originalPath,
-            thumbPath: img.thumbPath,
-            filename: img.filename,
-            sortOrder: img.sortOrder,
-          },
-        });
-      }
-    }
-  });
+  await prisma.$transaction([
+    prisma.cardItem.createMany({
+      data: groups.map((group, i) => ({
+        ...cardData,
+        id: group.cardItemId,
+        lotId,
+        sortOrder: startSortOrder + i,
+      })),
+    }),
+    prisma.cardImage.createMany({
+      data: groups.flatMap((group) =>
+        group.images.map((img) => ({
+          cardItemId: group.cardItemId,
+          originalPath: img.originalPath,
+          thumbPath: img.thumbPath,
+          filename: img.filename,
+          sortOrder: img.sortOrder,
+        }))
+      ),
+    }),
+  ]);
 }
 
 /**
@@ -116,7 +111,8 @@ export async function regroupLotImages(
   });
   
   // Create new CardItems with regrouped images
-  await createCardItemsFromGroups(lotId, newGroups);
+  const lot = await prisma.lot.findUnique({ where: { id: lotId }, select: { cardDefaults: true } });
+  await createCardItemsFromGroups(lotId, newGroups, 0, newCardData(parseCardDefaults(lot?.cardDefaults)));
 }
 
 /**

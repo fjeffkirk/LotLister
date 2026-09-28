@@ -1,53 +1,28 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { LotWithCards, CardItemWithImages, isPsaImportedCard } from '../../../lib/types';
+import { LotWithCards, CardItemWithImages } from '../../../lib/types';
+import { isCardComplete as isCardReadyForExport } from '../../../lib/card-completeness';
+import { parseCardDefaults, CardDefaults, COMPLETED_DELETE_DAYS } from '../../../lib/card-fields';
 import ExportSettingsModal from '../../../components/ExportSettingsModal';
 import PSAImportModal from '../../../components/PSAImportModal';
+import LotDefaultsModal from '../../../components/LotDefaultsModal';
 
-// Check if a card is graded (based on conditionType)
-function isCardGraded(card: CardItemWithImages): boolean {
-  return (card as Record<string, unknown>).conditionType === 'Graded: Professionally graded';
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+interface Toast {
+  id: number;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
-// Check if a card has all mandatory fields filled for eBay export
-function isCardReadyForExport(card: CardItemWithImages): boolean {
-  // Must have at least one image
-  if (!card.images || card.images.length === 0) return false;
-  
-  // Check all mandatory text/select fields
-  if (!card.title || card.title.trim() === '') return false;
-  if (card.salePrice === null || card.salePrice === undefined) return false;
-  if (card.year === null || card.year === undefined) return false;
-  const conditionType = (card as Record<string, unknown>).conditionType as string | undefined;
-  if (!conditionType || conditionType.trim() === '') return false;
-  if (!card.category || card.category.trim() === '') return false;
-  if (!card.brand || card.brand.trim() === '') return false;
-  if (!card.setName || card.setName.trim() === '') return false;
-  if (!card.name || card.name.trim() === '') return false;
-  if (!card.cardNumber || card.cardNumber.trim() === '') return false;
-  if (
-    !isPsaImportedCard(card) &&
-    (!card.subsetParallel || card.subsetParallel.trim() === '')
-  ) {
-    return false;
-  }
-  
-  // If graded, grader and grade are required
-  if (isCardGraded(card)) {
-    if (!card.grader || card.grader.trim() === '') return false;
-    const grade = (card as Record<string, unknown>).grade as string | undefined;
-    if (!grade || grade.trim() === '') return false;
-  } else {
-    // If ungraded, condition is required
-    if (!card.condition || card.condition.trim() === '') return false;
-  }
-  
-  return true;
-}
+const SAVE_DEBOUNCE_MS = 600;
+const SAVE_RETRY_MS = 4000;
+const DELETE_UNDO_MS = 6000;
 
 // Dynamic import for AG Grid to avoid SSR issues
 const CardGrid = dynamic(() => import('../../../components/CardGrid'), {
@@ -84,8 +59,37 @@ export default function LotPage() {
     remainingReady: number;
     results: { cardId: string; title: string; success: boolean; listingUrl?: string; error?: string }[];
   } | null>(null);
-  const [pendingChanges, setPendingChanges] = useState<Map<string, Record<string, unknown>>>(new Map());
-  const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [showDefaults, setShowDefaults] = useState(false);
+  const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
+
+  // Edits waiting to be sent, merged per card. Refs keep handleCellChange stable, so the grid never rebuilds its columns.
+  const pendingRef = useRef(new Map<string, Record<string, unknown>>());
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlightRef = useRef(false);
+  const saveFailedRef = useRef(false);
+  const pendingDeletesRef = useRef(
+    new Map<string, { timer: ReturnType<typeof setTimeout>; card: CardItemWithImages; index: number; commit: () => Promise<void> }>()
+  );
+  const toastIdRef = useRef(0);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const notify = useCallback((message: string, action?: { label: string; onAction: () => void }, durationMs = 4000) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev.slice(-2), { id, message, actionLabel: action?.label, onAction: action?.onAction }]);
+    setTimeout(() => dismissToast(id), durationMs);
+    return id;
+  }, [dismissToast]);
+
+  const lotRef = useRef<LotWithCards | null>(null);
+  lotRef.current = lot;
+
+  const cardDefaults = useMemo<CardDefaults>(() => parseCardDefaults(lot?.cardDefaults), [lot?.cardDefaults]);
 
   // Check if all cards are ready for eBay export
   const exportReadiness = useMemo(() => {
@@ -107,6 +111,12 @@ export default function LotPage() {
 
   useEffect(() => {
     fetchLot();
+    fetch('/api/suggestions')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setSuggestions(data.data);
+      })
+      .catch(() => undefined);
     fetch('/api/ebay/settings')
       .then((res) => res.json())
       .then((data) => {
@@ -122,7 +132,17 @@ export default function LotPage() {
       const res = await fetch(`/api/lots/${lotId}`);
       const data = await res.json();
       if (data.success) {
-        setLot(data.data);
+        // Unsaved edits and not-yet-committed deletes win over what the server just returned
+        const fetched = data.data as LotWithCards;
+        setLot({
+          ...fetched,
+          cardItems: fetched.cardItems
+            .filter((card) => !pendingDeletesRef.current.has(card.id))
+            .map((card) => {
+              const pending = pendingRef.current.get(card.id);
+              return pending ? { ...card, ...pending } : card;
+            }),
+        });
       } else {
         setError(data.error || 'Failed to load lot');
       }
@@ -133,32 +153,92 @@ export default function LotPage() {
     }
   }
 
-  // Debounced save for cell changes
-  const saveChanges = useCallback(async (changes: Map<string, Record<string, unknown>>) => {
-    if (changes.size === 0) return;
-    
-    const updates = Array.from(changes.entries()).map(([id, data]) => ({
-      id,
-      data,
-    }));
+  // Local state is the source of truth; the server response is never written back over it, so edits
+  // made while a save is in flight can't be reverted.
+  const flushSaves = useCallback(async (options: { keepalive?: boolean } = {}) => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (pendingRef.current.size === 0) return;
+    if (inFlightRef.current && !options.keepalive) return; // the in-flight save reschedules when it finishes
 
+    const batch = pendingRef.current;
+    pendingRef.current = new Map();
+    inFlightRef.current = true;
+    setSaveState('saving');
+
+    let retryable = false;
     try {
       const res = await fetch(`/api/lots/${lotId}/cards`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updates }),
+        body: JSON.stringify({ updates: Array.from(batch, ([id, data]) => ({ id, data })) }),
+        keepalive: options.keepalive,
       });
-      const data = await res.json();
-      if (data.success) {
-        setLot((prev) => prev ? { ...prev, cardItems: data.data } : null);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        retryable = res.status >= 500 || res.status === 0;
+        throw new Error(data.error || `Save failed (${res.status})`);
       }
+      saveFailedRef.current = false;
+      setSaveError(null);
+      setSaveState(pendingRef.current.size > 0 ? 'saving' : 'saved');
     } catch (err) {
-      console.error('Failed to save changes:', err);
+      saveFailedRef.current = true;
+      const message = err instanceof Error ? err.message : 'Save failed';
+      if (retryable || err instanceof TypeError) {
+        // Put the batch back underneath any newer edits and try again shortly
+        for (const [id, data] of batch) {
+          pendingRef.current.set(id, { ...data, ...(pendingRef.current.get(id) ?? {}) });
+        }
+        setSaveError('Offline or server error. Retrying…');
+        saveTimerRef.current = setTimeout(() => flushSavesRef.current(), SAVE_RETRY_MS);
+      } else {
+        setSaveError(`Couldn't save: ${message}`);
+      }
+      setSaveState('error');
+      return;
+    } finally {
+      inFlightRef.current = false;
+    }
+    if (pendingRef.current.size > 0) {
+      saveTimerRef.current = setTimeout(() => flushSavesRef.current(), SAVE_DEBOUNCE_MS);
     }
   }, [lotId]);
 
+  const flushSavesRef = useRef(flushSaves);
+  flushSavesRef.current = flushSaves;
+
+  /** Waits until every queued edit and delete has reached the server (before clone, export, or listing). */
+  const saveAll = useCallback(async () => {
+    await Promise.all(
+      Array.from(pendingDeletesRef.current.values(), (pending) => {
+        clearTimeout(pending.timer);
+        return pending.commit();
+      })
+    );
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (inFlightRef.current) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      if (pendingRef.current.size === 0) break;
+      await flushSavesRef.current();
+      if (saveFailedRef.current) {
+        throw new Error('Some changes have not saved yet. Check your connection and try again.');
+      }
+    }
+  }, []);
+
+  const queueSave = useCallback((cardId: string, data: Record<string, unknown>) => {
+    pendingRef.current.set(cardId, { ...(pendingRef.current.get(cardId) ?? {}), ...data });
+    setSaveState('saving');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => flushSavesRef.current(), SAVE_DEBOUNCE_MS);
+  }, []);
+
   const handleCellChange = useCallback((cardId: string, field: string, value: unknown) => {
-    // Update local state immediately for responsive UI
     setLot((prev) => {
       if (!prev) return prev;
       return {
@@ -168,68 +248,64 @@ export default function LotPage() {
         ),
       };
     });
+    queueSave(cardId, { [field]: value });
+  }, [queueSave]);
 
-    // Queue the change
-    setPendingChanges((prev) => {
-      const newChanges = new Map(prev);
-      const existing = newChanges.get(cardId) || {};
-      newChanges.set(cardId, { ...existing, [field]: value });
-      return newChanges;
-    });
-
-    // Debounce save
-    if (saveTimeout) clearTimeout(saveTimeout);
-    const timeout = setTimeout(() => {
-      setPendingChanges((current) => {
-        saveChanges(current);
-        return new Map();
-      });
-    }, 500);
-    setSaveTimeout(timeout);
-  }, [saveChanges, saveTimeout]);
-
-  // Handle bulk edit for all cards
-  const handleBulkEdit = useCallback(async (field: string, value: unknown) => {
-    if (!lot) return;
-    
-    // Update local state immediately
+  // Multi-card edits from bulk edit, fill down, and paste
+  const handleCardsChange = useCallback((updates: { id: string; data: Record<string, unknown> }[]) => {
+    if (updates.length === 0) return;
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const { id, data } of updates) byId.set(id, { ...(byId.get(id) ?? {}), ...data });
     setLot((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        cardItems: prev.cardItems.map((card) => ({
-          ...card,
-          [field]: value,
-        })),
+        cardItems: prev.cardItems.map((card) => {
+          const data = byId.get(card.id);
+          return data ? { ...card, ...data } : card;
+        }),
       };
     });
-    
-    // Create updates for all cards
-    const updates = lot.cardItems.map((card) => ({
-      id: card.id,
-      data: { [field]: value },
-    }));
-    
-    // Save to database
-    try {
-      const res = await fetch(`/api/lots/${lotId}/cards`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updates }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setLot((prev) => prev ? { ...prev, cardItems: data.data } : null);
+    for (const [id, data] of byId) queueSave(id, data);
+  }, [queueSave]);
+
+  // Send pending edits and deletes if the tab is hidden or closed, and warn if a save is still in flight
+  useEffect(() => {
+    const flushDeletes = () => {
+      for (const [cardId, pending] of pendingDeletesRef.current) {
+        clearTimeout(pending.timer);
+        fetch(`/api/lots/${lotId}/cards/${cardId}`, { method: 'DELETE', keepalive: true }).catch(() => undefined);
       }
-    } catch (err) {
-      console.error('Failed to bulk edit:', err);
-      setError('Failed to save bulk edit');
-    }
-  }, [lot, lotId]);
+      pendingDeletesRef.current.clear();
+    };
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flushSavesRef.current({ keepalive: true });
+    };
+    const onPageHide = () => {
+      flushSavesRef.current({ keepalive: true });
+      flushDeletes();
+    };
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (pendingRef.current.size > 0 || inFlightRef.current) {
+        flushSavesRef.current({ keepalive: true });
+        event.preventDefault();
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      onPageHide();
+    };
+  }, [lotId]);
 
   // Handle clone card
   const handleCloneCard = useCallback(async (cardId: string) => {
     try {
+      await saveAll();
       const res = await fetch(`/api/lots/${lotId}/cards/${cardId}/clone`, {
         method: 'POST',
       });
@@ -242,34 +318,54 @@ export default function LotPage() {
       }
     } catch (err) {
       console.error('Failed to clone card:', err);
-      setError('Failed to clone card');
+      setError(err instanceof Error && err.message.startsWith('Some changes') ? err.message : 'Failed to clone card');
     }
-  }, [lotId]);
+  }, [lotId, saveAll]);
 
-  // Handle delete card
-  const handleDeleteCard = useCallback(async (cardId: string) => {
-    try {
-      const res = await fetch(`/api/lots/${lotId}/cards/${cardId}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (data.success) {
-        // Update local state to remove the card
-        setLot((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            cardItems: prev.cardItems.filter((card) => card.id !== cardId),
-          };
-        });
-      } else {
-        setError(data.error || 'Failed to delete card');
+  // Delete is delayed so it can be undone; the request goes out when the undo window closes or the page is left
+  const handleDeleteCard = useCallback((cardId: string) => {
+    const cards = lotRef.current?.cardItems ?? [];
+    const index = cards.findIndex((card) => card.id === cardId);
+    if (index === -1 || pendingDeletesRef.current.has(cardId)) return;
+    const snapshot = { card: cards[index], index };
+    setLot((prev) => (prev ? { ...prev, cardItems: prev.cardItems.filter((card) => card.id !== cardId) } : prev));
+
+    const commit = async () => {
+      pendingDeletesRef.current.delete(cardId);
+      pendingRef.current.delete(cardId);
+      try {
+        const res = await fetch(`/api/lots/${lotId}/cards/${cardId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+      } catch {
+        setError('Failed to delete card. Reloading the lot.');
+        fetchLot();
       }
-    } catch (err) {
-      console.error('Failed to delete card:', err);
-      setError('Failed to delete card');
-    }
-  }, [lotId]);
+    };
+    const timer = setTimeout(commit, DELETE_UNDO_MS);
+    pendingDeletesRef.current.set(cardId, { timer, commit, ...snapshot });
+
+    const toastId = notify(
+      `Deleted "${snapshot.card.title || snapshot.card.name || 'card'}"`,
+      {
+        label: 'Undo',
+        onAction: () => {
+          const pending = pendingDeletesRef.current.get(cardId);
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          pendingDeletesRef.current.delete(cardId);
+          setLot((prev) => {
+            if (!prev) return prev;
+            const cardItems = [...prev.cardItems];
+            cardItems.splice(Math.min(pending.index, cardItems.length), 0, pending.card);
+            return { ...prev, cardItems };
+          });
+          dismissToast(toastId);
+        },
+      },
+      DELETE_UNDO_MS
+    );
+  }, [lotId, notify, dismissToast]);
 
   function handleListClick() {
     setShowExportMenu(false);
@@ -321,6 +417,7 @@ export default function LotPage() {
     setExporting(true);
     
     try {
+      await saveAll();
       // Get client's timezone offset in minutes (negative for ahead of UTC)
       const timezoneOffset = new Date().getTimezoneOffset();
       
@@ -359,7 +456,7 @@ export default function LotPage() {
         setExportModeSettings(false);
       }
     } catch (err) {
-      setError('Export failed. Please try again.');
+      setError(err instanceof Error && err.message.startsWith('Some changes') ? err.message : 'Export failed. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -369,6 +466,7 @@ export default function LotPage() {
     setListing(true);
     setError(null);
     try {
+      await saveAll();
       const timezoneOffset = new Date().getTimezoneOffset();
       const res = await fetch(`/api/lots/${lotId}/list-ebay`, {
         method: 'POST',
@@ -391,6 +489,35 @@ export default function LotPage() {
       setListing(false);
     }
   }
+
+  async function saveCardDefaults(defaults: Record<string, unknown>, fillExisting: boolean) {
+    await saveAll();
+    const res = await fetch(`/api/lots/${lotId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardDefaults: defaults, fillExisting }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed to save defaults');
+    setLot(data.data);
+    setShowDefaults(false);
+    notify(fillExisting ? 'Defaults saved and applied to empty fields' : 'Defaults saved for new cards');
+  }
+
+  const saveIndicator =
+    saveState === 'error' ? (
+      <button
+        onClick={() => flushSavesRef.current()}
+        className="text-xs text-red-300 hover:text-red-200 underline decoration-dotted"
+        title={saveError ?? undefined}
+      >
+        {saveError?.startsWith("Couldn't") ? saveError : 'Not saved — retry'}
+      </button>
+    ) : saveState === 'saving' ? (
+      <span className="text-xs text-surface-400">Saving…</span>
+    ) : saveState === 'saved' ? (
+      <span className="text-xs text-surface-500">All changes saved</span>
+    ) : null;
 
   if (loading) {
     return (
@@ -432,8 +559,12 @@ export default function LotPage() {
               </Link>
               <div className="min-w-0">
                 <h1 className="font-semibold text-base sm:text-lg truncate">{lot.name}</h1>
-                <p className="text-xs sm:text-sm text-surface-400">
-                  {lot.cardItems.length} {lot.cardItems.length === 1 ? 'card' : 'cards'}
+                <p className="text-xs sm:text-sm text-surface-400 flex items-center gap-2">
+                  <span>
+                    {lot.cardItems.length} {lot.cardItems.length === 1 ? 'card' : 'cards'}
+                  </span>
+                  {saveIndicator && <span className="text-surface-600">·</span>}
+                  {saveIndicator}
                 </p>
               </div>
             </div>
@@ -477,6 +608,18 @@ export default function LotPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
                 <span className="hidden md:inline">PSA</span>
+              </button>
+
+              {/* Lot defaults */}
+              <button
+                onClick={() => setShowDefaults(true)}
+                className="btn btn-secondary text-sm py-1.5 px-2 sm:px-3"
+                title="Values every card in this lot starts with"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h7" />
+                </svg>
+                <span className="hidden md:inline">Defaults</span>
               </button>
 
               {/* Export dropdown */}
@@ -604,7 +747,11 @@ export default function LotPage() {
               <button
                 onClick={toggleLotComplete}
                 className={`btn text-sm py-1.5 px-2 sm:px-3 ${lot?.completed ? 'btn-secondary' : 'btn-ghost border border-green-600 text-green-400 hover:bg-green-600/20'}`}
-                title={lot?.completed ? 'Mark as In Progress' : 'Mark as Completed'}
+                title={
+                  lot?.completed
+                    ? 'Mark as In Progress'
+                    : `Mark as Completed. Completed lots are deleted automatically after ${COMPLETED_DELETE_DAYS} days.`
+                }
               >
                 {lot?.completed ? (
                   <>
@@ -688,14 +835,16 @@ export default function LotPage() {
             </div>
           </div>
         ) : (
-          <div className="h-[calc(100vh-120px)] panel">
+          <div className="h-[calc(100vh-120px)] panel flex flex-col">
             <CardGrid
               cards={lot.cardItems}
               onCellChange={handleCellChange}
-              onBulkEdit={handleBulkEdit}
+              onCardsChange={handleCardsChange}
               onCloneCard={handleCloneCard}
               onDeleteCard={handleDeleteCard}
               searchText={searchText}
+              suggestions={suggestions}
+              notify={notify}
             />
           </div>
         )}
@@ -762,6 +911,33 @@ export default function LotPage() {
               </ul>
             </div>
           </div>
+        </div>
+      )}
+
+      <LotDefaultsModal
+        isOpen={showDefaults}
+        defaults={cardDefaults}
+        cardCount={lot.cardItems.length}
+        onClose={() => setShowDefaults(false)}
+        onSave={saveCardDefaults}
+      />
+
+      {toasts.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              role="status"
+              className="pointer-events-auto flex items-center gap-4 px-4 py-2.5 bg-surface-800 border border-surface-600 rounded-lg text-sm text-surface-100 animate-slide-up"
+            >
+              <span className="max-w-[60vw] truncate">{toast.message}</span>
+              {toast.actionLabel && (
+                <button onClick={toast.onAction} className="font-medium text-primary-400 hover:text-primary-300">
+                  {toast.actionLabel}
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

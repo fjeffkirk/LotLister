@@ -11,6 +11,7 @@
 import { CardImage, CardItem, ExportProfile } from '@prisma/client';
 import prisma from './prisma';
 import { imagePathToEbayPicUrl, isAbsoluteImageUrl } from './imageUrls';
+import { renderDescription } from './card-fields';
 import {
   ebayCardConditionValueId,
   ebayGradeValueId,
@@ -469,7 +470,7 @@ function buildAddItemXml(
   }
   const listingDetails = offerPrices.length > 0 ? `<ListingDetails>${offerPrices.join('')}</ListingDetails>` : '';
 
-  const description = (card.description?.trim() || title).replace(/]]>/g, ']] >');
+  const description = (renderDescription(card, title) || title).replace(/]]>/g, ']] >');
   const duration = isAuction ? `Days_${profile.durationDays}` : 'GTC';
   const listingType = isAuction ? 'Chinese' : 'FixedPriceItem';
   const returnsAccepted = profile.returnsAccepted ? 'ReturnsAccepted' : 'ReturnsNotAccepted';

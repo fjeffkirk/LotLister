@@ -124,12 +124,18 @@ select {
 }
 
 /* Input styles */
+input:not([type]):not(.grid-editor-input),
 input[type="text"],
 input[type="number"],
 input[type="date"],
 input[type="time"],
-textarea {
+textarea,
+.input {
   @apply bg-surface-800 border border-surface-600 text-surface-100 rounded px-3 py-2;
+}
+
+.input {
+  @apply w-full;
 }
 
 input:focus,
@@ -292,4 +298,31 @@ textarea:focus {
 
 .ag-theme-alpine-dark .row-complete.ag-row-odd:hover {
   background-color: rgba(34, 197, 94, 0.18) !important;
+}
+
+/* AG Grid - Field that doesn't apply to this card (e.g. grader on a raw card) */
+.ag-theme-alpine-dark .cell-na {
+  color: #52525b;
+  font-style: italic;
+}
+
+/* AG Grid - Keyboard editors (typeahead / autocomplete popups) */
+.ag-theme-alpine-dark .ag-popup-editor {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.grid-editor-list {
+  @apply absolute left-0 mt-0.5 max-h-72 overflow-y-auto rounded-md border border-surface-600 bg-surface-800 py-1 text-sm shadow-xl;
+  min-width: 100%;
+}
+
+.grid-editor-option {
+  @apply flex items-baseline justify-between gap-3 px-2.5 py-1.5 cursor-pointer text-surface-200;
+}
+
+.grid-editor-option.active {
+  @apply bg-primary-600/40 text-white;
 }

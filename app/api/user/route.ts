@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
 import { getUserEmail } from '../../../lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 interface UserStats {
   email: string;
   completedCount: number;

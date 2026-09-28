@@ -4,6 +4,7 @@ import { updateLotSchema } from '../../../../lib/validation';
 import { deleteLotImages } from '../../../../lib/storage';
 import { ApiResponse, LotWithCards } from '../../../../lib/types';
 import { getUserEmail } from '../../../../lib/auth';
+import { fillEmptyFromDefaults, sanitizeCardDefaults } from '../../../../lib/card-fields';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
@@ -102,7 +103,24 @@ export async function PATCH(
     }
 
     // Build update data, handling completedAt automatically
-    const updateData: Record<string, unknown> = { ...validation.data };
+    const { cardDefaults, fillExisting, ...lotFields } = validation.data;
+    const updateData: Record<string, unknown> = { ...lotFields };
+
+    if (cardDefaults) {
+      const defaults = sanitizeCardDefaults(cardDefaults);
+      updateData.cardDefaults = JSON.stringify(defaults);
+      if (fillExisting) {
+        const cards = await prisma.cardItem.findMany({ where: { lotId } });
+        const updates = cards
+          .map((card) => ({ id: card.id, data: fillEmptyFromDefaults(card, defaults) }))
+          .filter((update) => Object.keys(update.data).length > 0);
+        if (updates.length > 0) {
+          await prisma.$transaction(
+            updates.map((update) => prisma.cardItem.update({ where: { id: update.id }, data: update.data }))
+          );
+        }
+      }
+    }
     
     // Check if we're newly marking as completed (wasn't completed before)
     const isNewlyCompleted = validation.data.completed === true && !existingLot.completed;

@@ -5,6 +5,7 @@
 import { CardItem, CardImage, ExportProfile } from '@prisma/client';
 import { format, addSeconds, parseISO } from 'date-fns';
 import { imagePathToEbayPicUrl } from './imageUrls';
+import { renderDescription } from './card-fields';
 import { isSportsCategory, isTcgCategory, getCategoryEbayId } from './types';
 
 type CardItemWithImages = CardItem & { images: CardImage[] };
@@ -452,8 +453,7 @@ export function generateEbayCSV(
       .join('|');
     
     // Description - use custom description if provided, otherwise use title
-    const customDescription = (card as Record<string, unknown>).description as string | undefined;
-    const description = customDescription || `<p>${title}</p>`;
+    const description = renderDescription(card, title) || `<p>${title}</p>`;
     
     // Format and pricing
     // For FixedPrice: *StartPrice IS the listing price; BuyItNowPrice is an auction-only add-on field

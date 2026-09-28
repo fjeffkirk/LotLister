@@ -5,6 +5,7 @@
 
 import { createHash } from 'crypto';
 import { CATEGORY_OPTIONS } from './types';
+import { parseGrade } from './card-fields';
 
 export interface PSACertData {
   certNumber: string;
@@ -672,22 +673,6 @@ export function mapPSAToCardData(psaData: PSACertData): Record<string, unknown> 
   const sportSource = (psaData.sport || psaData.category || '').trim();
   const category = mapPsaSportToEbayCategory(sportSource);
 
-  // Map PSA grade to our grade options
-  const gradeMapping: Record<string, string> = {
-    '10': 'Gem Mint 10',
-    '9': 'Mint 9',
-    '8': 'Near Mint-Mint 8',
-    '7': 'Near Mint 7',
-    '6': 'Excellent-Mint 6',
-    '5': 'Excellent 5',
-    '4': 'Very Good-Excellent 4',
-    '3': 'Very Good 3',
-    '2': 'Good 2',
-    '1': 'Poor 1',
-    '1.5': 'Fair 1.5',
-    'A': 'Authentic',
-  };
-
   return {
     name: psaData.subject,
     brand,
@@ -698,7 +683,8 @@ export function mapPSAToCardData(psaData: PSACertData): Record<string, unknown> 
     subsetParallel,
     conditionType: 'Graded: Professionally graded',
     grader: 'Professional Sports Authenticator (PSA)',
-    grade: gradeMapping[psaData.grade] || `${psaData.gradeDescription} ${psaData.grade}`,
+    // eBay only accepts the numeric grade ("10", "9.5"); keep PSA's text for anything else (e.g. "Authentic")
+    grade: parseGrade(psaData.grade) || `${psaData.gradeDescription} ${psaData.grade}`.trim(),
     certNo: psaData.certNumber,
   };
 }

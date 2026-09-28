@@ -4,13 +4,15 @@ import { createLotSchema } from '../../../lib/validation';
 import { ApiResponse, LotWithCount } from '../../../lib/types';
 import { getUserEmail } from '../../../lib/auth';
 import { deleteLotImages } from '../../../lib/storage';
+import { COMPLETED_DELETE_DAYS, MAX_LOT_AGE_DAYS } from '../../../lib/card-fields';
 
-// Auto-delete settings
-const COMPLETED_DELETE_DAYS = 10; // Delete completed lots after 10 days
-const MAX_LOT_AGE_DAYS = 30;      // Delete any lot older than 30 days
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+let lastCleanupAt = 0;
 
-// Cleanup old lots (runs on each GET request)
+// Deletes lots past their retention (see lotDeletesAt). Runs at most hourly, triggered by the lots list.
 async function cleanupOldLots(): Promise<void> {
+  if (Date.now() - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
+  lastCleanupAt = Date.now();
   try {
     const completedCutoff = new Date();
     completedCutoff.setDate(completedCutoff.getDate() - COMPLETED_DELETE_DAYS);

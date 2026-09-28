@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { LotWithCount } from '../../lib/types';
+import { COMPLETED_DELETE_DAYS, lotDeletesAt, MAX_LOT_AGE_DAYS } from '../../lib/card-fields';
 import { useUser } from '../../components/UserProvider';
 
 interface StorageInfo {
@@ -15,15 +16,21 @@ interface UserStats {
   completedCount: number;
 }
 
-// Calculate days remaining before auto-delete
-function getDaysRemaining(completedAt: string | Date | null): number {
-  if (!completedAt) return 10;
-  const completed = new Date(completedAt);
-  const deleteDate = new Date(completed);
-  deleteDate.setDate(deleteDate.getDate() + 10);
-  const now = new Date();
-  const diff = deleteDate.getTime() - now.getTime();
-  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+const DELETE_WARNING_DAYS = 7;
+
+function daysUntilDeleted(lot: LotWithCount): number {
+  const completedAt = (lot as { completedAt?: string | Date | null }).completedAt ?? null;
+  const deletesAt = lotDeletesAt({
+    createdAt: lot.createdAt,
+    completed: Boolean(lot.completed),
+    completedAt: lot.completed ? completedAt ?? new Date() : null,
+  });
+  return Math.max(0, Math.ceil((deletesAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+}
+
+function deletesInLabel(days: number): string {
+  if (days === 0) return 'Auto-deletes today';
+  return `Auto-deletes in ${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
 export default function LotsPage() {
@@ -145,7 +152,7 @@ export default function LotsPage() {
       
       if (data.success) {
         setLots((prev) => prev.map((lot) => 
-          lot.id === id ? { ...lot, completed: !currentStatus } : lot
+          lot.id === id ? { ...lot, completed: !currentStatus, completedAt: currentStatus ? null : new Date() } : lot
         ));
         // Refresh user stats if marking as completed
         if (!currentStatus) {
@@ -336,7 +343,7 @@ export default function LotsPage() {
                   </svg>
                   In Progress ({inProgressLots.length})
                 </h2>
-                <p className="text-xs text-surface-500 mt-1">Lots are auto-deleted after 30 days</p>
+                <p className="text-xs text-surface-500 mt-1">Lots are auto-deleted {MAX_LOT_AGE_DAYS} days after they&apos;re created</p>
               </div>
               {inProgressLots.length === 0 ? (
                 <div className="panel p-6 text-center text-surface-400">
@@ -365,7 +372,7 @@ export default function LotsPage() {
                           <button
                             onClick={() => toggleComplete(lot.id, lot.completed || false)}
                             className="btn-ghost p-2 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Mark as completed"
+                            title={`Mark as completed. Completed lots are deleted automatically after ${COMPLETED_DELETE_DAYS} days.`}
                           >
                             <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -383,7 +390,13 @@ export default function LotsPage() {
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-xs text-surface-500">
-                        <span>Created {new Date(lot.createdAt).toLocaleDateString()}</span>
+                        {daysUntilDeleted(lot) <= DELETE_WARNING_DAYS ? (
+                          <span className={daysUntilDeleted(lot) <= 3 ? 'text-red-400' : 'text-yellow-400'}>
+                            {deletesInLabel(daysUntilDeleted(lot))}
+                          </span>
+                        ) : (
+                          <span>Created {new Date(lot.createdAt).toLocaleDateString()}</span>
+                        )}
                         <Link
                           href={`/lots/${lot.id}`}
                           className="btn btn-secondary text-sm py-1.5"
@@ -414,7 +427,7 @@ export default function LotsPage() {
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    Completed lots are automatically deleted after 10 days to free up storage
+                    Completed lots are automatically deleted after {COMPLETED_DELETE_DAYS} days to free up storage
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -460,8 +473,8 @@ export default function LotsPage() {
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-xs">
-                        <span className={`${getDaysRemaining((lot as Record<string, unknown>).completedAt as string | null) <= 3 ? 'text-red-400' : 'text-surface-500'}`}>
-                          Auto-deletes in {getDaysRemaining((lot as Record<string, unknown>).completedAt as string | null)} days
+                        <span className={daysUntilDeleted(lot) <= 3 ? 'text-red-400' : 'text-surface-500'}>
+                          {deletesInLabel(daysUntilDeleted(lot))}
                         </span>
                         <Link
                           href={`/lots/${lot.id}`}

@@ -4,6 +4,7 @@ import { groupImages, createCardItemsFromGroups, ImageInfo } from '../../../../.
 import { v4 as uuidv4 } from 'uuid';
 import { ApiResponse } from '../../../../../lib/types';
 import { getUserEmail } from '../../../../../lib/auth';
+import { newCardData, parseCardDefaults } from '../../../../../lib/card-fields';
 
 interface RouteParams {
   params: Promise<{ lotId: string }>;
@@ -79,7 +80,7 @@ export async function POST(
     const startSortOrder = (lastCard?.sortOrder ?? -1) + 1;
     
     // Create card items from groups (append after existing cards)
-    await createCardItemsFromGroups(lotId, groups, startSortOrder);
+    await createCardItemsFromGroups(lotId, groups, startSortOrder, newCardData(parseCardDefaults(lot.cardDefaults)));
     
     return NextResponse.json({
       success: true,

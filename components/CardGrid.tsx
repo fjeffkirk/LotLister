@@ -2,371 +2,168 @@
 
 import { useRef, useCallback, useMemo, useState, useEffect } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import {
+import type {
   ColDef,
   ICellRendererParams,
   ValueSetterParams,
-  GridReadyEvent,
+  ValueFormatterParams,
+  EditableCallbackParams,
   CellClickedEvent,
   CellContextMenuEvent,
   CellValueChangedEvent,
+  CellKeyDownEvent,
   CellClassParams,
   RowClassParams,
   TabToNextCellParams,
   CellFocusedEvent,
+  GridApi,
+  IRowNode,
+  RowSelectionOptions,
+  SelectionColumnDef,
+  GetRowIdParams,
+  SelectionChangedEvent,
+  ModelUpdatedEvent,
 } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
+import { CardItemWithImages } from '../lib/types';
 import {
-  CardItemWithImages,
-  CardImage,
-  CATEGORY_OPTIONS,
-  ALL_CATEGORIES_SET,
-  CONDITION_TYPE_OPTIONS,
-  CONDITION_OPTIONS,
-  GRADER_OPTIONS,
-  GRADE_OPTIONS,
-  isPsaImportedCard,
-} from '../lib/types';
-import SearchableSelect from './SearchableSelect';
+  COMPLETENESS_FIELDS,
+  firstMissingField,
+  isCardComplete,
+  isCardGraded,
+  isMandatoryFieldEmpty,
+  TITLE_MAX_LENGTH,
+} from '../lib/card-completeness';
+import {
+  CATEGORY_FIELD_OPTIONS,
+  CONDITION_FIELD_OPTIONS,
+  CONDITION_TYPE_FIELD_OPTIONS,
+  conditionShortLabel,
+  conditionTypeShortLabel,
+  DEFAULT_SUBSET,
+  generateAutoTitle,
+  GRADE_FIELD_OPTIONS,
+  GRADER_FIELD_OPTIONS,
+  graderShortLabel,
+  isFieldEditable,
+  parseFieldValue,
+} from '../lib/card-fields';
 import { imagePathToBrowserSrc } from '../lib/imageUrls';
+import { SuggestEditor, TypeaheadEditor, TypedAhead } from './grid/editors';
+import PhotoPanel, { sortCardImages } from './grid/PhotoPanel';
+import BulkEditModal, { BulkField } from './grid/BulkEditModal';
 
-// Helper to check if a condition value is valid (one of the dropdown options)
-function isValidCondition(condition: string | null | undefined): boolean {
-  if (!condition || condition.trim() === '') return false;
-  return CONDITION_OPTIONS.includes(condition as typeof CONDITION_OPTIONS[number]);
-}
-
-// Helper to check if a category value is valid (one of the dropdown options)
-function isValidCategory(category: string | null | undefined): boolean {
-  if (!category || category.trim() === '') return false;
-  return CATEGORY_OPTIONS.includes(category as typeof CATEGORY_OPTIONS[number]);
-}
-
-function sortCardImages(images: CardImage[]): CardImage[] {
-  return [...images].sort((a, b) => a.sortOrder - b.sortOrder);
-}
-
-// Mandatory fields for eBay listings
-const MANDATORY_FIELDS = [
-  'title', 'salePrice', 'year', 'conditionType', 'category', 
-  'brand', 'setName', 'name', 'cardNumber', 'subsetParallel', 'description'
-] as const;
-
-// Generate auto-title from card fields: Year, Set, Name, Card #, Subset/Parallel
-function generateAutoTitle(card: CardItemWithImages): string {
-  const parts: string[] = [];
-  
-  if (card.year) parts.push(String(card.year));
-  if (card.setName?.trim()) parts.push(card.setName.trim());
-  if (card.cardNumber?.trim()) parts.push(`#${card.cardNumber.trim()}`);
-  if (card.name?.trim()) parts.push(card.name.trim());
-  if (card.subsetParallel?.trim()) parts.push(card.subsetParallel.trim());
-  
-  return parts.join(' ');
-}
-
-// Conditionally required fields (when graded)
-const GRADED_REQUIRED_FIELDS = ['grader', 'grade'] as const;
-
-// Conditionally required fields (when ungraded)
-const UNGRADED_REQUIRED_FIELDS = ['condition'] as const;
-
-// Check if a card is graded (based on conditionType)
-function isCardGraded(card: CardItemWithImages): boolean {
-  return (card as Record<string, unknown>).conditionType === 'Graded: Professionally graded';
-}
-
-// Check if a card has all mandatory fields filled
-function isCardComplete(card: CardItemWithImages): boolean {
-  // Must have at least one image
-  if (!card.images || card.images.length === 0) return false;
-  
-  // Check all mandatory text/select fields
-  if (!card.title || card.title.trim() === '') return false;
-  
-  // Title must be 80 characters or less for eBay
-  if (card.title.length > 80) return false;
-  
-  if (card.salePrice === null || card.salePrice === undefined) return false;
-  if (card.year === null || card.year === undefined) return false;
-  const conditionType = (card as Record<string, unknown>).conditionType as string | undefined;
-  if (!conditionType || conditionType.trim() === '') return false;
-  if (!isValidCategory(card.category)) return false;
-  if (!card.brand || card.brand.trim() === '') return false;
-  if (!card.setName || card.setName.trim() === '') return false;
-  if (!card.name || card.name.trim() === '') return false;
-  if (!card.cardNumber || card.cardNumber.trim() === '') return false;
-  if (
-    !isPsaImportedCard(card) &&
-    (!card.subsetParallel || card.subsetParallel.trim() === '')
-  ) {
-    return false;
-  }
-  
-  // Description is required
-  const description = (card as Record<string, unknown>).description as string | undefined;
-  if (!description || description.trim() === '') return false;
-  
-  // If graded, grader and grade are required
-  if (isCardGraded(card)) {
-    if (!card.grader || card.grader.trim() === '') return false;
-    const grade = (card as Record<string, unknown>).grade as string | undefined;
-    if (!grade || grade.trim() === '') return false;
-  } else {
-    // If ungraded, condition is required AND must be a valid option
-    if (!isValidCondition(card.condition)) return false;
-  }
-  
-  return true;
-}
-
-// Check if a specific field is mandatory and empty
-function isMandatoryFieldEmpty(field: string, value: unknown, card: CardItemWithImages): boolean {
-  // Special case for images
-  if (field === 'images') {
-    return !card.images || card.images.length === 0;
-  }
-  
-  // Check if field is conditionally required (graded fields)
-  if (GRADED_REQUIRED_FIELDS.includes(field as typeof GRADED_REQUIRED_FIELDS[number])) {
-    // Only required if graded
-    if (!isCardGraded(card)) return false;
-    
-    // Check if value is empty
-    if (value === null || value === undefined) return true;
-    if (typeof value === 'string' && value.trim() === '') return true;
-    return false;
-  }
-  
-  // Check if field is conditionally required (ungraded fields)
-  if (UNGRADED_REQUIRED_FIELDS.includes(field as typeof UNGRADED_REQUIRED_FIELDS[number])) {
-    // Only required if NOT graded
-    if (isCardGraded(card)) return false;
-    
-    // For condition field, must be a valid dropdown option
-    if (field === 'condition') {
-      return !isValidCondition(value as string | null | undefined);
-    }
-    
-    // Check if value is empty
-    if (value === null || value === undefined) return true;
-    if (typeof value === 'string' && value.trim() === '') return true;
-    return false;
-  }
-  
-  // PSA-imported cards: subset/parallel not required (PSA often sends one Brand line)
-  if (field === 'subsetParallel' && isPsaImportedCard(card)) {
-    return false;
-  }
-
-  // Check if field is in mandatory list
-  if (!MANDATORY_FIELDS.includes(field as typeof MANDATORY_FIELDS[number])) {
-    return false;
-  }
-  
-  // For category field, must be a valid dropdown option
-  if (field === 'category') {
-    return !isValidCategory(value as string | null | undefined);
-  }
-  
-  // Check if value is empty
-  if (value === null || value === undefined) return true;
-  if (typeof value === 'string' && value.trim() === '') return true;
-  if (typeof value === 'number' && isNaN(value)) return true;
-  
-  return false;
-}
-
-// Draggable Image Preview Popup
-function ImagePreviewPopup({
-  images: imagesProp,
-  cardTitle,
-  onClose,
-}: {
-  images: CardImage[];
-  cardTitle: string;
-  onClose: () => void;
-}) {
-  const images = useMemo(() => sortCardImages(imagesProp), [imagesProp]);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: 20, y: 100 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-
-  // Handle mouse down on header to start dragging
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return;
-    setIsDragging(true);
-    setDragOffset({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    });
-  }, [position]);
-
-  // Handle mouse move while dragging
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      setPosition({
-        x: e.clientX - dragOffset.x,
-        y: e.clientY - dragOffset.y,
-      });
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, dragOffset]);
-
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowLeft' && currentImageIndex > 0) {
-        setCurrentImageIndex(prev => prev - 1);
-      }
-      if (e.key === 'ArrowRight' && currentImageIndex < images.length - 1) {
-        setCurrentImageIndex(prev => prev + 1);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, currentImageIndex, images.length]);
-
-  if (images.length === 0) return null;
-
-  const currentImage = images[currentImageIndex];
-
-  return (
-    <div
-      ref={popupRef}
-      className="fixed z-50 bg-surface-900 border border-surface-600 rounded-lg shadow-2xl overflow-hidden"
-      style={{
-        left: position.x,
-        top: position.y,
-        width: '400px',
-        cursor: isDragging ? 'grabbing' : 'default',
-      }}
-    >
-      {/* Draggable Header */}
-      <div
-        className="flex items-center justify-between px-3 py-2 bg-surface-800 border-b border-surface-700 cursor-grab active:cursor-grabbing select-none"
-        onMouseDown={handleMouseDown}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <svg className="w-4 h-4 text-surface-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-          </svg>
-          <span className="text-sm font-medium text-surface-200 truncate">
-            {cardTitle || 'Card Preview'}
-          </span>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded hover:bg-surface-700 text-surface-400 hover:text-surface-200 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Main Image */}
-      <div className="relative bg-black">
-        <img
-          src={imagePathToBrowserSrc(currentImage.originalPath)}
-          alt={`Card image ${currentImageIndex + 1}`}
-          className="w-full h-auto max-h-[500px] object-contain"
-        />
-        
-        {/* Navigation arrows */}
-        {images.length > 1 && (
-          <>
-            <button
-              onClick={() => setCurrentImageIndex(prev => Math.max(0, prev - 1))}
-              disabled={currentImageIndex === 0}
-              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full text-white hover:bg-black/80 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setCurrentImageIndex(prev => Math.min(images.length - 1, prev + 1))}
-              disabled={currentImageIndex === images.length - 1}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full text-white hover:bg-black/80 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Thumbnail strip */}
-      {images.length > 1 && (
-        <div className="flex gap-2 p-3 bg-surface-800/50 border-t border-surface-700 overflow-x-auto">
-          {images.map((img, idx) => (
-            <button
-              key={img.id}
-              onClick={() => setCurrentImageIndex(idx)}
-              className={`w-14 h-14 flex-shrink-0 rounded overflow-hidden border-2 transition-all ${
-                idx === currentImageIndex
-                  ? 'border-primary-500 ring-2 ring-primary-500/30'
-                  : 'border-surface-600 hover:border-surface-500'
-              }`}
-            >
-              <img
-                src={imagePathToBrowserSrc(img.thumbPath || img.originalPath)}
-                alt={`Thumbnail ${idx + 1}`}
-                className="w-full h-full object-cover"
-              />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Image counter */}
-      <div className="px-3 py-2 bg-surface-800 border-t border-surface-700 text-center text-xs text-surface-400">
-        Image {currentImageIndex + 1} of {images.length} • Use ← → arrows to navigate
-      </div>
-    </div>
-  );
-}
+type CardUpdate = { id: string; data: Record<string, unknown> };
+type TabDirection = 'down' | 'across';
 
 interface CardGridProps {
   cards: CardItemWithImages[];
   onCellChange: (cardId: string, field: string, value: unknown) => void;
-  onBulkEdit: (field: string, value: unknown) => void;
+  onCardsChange: (updates: CardUpdate[]) => void;
   onCloneCard: (cardId: string) => void;
   onDeleteCard: (cardId: string) => void;
   searchText: string;
+  suggestions: Record<string, string[]>;
+  notify: (message: string) => void;
 }
 
-// Column field info for bulk edit
-interface ColumnInfo {
-  field: string;
-  headerName: string;
-  type: 'text' | 'number' | 'select' | 'boolean';
-  options?: readonly string[] | boolean[];
+/** Read by cell renderers and editors; the object itself never changes, so columns never rebuild. */
+interface GridContext {
+  suggestions: Record<string, string[]>;
+  /** Keys typed after editing started but before the editor's input had focus. */
+  takeTypedAhead: () => TypedAhead;
+  isManualTitle: (cardId: string) => boolean;
+  toggleTitleLock: (card: CardItemWithImages, rowIndex: number | null) => void;
 }
 
-// Image cell renderer - clickable to open preview
-function ImageCellRenderer(props: ICellRendererParams<CardItemWithImages>) {
+const HEADERS: Record<string, string> = {
+  title: 'Title',
+  salePrice: 'Price',
+  category: 'Category',
+  year: 'Year',
+  brand: 'Brand',
+  setName: 'Set',
+  cardNumber: 'Card #',
+  name: 'Name',
+  subsetParallel: 'Subset/Parallel',
+  conditionType: 'Graded/Raw',
+  condition: 'Condition',
+  grader: 'Grader',
+  grade: 'Grade',
+  certNo: 'Cert #',
+  description: 'Description',
+  team: 'Team',
+  variation: 'Variation',
+  attributes: 'Attributes',
+};
+
+const EXTRA_COLUMNS = ['team', 'variation', 'attributes'];
+const SUGGEST_FIELDS = ['brand', 'setName', 'name', 'team', 'subsetParallel', 'variation'] as const;
+const GRADED_ONLY = new Set(['grader', 'grade', 'certNo']);
+const RAW_ONLY = new Set(['condition']);
+
+// Grid options must keep the same identity across renders, or the grid rebuilds columns and drops the open editor
+const ROW_SELECTION: RowSelectionOptions<CardItemWithImages> = {
+  mode: 'multiRow',
+  checkboxes: true,
+  headerCheckbox: true,
+  selectAll: 'filtered',
+  enableClickSelection: false,
+};
+const SELECTION_COLUMN: SelectionColumnDef = { pinned: 'left', width: 44, maxWidth: 44, resizable: false, suppressNavigable: true, sortable: false };
+const getRowId = (params: GetRowIdParams<CardItemWithImages>) => params.data.id;
+
+const STORAGE_KEYS = {
+  photos: 'lotlister.grid.photos',
+  moreColumns: 'lotlister.grid.moreColumns',
+  tab: 'lotlister.grid.tabDirection',
+};
+
+function readSetting<T extends string = string>(key: string, fallback: NoInfer<T>): T {
+  try {
+    return (window.localStorage.getItem(key) as T | null) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSetting(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // storage unavailable (private mode); the setting just won't persist
+  }
+}
+
+/** Whether a field applies to this card (grader only on graded cards, condition only on raw). */
+function fieldApplies(field: string, card: { conditionType?: string | null }): boolean {
+  if (GRADED_ONLY.has(field)) return isCardGraded(card);
+  if (RAW_ONLY.has(field)) return !isCardGraded(card);
+  return true;
+}
+
+/** Titles made before "Base" was dropped from auto titles still count as auto-generated. */
+function isAutoTitle(card: CardItemWithImages): boolean {
+  const title = card.title ?? '';
+  const auto = generateAutoTitle(card);
+  if (title === auto) return true;
+  const parallel = card.subsetParallel?.trim();
+  return Boolean(parallel && parallel.toLowerCase() === DEFAULT_SUBSET.toLowerCase() && title === `${auto} ${parallel}`.trim());
+}
+
+function invalidValueMessage(field: string, text: string): string {
+  const header = HEADERS[field] ?? field;
+  if (field === 'salePrice') return `"${text}" isn't a price. Use a number like 4.99.`;
+  if (field === 'year') return `"${text}" isn't a valid year. Use 4 digits, like 2023.`;
+  if (field === 'grade') return `"${text}" isn't a grade. Use 1–10 (halves allowed).`;
+  return `"${text}" doesn't match any ${header} option.`;
+}
+
+// ─── Cell renderers ─────────────────────────────────────────────────────────
+
+function ImageCell(props: ICellRendererParams<CardItemWithImages>) {
   const images = sortCardImages(props.data?.images || []);
-  
   if (images.length === 0) {
     return (
       <div className="flex items-center gap-1 py-1">
@@ -378,1111 +175,885 @@ function ImageCellRenderer(props: ICellRendererParams<CardItemWithImages>) {
       </div>
     );
   }
-  
   return (
     <div className="flex items-center gap-1 py-1 cursor-pointer group">
       {images.slice(0, 2).map((img, idx) => (
-        <div key={img.id} className="w-10 h-10 bg-surface-700 rounded overflow-hidden flex-shrink-0 ring-0 group-hover:ring-2 group-hover:ring-primary-500/50 transition-all">
-          <img
-            src={imagePathToBrowserSrc(img.thumbPath || img.originalPath)}
-            alt={`Image ${idx + 1}`}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
+        <div key={img.id} className="w-10 h-10 bg-surface-700 rounded overflow-hidden flex-shrink-0 group-hover:ring-2 group-hover:ring-primary-500/50 transition-all">
+          <img src={imagePathToBrowserSrc(img.thumbPath || img.originalPath)} alt={`Image ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
         </div>
       ))}
-      {images.length > 2 && (
-        <span className="text-xs text-surface-400 ml-1">
-          +{images.length - 2}
-        </span>
+      {images.length > 2 && <span className="text-xs text-surface-400 ml-1">+{images.length - 2}</span>}
+    </div>
+  );
+}
+
+function TitleCell(props: ICellRendererParams<CardItemWithImages>) {
+  const card = props.data;
+  const context = props.context as GridContext;
+  if (!card) return null;
+  const manual = context.isManualTitle(card.id);
+  const title = card.title || '';
+  return (
+    <div className="flex items-center gap-2 w-full h-full">
+      <span className={`flex-1 truncate ${manual ? 'cursor-text' : ''}`} title={title || undefined}>
+        {title ? (
+          <span className="text-surface-100">{title}</span>
+        ) : (
+          <span className="text-surface-500 text-sm italic">
+            {manual ? 'Type a title…' : 'Fills in from Year, Set, Card #, Name'}
+          </span>
+        )}
+      </span>
+      <button
+        tabIndex={-1}
+        onClick={(e) => {
+          e.stopPropagation();
+          context.toggleTitleLock(card, props.node.rowIndex);
+        }}
+        className={`p-1 rounded hover:bg-surface-700 transition-colors flex-shrink-0 ${
+          manual ? 'text-primary-400' : 'text-surface-500 hover:text-surface-300'
+        }`}
+        title={manual ? 'Custom title. Click to go back to the automatic title' : 'Automatic title. Click to write your own'}
+      >
+        {manual ? (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        )}
+      </button>
+      <span
+        className={`text-xs flex-shrink-0 tabular-nums ${title.length > TITLE_MAX_LENGTH ? 'text-red-300' : 'text-surface-500'}`}
+        title="eBay allows 80 characters"
+      >
+        {title.length}/{TITLE_MAX_LENGTH}
+      </span>
+    </div>
+  );
+}
+
+/** Shows the short label plus a chevron that opens the typeahead, for mouse users. */
+function SelectCell(props: ICellRendererParams<CardItemWithImages>) {
+  const editable = props.node && props.column ? props.column.isCellEditable(props.node) : false;
+  const text = props.valueFormatted ?? (props.value as string | null) ?? '';
+  return (
+    <div className="flex items-center justify-between gap-1 w-full h-full">
+      <span className="truncate">{text}</span>
+      {editable && (
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (props.node.rowIndex !== null && props.column) {
+              props.api.startEditingCell({ rowIndex: props.node.rowIndex, colKey: props.column.getColId() });
+            }
+          }}
+          className="text-surface-500 hover:text-surface-200 px-0.5"
+          aria-label="Choose"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
       )}
     </div>
   );
 }
 
-// Bulk Edit Modal Component
-function BulkEditModal({
-  isOpen,
-  column,
-  itemCount,
-  onClose,
-  onApply,
-}: {
-  isOpen: boolean;
-  column: ColumnInfo | null;
-  itemCount: number;
-  onClose: () => void;
-  onApply: (value: unknown) => void;
-}) {
-  const [value, setValue] = useState<string>('');
-  
-  if (!isOpen || !column) return null;
-  
-  const handleApply = () => {
-    let finalValue: unknown = value;
-    
-    if (column.type === 'number') {
-      finalValue = value === '' ? null : parseFloat(value);
-    } else if (column.type === 'boolean') {
-      finalValue = value === 'true' || value === 'Yes';
-    } else if (value === '') {
-      finalValue = null;
-    }
-    
-    onApply(finalValue);
-    setValue('');
-    onClose();
-  };
-  
-  const handleClose = () => {
-    setValue('');
-    onClose();
-  };
-  
-  return (
-    <div className="modal-overlay animate-fade-in" onClick={handleClose}>
-      <div
-        className="modal-content w-full max-w-md p-6 animate-slide-up"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Bulk Edit</h2>
-          <button onClick={handleClose} className="btn-ghost p-1 rounded">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-surface-300 mb-2">
-            Set "{column.headerName}" for all {itemCount} items:
-          </label>
-          
-          {column.field === 'category' ? (
-            <SearchableSelect
-              value={value}
-              onChange={setValue}
-              triggerStyle={{
-                display: 'flex',
-                alignItems: 'center',
-                width: '100%',
-                background: '#27272a',
-                border: '1px solid #52525b',
-                borderRadius: '6px',
-                color: value ? '#fafafa' : '#a1a1aa',
-                cursor: 'pointer',
-                fontSize: '14px',
-                padding: '8px 10px',
-                gap: '6px',
-              }}
-            />
-          ) : column.type === 'select' || column.type === 'boolean' ? (
-            <select
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              className="w-full"
-              autoFocus
-            >
-              <option value="">-- Select --</option>
-              {column.type === 'boolean' ? (
-                <>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </>
-              ) : (
-                column.options?.map((opt) => (
-                  <option key={String(opt)} value={String(opt)}>
-                    {String(opt)}
-                  </option>
-                ))
-              )}
-            </select>
-          ) : (
-            <input
-              type={column.type === 'number' ? 'number' : 'text'}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              className="w-full"
-              placeholder={`Enter ${column.headerName.toLowerCase()}...`}
-              autoFocus
-              step={column.type === 'number' ? '0.01' : undefined}
-            />
-          )}
-        </div>
-        
-        <div className="flex justify-end gap-3">
-          <button onClick={handleClose} className="btn btn-secondary">
-            Cancel
-          </button>
-          <button onClick={handleApply} className="btn btn-primary">
-            Update {itemCount} Items
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ─── Grid ───────────────────────────────────────────────────────────────────
 
-// Grid context type for passing state to cell renderers without recreating columns
-interface GridContext {
-  unlockedTitles: Set<string>;
-  toggleTitleLock: (cardId: string, card: CardItemWithImages) => void;
-  onCellChange: (cardId: string, field: string, value: unknown) => void;
-}
+export default function CardGrid({
+  cards,
+  onCellChange,
+  onCardsChange,
+  onCloneCard,
+  onDeleteCard,
+  searchText,
+  suggestions,
+  notify,
+}: CardGridProps) {
+  const gridRef = useRef<AgGridReact<CardItemWithImages>>(null);
+  const api = (): GridApi<CardItemWithImages> | undefined => gridRef.current?.api;
 
-export default function CardGrid({ cards, onCellChange, onBulkEdit, onCloneCard, onDeleteCard, searchText }: CardGridProps) {
-  const gridRef = useRef<AgGridReact>(null);
-  const [bulkEditColumn, setBulkEditColumn] = useState<ColumnInfo | null>(null);
+  // Latest props for callbacks that must stay stable (column defs, grid options)
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
+  const onCellChangeRef = useRef(onCellChange);
+  onCellChangeRef.current = onCellChange;
+  const onCardsChangeRef = useRef(onCardsChange);
+  onCardsChangeRef.current = onCardsChange;
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+
+  const [showPhotos, setShowPhotos] = useState(() => readSetting(STORAGE_KEYS.photos, 'on') === 'on');
+  const [showMoreColumns, setShowMoreColumns] = useState(() => readSetting(STORAGE_KEYS.moreColumns, 'off') === 'on');
+  const [tabDirection, setTabDirection] = useState<TabDirection>(() => readSetting<TabDirection>(STORAGE_KEYS.tab, 'down'));
+  const tabDirectionRef = useRef(tabDirection);
+  tabDirectionRef.current = tabDirection;
+  const initialShowMore = useRef(showMoreColumns).current;
+
+  const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
+  const [selectedCount, setSelectedCount] = useState(0);
+  const [displayedCount, setDisplayedCount] = useState(cards.length);
+  const [bulkField, setBulkField] = useState<string | null>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
-  const [previewCard, setPreviewCard] = useState<CardItemWithImages | null>(null);
-  
-  // Row context menu state
-  const [contextMenu, setContextMenu] = useState<{
-    show: boolean;
-    x: number;
-    y: number;
-    cardId: string;
-    cardTitle: string;
-  } | null>(null);
-  
-  // Track which cards have their title unlocked for manual editing
-  // By default, all titles are "locked" (auto-generated from other fields)
-  const [unlockedTitles, setUnlockedTitles] = useState<Set<string>>(new Set());
-  
-  // Use ref to avoid recreating columns when lock state changes
-  const unlockedTitlesRef = useRef<Set<string>>(unlockedTitles);
-  unlockedTitlesRef.current = unlockedTitles;
-  
-  // Toggle title lock state
-  const toggleTitleLock = useCallback((cardId: string, card: CardItemWithImages) => {
-    setUnlockedTitles(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(cardId)) {
-        // Locking: revert to auto-generated title
-        newSet.delete(cardId);
-        const autoTitle = generateAutoTitle(card);
-        onCellChange(cardId, 'title', autoTitle);
-      } else {
-        // Unlocking: allow manual editing
-        newSet.add(cardId);
-      }
-      return newSet;
-    });
-    // Force grid to refresh the cell to update the icon
-    gridRef.current?.api?.refreshCells({ columns: ['title'], force: true });
-  }, [onCellChange]);
-  
-  // Grid context - passed to cell renderers via AG Grid's context prop
-  const gridContext = useMemo<GridContext>(() => ({
-    unlockedTitles: unlockedTitlesRef.current,
-    toggleTitleLock,
-    onCellChange,
-  }), [toggleTitleLock, onCellChange]);
-  
-  // Track last auto-generated titles to prevent unnecessary updates
-  const lastAutoTitles = useRef<Map<string, string>>(new Map());
-  
-  // Auto-update titles for locked cards when relevant fields change
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; cardId: string; label: string } | null>(null);
+
+  // "Incomplete only" keeps the rows that were incomplete when it was turned on, so a row
+  // doesn't vanish the moment you fill its last field.
+  const incompleteIdsRef = useRef<Set<string> | null>(null);
+  const [incompleteOnly, setIncompleteOnly] = useState(false);
+  const incompleteCount = useMemo(() => cards.filter((card) => !isCardComplete(card)).length, [cards]);
+
+  // ── Titles: automatic unless the user wrote their own ─────────────────────
+  const manualTitlesRef = useRef(new Set<string>());
+  const seenCardsRef = useRef(new Set<string>());
+
   useEffect(() => {
-    const updates: { id: string; title: string }[] = [];
-    
-    cards.forEach(card => {
-      if (!unlockedTitles.has(card.id)) {
-        const autoTitle = generateAutoTitle(card);
-        const lastAutoTitle = lastAutoTitles.current.get(card.id);
-        
-        // Only update if:
-        // 1. We have auto-generated data
-        // 2. The auto-title is different from what we last set
-        // 3. The current title doesn't match what it should be
-        if (autoTitle && autoTitle !== lastAutoTitle && card.title !== autoTitle) {
-          updates.push({ id: card.id, title: autoTitle });
-          lastAutoTitles.current.set(card.id, autoTitle);
+    const updates: CardUpdate[] = [];
+    for (const card of cards) {
+      if (!seenCardsRef.current.has(card.id)) {
+        seenCardsRef.current.add(card.id);
+        if (card.title?.trim() && !isAutoTitle(card)) {
+          manualTitlesRef.current.add(card.id);
+          continue;
         }
       }
-    });
-    
-    // Batch the updates
-    updates.forEach(({ id, title }) => {
-      onCellChange(id, 'title', title);
-    });
-  }, [cards, unlockedTitles, onCellChange]);
+      if (manualTitlesRef.current.has(card.id)) continue;
+      const auto = generateAutoTitle(card);
+      if (auto && card.title !== auto) updates.push({ id: card.id, data: { title: auto } });
+    }
+    if (updates.length > 0) onCardsChangeRef.current(updates);
+  }, [cards]);
 
-  // Handle cell click - open/update image preview
+  const toggleTitleLock = useCallback((card: CardItemWithImages, rowIndex: number | null) => {
+    const manual = manualTitlesRef.current;
+    if (manual.has(card.id)) {
+      manual.delete(card.id);
+      onCellChangeRef.current(card.id, 'title', generateAutoTitle(card));
+    } else {
+      manual.add(card.id);
+    }
+    const grid = api();
+    grid?.refreshCells({ columns: ['title'], force: true });
+    if (manual.has(card.id) && rowIndex !== null) {
+      grid?.startEditingCell({ rowIndex, colKey: 'title' });
+    }
+  }, []);
+
+  const mergedSuggestions = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const field of SUGGEST_FIELDS) {
+      const seen = new Set<string>();
+      const list: string[] = [];
+      const add = (value: unknown) => {
+        const text = typeof value === 'string' ? value.trim() : '';
+        const key = text.toLowerCase();
+        if (text && !seen.has(key)) {
+          seen.add(key);
+          list.push(text);
+        }
+      };
+      for (let i = cards.length - 1; i >= 0; i--) add((cards[i] as Record<string, unknown>)[field]);
+      for (const value of suggestions[field] ?? []) add(value);
+      if (field === 'subsetParallel') add(DEFAULT_SUBSET);
+      out[field] = list;
+    }
+    return out;
+  }, [cards, suggestions]);
+
+  // React editors mount a frame after editing starts; keys typed in that gap land on the cell
+  const typedAheadRef = useRef<TypedAhead>({ text: '', enter: false });
+
+  const gridContext = useRef<GridContext>({
+    suggestions: {},
+    takeTypedAhead: () => {
+      const taken = typedAheadRef.current;
+      typedAheadRef.current = { text: '', enter: false };
+      return taken;
+    },
+    isManualTitle: (id) => manualTitlesRef.current.has(id),
+    toggleTitleLock,
+  }).current;
+  gridContext.suggestions = mergedSuggestions;
+
+  // ── Column definitions (built once) ───────────────────────────────────────
+  const columns = useMemo<ColDef<CardItemWithImages>[]>(() => {
+    const setter = (field: string) => (params: ValueSetterParams<CardItemWithImages>) => {
+      const card = params.data;
+      if (!card) return false;
+      const parsed = parseFieldValue(field, params.newValue);
+      if (parsed === undefined) {
+        const text = String(params.newValue ?? '').trim();
+        if (text) notifyRef.current(invalidValueMessage(field, text));
+        return false;
+      }
+      if (parsed === (card as Record<string, unknown>)[field]) return false;
+      onCellChangeRef.current(card.id, field, parsed);
+      return true;
+    };
+
+    const requiredClass = (field: string) => (params: CellClassParams<CardItemWithImages>) => {
+      if (!params.data) return '';
+      if (!fieldApplies(field, params.data)) return 'cell-na';
+      return isMandatoryFieldEmpty(field, params.value, params.data) ? 'cell-mandatory-empty' : '';
+    };
+
+    const appliesEditable = (field: string) => (params: EditableCallbackParams<CardItemWithImages>) =>
+      Boolean(params.data && fieldApplies(field, params.data));
+
+    const naFormatter = (field: string, format: (value: string) => string = (v) => v) =>
+      (params: ValueFormatterParams<CardItemWithImages>) => {
+        if (params.data && !fieldApplies(field, params.data)) return field === 'condition' ? 'N/A (graded)' : '—';
+        return params.value ? format(String(params.value)) : '';
+      };
+
+    const text = (field: string, width: number, extra: Partial<ColDef<CardItemWithImages>> = {}): ColDef<CardItemWithImages> => ({
+      headerName: HEADERS[field],
+      field: field as keyof CardItemWithImages,
+      width,
+      editable: true,
+      valueSetter: setter(field),
+      cellClass: requiredClass(field),
+      suppressSizeToFit: true,
+      ...extra,
+    });
+
+    const suggest = (field: string, width: number, extra: Partial<ColDef<CardItemWithImages>> = {}) =>
+      text(field, width, { cellEditor: SuggestEditor, cellEditorPopup: true, cellEditorPopupPosition: 'over', ...extra });
+
+    const select = (
+      field: string,
+      width: number,
+      options: typeof GRADER_FIELD_OPTIONS,
+      extra: Partial<ColDef<CardItemWithImages>> = {}
+    ): ColDef<CardItemWithImages> =>
+      text(field, width, {
+        cellEditor: TypeaheadEditor,
+        cellEditorParams: { options, allowClear: field === 'grader' || field === 'grade' },
+        cellEditorPopup: true,
+        cellEditorPopupPosition: 'over',
+        cellRenderer: SelectCell,
+        ...extra,
+      });
+
+    const required = (col: ColDef<CardItemWithImages>) => ({ ...col, headerName: `${col.headerName}*` });
+
+    return [
+      {
+        headerName: 'Photos*',
+        colId: 'images',
+        field: 'images',
+        width: 100,
+        maxWidth: 100,
+        cellDataType: false,
+        cellRenderer: ImageCell,
+        sortable: false,
+        filter: false,
+        pinned: 'left',
+        suppressSizeToFit: true,
+        tooltipValueGetter: () => 'Click to show photos',
+        cellClass: (params: CellClassParams<CardItemWithImages>) =>
+          params.data && params.data.images.length === 0 ? 'cell-mandatory-empty' : '',
+      },
+      {
+        headerName: 'Title*',
+        field: 'title',
+        width: 520,
+        minWidth: 360,
+        flex: 1,
+        editable: (params: EditableCallbackParams<CardItemWithImages>) =>
+          Boolean(params.data && manualTitlesRef.current.has(params.data.id)),
+        valueSetter: setter('title'),
+        cellRenderer: TitleCell,
+        headerTooltip: 'Built from Year, Set, Card #, Name, and Subset/Parallel. Click the lock to write your own. Max 80 characters.',
+        cellClass: (params: CellClassParams<CardItemWithImages>) => {
+          const title = params.data?.title || '';
+          if (title.length > TITLE_MAX_LENGTH) return 'cell-title-over-limit';
+          return title.trim() === '' ? 'cell-mandatory-empty' : '';
+        },
+      },
+      required(
+        text('salePrice', 110, {
+          valueFormatter: (params) => (params.value === null || params.value === undefined ? '' : `$${Number(params.value).toFixed(2)}`),
+        })
+      ),
+      required(select('category', 200, CATEGORY_FIELD_OPTIONS)),
+      required(text('year', 90)),
+      required(suggest('brand', 140)),
+      required(suggest('setName', 160)),
+      required(text('cardNumber', 100)),
+      required(suggest('name', 180)),
+      required(suggest('subsetParallel', 170)),
+      required(
+        select('conditionType', 130, CONDITION_TYPE_FIELD_OPTIONS, {
+          valueFormatter: (params) => (params.value ? conditionTypeShortLabel(String(params.value)) : ''),
+        })
+      ),
+      {
+        ...select('condition', 190, CONDITION_FIELD_OPTIONS, {
+          editable: appliesEditable('condition'),
+          valueFormatter: naFormatter('condition', conditionShortLabel),
+        }),
+        headerName: 'Condition*',
+        headerTooltip: 'Required for raw cards',
+      },
+      {
+        ...select('grader', 110, GRADER_FIELD_OPTIONS, {
+          editable: appliesEditable('grader'),
+          valueFormatter: naFormatter('grader', graderShortLabel),
+        }),
+        headerTooltip: 'Required for graded cards',
+      },
+      {
+        ...select('grade', 90, GRADE_FIELD_OPTIONS, {
+          editable: appliesEditable('grade'),
+          valueFormatter: naFormatter('grade'),
+        }),
+        headerTooltip: 'Required for graded cards',
+      },
+      text('certNo', 140, {
+        editable: appliesEditable('certNo'),
+        valueFormatter: naFormatter('certNo'),
+      }),
+      required(
+        text('description', 300, {
+          cellEditor: 'agLargeTextCellEditor',
+          cellEditorPopup: true,
+          cellEditorParams: { maxLength: 5000, rows: 6, cols: 60 },
+          headerTooltip: 'Tokens like {title} or {grade} are filled in when you export or list',
+        })
+      ),
+      suggest('team', 150, { initialHide: !initialShowMore }),
+      suggest('variation', 150, { initialHide: !initialShowMore }),
+      text('attributes', 170, { initialHide: !initialShowMore }),
+    ];
+  }, [initialShowMore]);
+
+  const defaultColDef = useMemo<ColDef>(
+    () => ({
+      sortable: true,
+      resizable: true,
+      filter: true,
+      suppressAutoSize: true,
+      // Values are parsed by our own setters (so "$4.99" or "2023-24" work), not the grid's inferred number editors
+      cellDataType: false,
+      headerTooltip: 'Right-click to bulk edit',
+    }),
+    []
+  );
+
+  const rowClassRules = useMemo(
+    () => ({ 'row-complete': (params: RowClassParams<CardItemWithImages>) => (params.data ? isCardComplete(params.data) : false) }),
+    []
+  );
+
+  const bulkFields = useMemo<BulkField[]>(
+    () =>
+      Object.keys(HEADERS)
+        .filter((field) => field !== 'title' && isFieldEditable(field))
+        .map((field) => ({ field, headerName: HEADERS[field] })),
+    []
+  );
+
+  // ── Helpers over the grid's current view ─────────────────────────────────
+  const displayedNodes = useCallback((): IRowNode<CardItemWithImages>[] => {
+    const nodes: IRowNode<CardItemWithImages>[] = [];
+    api()?.forEachNodeAfterFilterAndSort((node) => {
+      if (node.data) nodes.push(node);
+    });
+    return nodes;
+  }, []);
+
+  const selectedCards = useCallback(
+    (): CardItemWithImages[] => (api()?.getSelectedNodes() ?? []).filter((n) => n.displayed && n.data).map((n) => n.data!),
+    []
+  );
+
+  /** Builds updates for the given cards, skipping ones the field doesn't apply to. */
+  const buildUpdates = useCallback((targets: CardItemWithImages[], field: string, value: unknown) => {
+    const updates: CardUpdate[] = [];
+    let skipped = 0;
+    for (const card of targets) {
+      const nextType = field === 'conditionType' ? value : card.conditionType;
+      if (!fieldApplies(field, { conditionType: nextType as string })) {
+        skipped++;
+        continue;
+      }
+      updates.push({ id: card.id, data: { [field]: value } });
+    }
+    return { updates, skipped };
+  }, []);
+
+  const skippedNote = (field: string, skipped: number) =>
+    skipped > 0 ? ` (skipped ${skipped} ${GRADED_ONLY.has(field) ? 'raw' : 'graded'})` : '';
+
+  const handleBulkApply = useCallback(
+    (field: string, value: unknown) => {
+      const selected = selectedCards();
+      const targets = selected.length > 0 ? selected : displayedNodes().map((n) => n.data!);
+      const { updates, skipped } = buildUpdates(targets, field, value);
+      onCardsChangeRef.current(updates);
+      notifyRef.current(`Updated ${HEADERS[field]} on ${updates.length} ${updates.length === 1 ? 'card' : 'cards'}${skippedNote(field, skipped)}`);
+    },
+    [buildUpdates, displayedNodes, selectedCards]
+  );
+
+  const openBulkEdit = useCallback((field: string | null) => {
+    const grid = api();
+    setSelectedCount(grid?.getSelectedNodes().filter((n) => n.displayed).length ?? 0);
+    setDisplayedCount(grid?.getDisplayedRowCount() ?? 0);
+    setBulkField(field);
+    setShowBulkEdit(true);
+  }, []);
+
+  // ── Fill down (Ctrl+D) ────────────────────────────────────────────────────
+  const fillDown = useCallback(
+    (rowIndex: number, field: string) => {
+      const grid = api();
+      if (!grid) return;
+      if (!isFieldEditable(field) || field === 'title') {
+        notifyRef.current('Fill down works on the data columns (not Photos or Title).');
+        return;
+      }
+      const current = grid.getDisplayedRowAtIndex(rowIndex)?.data;
+      if (!current) return;
+      const selected = selectedCards();
+
+      if (selected.length > 1) {
+        const value = (current as Record<string, unknown>)[field] ?? null;
+        const { updates, skipped } = buildUpdates(selected.filter((c) => c.id !== current.id), field, value);
+        onCardsChangeRef.current(updates);
+        notifyRef.current(`Copied ${HEADERS[field]} to ${updates.length} selected ${updates.length === 1 ? 'card' : 'cards'}${skippedNote(field, skipped)}`);
+        return;
+      }
+
+      const above = rowIndex > 0 ? grid.getDisplayedRowAtIndex(rowIndex - 1)?.data : undefined;
+      if (!above) return;
+      const value = (above as Record<string, unknown>)[field] ?? null;
+      const { updates } = buildUpdates([current], field, value);
+      if (updates.length === 0) {
+        notifyRef.current(`${HEADERS[field]} doesn't apply to this card.`);
+        return;
+      }
+      onCardsChangeRef.current(updates);
+      const next = rowIndex + 1;
+      if (next < grid.getDisplayedRowCount()) {
+        grid.ensureIndexVisible(next);
+        grid.setFocusedCell(next, field);
+      }
+    },
+    [buildUpdates, selectedCards]
+  );
+
+  // ── Next incomplete ───────────────────────────────────────────────────────
+  const missingFieldFor = useCallback((card: CardItemWithImages): string | null => {
+    for (const field of COMPLETENESS_FIELDS) {
+      if (field === 'title') continue;
+      const value = field === 'images' ? card.images : (card as Record<string, unknown>)[field];
+      if (isMandatoryFieldEmpty(field, value, card)) return field;
+    }
+    return firstMissingField(card);
+  }, []);
+
+  const goToNextIncomplete = useCallback(() => {
+    const grid = api();
+    if (!grid) return;
+    const count = grid.getDisplayedRowCount();
+    if (count === 0) return;
+    const focused = grid.getFocusedCell();
+    let start = focused?.rowIndex ?? 0;
+    const focusedCard = focused ? grid.getDisplayedRowAtIndex(focused.rowIndex)?.data : undefined;
+    if (focusedCard && missingFieldFor(focusedCard) === focused?.column.getColId()) start++;
+    for (let i = 0; i < count; i++) {
+      const index = (start + i) % count;
+      const card = grid.getDisplayedRowAtIndex(index)?.data;
+      const field = card ? missingFieldFor(card) : null;
+      if (field) {
+        grid.ensureIndexVisible(index, 'middle');
+        grid.ensureColumnVisible(field);
+        grid.setFocusedCell(index, field);
+        return;
+      }
+    }
+    notifyRef.current('Every card shown is complete.');
+  }, [missingFieldFor]);
+
+  const toggleIncompleteOnly = useCallback(() => {
+    const next = !incompleteIdsRef.current;
+    incompleteIdsRef.current = next
+      ? new Set(cardsRef.current.filter((card) => !isCardComplete(card)).map((card) => card.id))
+      : null;
+    setIncompleteOnly(next);
+    api()?.onFilterChanged();
+  }, []);
+
+  const isExternalFilterPresent = useCallback(() => incompleteIdsRef.current !== null, []);
+  const doesExternalFilterPass = useCallback(
+    (node: IRowNode<CardItemWithImages>) => !node.data || !incompleteIdsRef.current || incompleteIdsRef.current.has(node.data.id),
+    []
+  );
+
+  // ── Paste from a spreadsheet ──────────────────────────────────────────────
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const grid = api();
+      if (!grid || grid.getEditingCells().length > 0) return;
+      const focused = grid.getFocusedCell();
+      const raw = e.clipboardData.getData('text/plain');
+      if (!focused || !raw) return;
+      e.preventDefault();
+
+      const rows = raw.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map((line) => line.split('\t'));
+      const columns = grid.getAllDisplayedColumns();
+      const startCol = columns.indexOf(focused.column);
+      const selected = selectedCards();
+
+      const targetRows: CardItemWithImages[][] = [];
+      if (rows.length === 1 && rows[0].length === 1 && selected.length > 1) {
+        targetRows.push(selected);
+      } else {
+        for (let r = 0; r < rows.length; r++) {
+          const card = grid.getDisplayedRowAtIndex(focused.rowIndex + r)?.data;
+          if (!card) break;
+          targetRows.push([card]);
+        }
+      }
+
+      const pending = new Map<string, Record<string, unknown>>();
+      let pasted = 0;
+      let skipped = 0;
+      const overflowRows = rows.length === 1 ? 0 : rows.length - targetRows.length;
+
+      targetRows.forEach((cardsInRow, r) => {
+        const cells = rows.length === 1 ? rows[0] : rows[r];
+        for (const card of cardsInRow) {
+          cells.forEach((cellText, c) => {
+            const field = columns[startCol + c]?.getColId();
+            if (!field || !isFieldEditable(field)) {
+              if (cellText.trim()) skipped++;
+              return;
+            }
+            const data = pending.get(card.id) ?? {};
+            const merged = { ...card, ...data };
+            if (!fieldApplies(field, merged)) {
+              if (cellText.trim()) skipped++;
+              return;
+            }
+            const value = parseFieldValue(field, cellText);
+            if (value === undefined) {
+              if (cellText.trim()) skipped++;
+              return;
+            }
+            if (field === 'title') manualTitlesRef.current.add(card.id);
+            data[field] = value;
+            pending.set(card.id, data);
+            pasted++;
+          });
+        }
+      });
+
+      if (pending.size > 0) {
+        onCardsChangeRef.current(Array.from(pending, ([id, data]) => ({ id, data })));
+        grid.refreshCells({ columns: ['title'], force: true });
+      }
+      const parts = [`Pasted ${pasted} ${pasted === 1 ? 'value' : 'values'}`];
+      if (skipped > 0) parts.push(`skipped ${skipped} that didn't fit their column`);
+      if (overflowRows > 0) parts.push(`${overflowRows} rows past the last card were ignored`);
+      if (pasted !== 1 || skipped > 0 || overflowRows > 0) notifyRef.current(parts.join(' · '));
+    },
+    [selectedCards]
+  );
+
+  // ── Grid events ───────────────────────────────────────────────────────────
+  const onCellKeyDown = useCallback(
+    (event: CellKeyDownEvent<CardItemWithImages>) => {
+      const key = event.event as KeyboardEvent | undefined;
+      if (!key || event.rowIndex === null || event.api.getEditingCells().length > 0) return;
+      if ((key.ctrlKey || key.metaKey) && key.key.toLowerCase() === 'd') {
+        key.preventDefault();
+        fillDown(event.rowIndex, event.column.getColId());
+      } else if (key.altKey && key.key.toLowerCase() === 'n') {
+        key.preventDefault();
+        goToNextIncomplete();
+      }
+    },
+    [fillDown, goToNextIncomplete]
+  );
+
   const onCellClicked = useCallback((event: CellClickedEvent<CardItemWithImages>) => {
-    // Close context menu if open
     setContextMenu(null);
-    
-    // If clicking on images column, always open/update preview (if card has images)
-    if (event.column.getColId() === 'images') {
-      if (event.data && event.data.images.length > 0) {
-        setPreviewCard(event.data);
-      }
-      return;
+    if (event.column.getColId() === 'images' && event.data) {
+      setFocusedCardId(event.data.id);
+      setShowPhotos(true);
+      writeSetting(STORAGE_KEYS.photos, 'on');
     }
-    
-    // If preview is already open, update it to show the clicked row's images
-    // This allows users to keep the preview open while navigating rows
-    if (previewCard && event.data && event.data.images.length > 0) {
-      // Only update if it's a different card
-      if (event.data.id !== previewCard.id) {
-        setPreviewCard(event.data);
-      }
-    }
-  }, [previewCard]);
+  }, []);
 
-  // Handle cell focus change - update image preview when navigating with Tab
   const onCellFocused = useCallback((event: CellFocusedEvent<CardItemWithImages>) => {
-    // Only update if preview is already open
-    if (!previewCard) return;
-    
-    // Get the row data for the focused cell
-    if (event.rowIndex !== null && event.rowIndex !== undefined) {
-      const rowNode = event.api.getDisplayedRowAtIndex(event.rowIndex);
-      if (rowNode && rowNode.data && rowNode.data.images.length > 0) {
-        // Only update if it's a different card
-        if (rowNode.data.id !== previewCard.id) {
-          setPreviewCard(rowNode.data);
-        }
-      }
-    }
-  }, [previewCard]);
+    if (event.rowIndex === null || event.rowIndex === undefined) return;
+    const id = event.api.getDisplayedRowAtIndex(event.rowIndex)?.data?.id;
+    if (id) setFocusedCardId(id);
+  }, []);
 
-  // Handle row right-click for context menu
   const onCellContextMenu = useCallback((event: CellContextMenuEvent<CardItemWithImages>) => {
     if (!event.data) return;
-    
-    // Prevent default browser context menu
-    event.event?.preventDefault();
-    
-    const mouseEvent = event.event as MouseEvent;
+    const mouse = event.event as MouseEvent | undefined;
+    mouse?.preventDefault();
     setContextMenu({
-      show: true,
-      x: mouseEvent.clientX,
-      y: mouseEvent.clientY,
+      x: mouse?.clientX ?? 0,
+      y: mouse?.clientY ?? 0,
       cardId: event.data.id,
-      cardTitle: event.data.title || event.data.name || `Card #${event.data.cardNumber || event.data.id.slice(0, 8)}`,
+      label: event.data.title || event.data.name || `Card #${event.data.cardNumber || event.data.id.slice(0, 8)}`,
     });
   }, []);
 
-  // Close context menu when clicking outside
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    const handleScroll = () => setContextMenu(null);
-    
-    if (contextMenu?.show) {
-      document.addEventListener('click', handleClick);
-      document.addEventListener('scroll', handleScroll, true);
-      return () => {
-        document.removeEventListener('click', handleClick);
-        document.removeEventListener('scroll', handleScroll, true);
-      };
-    }
-  }, [contextMenu?.show]);
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    document.addEventListener('click', close);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('click', close);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [contextMenu]);
 
-  // Handle clone card
-  const handleCloneCard = useCallback(() => {
-    if (contextMenu?.cardId) {
-      onCloneCard(contextMenu.cardId);
-      setContextMenu(null);
-    }
-  }, [contextMenu?.cardId, onCloneCard]);
-
-  // Handle delete card
-  const handleDeleteCard = useCallback(() => {
-    if (contextMenu?.cardId) {
-      onDeleteCard(contextMenu.cardId);
-      setContextMenu(null);
-    }
-  }, [contextMenu?.cardId, onDeleteCard]);
-
-  // Handle cell value changes - refresh condition-related cells when conditionType changes
   const onCellValueChanged = useCallback((event: CellValueChangedEvent<CardItemWithImages>) => {
-    if (event.column.getColId() === 'conditionType' && event.node?.id) {
-      // Refresh the condition-related cells in this row
-      const rowNode = event.api.getRowNode(event.node.id);
-      if (rowNode) {
-        setTimeout(() => {
-          event.api.refreshCells({
-            rowNodes: [rowNode],
-            columns: ['condition', 'grader', 'grade', 'certNo'],
-            force: true,
-          });
-        }, 50);
-      }
+    if (event.column.getColId() !== 'conditionType') return;
+    const node = event.node;
+    setTimeout(() => {
+      event.api.refreshCells({ rowNodes: [node], columns: ['condition', 'grader', 'grade', 'certNo'], force: true });
+    }, 50);
+  }, []);
+
+  const onHeaderContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      const header = (event.target as HTMLElement).closest('.ag-header-cell');
+      if (!header) return;
+      event.preventDefault();
+      const colId = header.getAttribute('col-id');
+      if (colId && bulkFields.some((f) => f.field === colId)) openBulkEdit(colId);
+    },
+    [bulkFields, openBulkEdit]
+  );
+
+  // Runs in the capture phase, before the grid handles the key: the key that starts an edit sees
+  // no editing cell and resets the buffer; keys after it (still aimed at the cell) are collected.
+  const captureTypedAhead = useCallback((e: React.KeyboardEvent) => {
+    if (!(e.target as HTMLElement).classList?.contains('ag-cell')) return;
+    const editing = (api()?.getEditingCells().length ?? 0) > 0;
+    const buffer = typedAheadRef.current;
+    if (!editing) {
+      typedAheadRef.current = { text: '', enter: false };
+    } else if (e.key === 'Enter' && buffer.text) {
+      // Enter before a popup editor has mounted would commit the old value; let the editor commit instead
+      e.preventDefault();
+      e.stopPropagation();
+      buffer.enter = true;
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      buffer.text += e.key;
     }
   }, []);
 
-  // Column info mapping for bulk edit
-  const columnInfoMap: Record<string, ColumnInfo> = {
-    title: { field: 'title', headerName: 'Title', type: 'text' },
-    salePrice: { field: 'salePrice', headerName: 'Price', type: 'number' },
-    year: { field: 'year', headerName: 'Year', type: 'number' },
-    brand: { field: 'brand', headerName: 'Brand', type: 'text' },
-    setName: { field: 'setName', headerName: 'Set', type: 'text' },
-    cardNumber: { field: 'cardNumber', headerName: 'Card #', type: 'text' },
-    name: { field: 'name', headerName: 'Name', type: 'text' },
-    team: { field: 'team', headerName: 'Team', type: 'text' },
-    subsetParallel: { field: 'subsetParallel', headerName: 'Subset/Parallel', type: 'text' },
-    variation: { field: 'variation', headerName: 'Variation', type: 'text' },
-    category: { field: 'category', headerName: 'Category', type: 'select', options: CATEGORY_OPTIONS },
-    conditionType: { field: 'conditionType', headerName: 'Condition Type', type: 'select', options: CONDITION_TYPE_OPTIONS },
-    condition: { field: 'condition', headerName: 'Card Condition', type: 'select', options: CONDITION_OPTIONS },
-    grader: { field: 'grader', headerName: 'Professional Grader', type: 'select', options: GRADER_OPTIONS },
-    grade: { field: 'grade', headerName: 'Grade', type: 'select', options: GRADE_OPTIONS },
-    certNo: { field: 'certNo', headerName: 'Certification Number', type: 'text' },
-    attributes: { field: 'attributes', headerName: 'Attributes', type: 'text' },
-    description: { field: 'description', headerName: 'Item Description', type: 'text' },
-  };
-
-  // Handle header right-click for bulk edit (left-click still sorts)
-  const onColumnHeaderContextMenu = useCallback((event: React.MouseEvent) => {
-    event.preventDefault();
-    
-    // Find the column from the clicked header
-    const target = event.target as HTMLElement;
-    const headerCell = target.closest('.ag-header-cell');
-    if (!headerCell) return;
-    
-    const colId = headerCell.getAttribute('col-id');
-    if (!colId || colId === 'images') return;
-    
-    const columnInfo = columnInfoMap[colId];
-    if (columnInfo) {
-      setBulkEditColumn(columnInfo);
-      setShowBulkEdit(true);
-    }
+  const onSelectionChanged = useCallback((event: SelectionChangedEvent<CardItemWithImages>) => {
+    setSelectedCount(event.api.getSelectedNodes().length);
   }, []);
 
-  // Handle bulk edit apply
-  const handleBulkEditApply = useCallback((value: unknown) => {
-    if (bulkEditColumn) {
-      onBulkEdit(bulkEditColumn.field, value);
-    }
-  }, [bulkEditColumn, onBulkEdit]);
-
-  // Value setter helper
-  const createValueSetter = (field: string) => (params: ValueSetterParams<CardItemWithImages>) => {
-    if (params.data && params.newValue !== params.oldValue) {
-      onCellChange(params.data.id, field, params.newValue);
-      return true;
-    }
-    return false;
-  };
-
-  // Cell class for mandatory fields - shows red when empty
-  const getMandatoryCellClass = (field: string) => (params: CellClassParams<CardItemWithImages>) => {
-    if (params.data && isMandatoryFieldEmpty(field, params.value, params.data)) {
-      return 'cell-mandatory-empty';
-    }
-    return '';
-  };
-
-  // Row class rules - green when all mandatory fields are filled
-  const rowClassRules = useMemo(() => ({
-    'row-complete': (params: RowClassParams<CardItemWithImages>) => {
-      return params.data ? isCardComplete(params.data) : false;
-    },
-  }), []);
-
-  // All columns combined - widths set to show full header text (50% larger than original)
-  // Right-click any header (except Images) to bulk edit
-  // Order: Images, Title, Sale Price, Category, Year, Brand, Set, Name, Card #, Subset/Parallel, Attributes, Team, then rest
-  const columns: ColDef<CardItemWithImages>[] = useMemo(() => [
-    {
-      headerName: 'Images*',
-      field: 'images',
-      width: 100,
-      minWidth: 100,
-      maxWidth: 100,
-      // AG Grid 32+ infers object/array fields and warns without a formatter; custom renderer only needs row data
-      cellDataType: false,
-      cellRenderer: ImageCellRenderer,
-      sortable: false,
-      filter: false,
-      pinned: 'left',
-      suppressSizeToFit: true,
-      tooltipValueGetter: () => 'Click to enlarge (Required)',
-      cellClass: (params: CellClassParams<CardItemWithImages>) => {
-        if (params.data && (!params.data.images || params.data.images.length === 0)) {
-          return 'cell-mandatory-empty';
-        }
-        return '';
-      },
-    },
-    {
-      headerName: 'Title*',
-      field: 'title',
-      width: 700,
-      minWidth: 500,
-      flex: 1,
-      editable: false, // We handle editing in our custom renderer
-      cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
-        const card = params.data;
-        const context = params.context as GridContext;
-        if (!card || !context) return null;
-        
-        // Get lock state from context (via ref, so columns don't recreate)
-        const isUnlocked = unlockedTitlesRef.current.has(card.id);
-        const displayTitle = card.title || '';
-        const charCount = displayTitle.length;
-        const isOverLimit = charCount > 80;
-        
-        const [isEditing, setIsEditing] = useState(false);
-        const [editValue, setEditValue] = useState(displayTitle);
-        const inputRef = useRef<HTMLInputElement>(null);
-        
-        useEffect(() => {
-          if (isEditing && inputRef.current) {
-            inputRef.current.focus();
-            inputRef.current.select();
-          }
-        }, [isEditing]);
-        
-        useEffect(() => {
-          setEditValue(displayTitle);
-        }, [displayTitle]);
-        
-        const handleSave = () => {
-          if (editValue !== displayTitle) {
-            context.onCellChange(card.id, 'title', editValue);
-          }
-          setIsEditing(false);
-        };
-        
-        const handleKeyDown = (e: React.KeyboardEvent) => {
-          if (e.key === 'Enter') {
-            handleSave();
-          } else if (e.key === 'Escape') {
-            setEditValue(displayTitle);
-            setIsEditing(false);
-          }
-        };
-        
-        // If editing (unlocked mode)
-        if (isEditing && isUnlocked) {
-          const editCharCount = editValue.length;
-          const editOverLimit = editCharCount > 80;
-          
-          return (
-            <div 
-              className="flex items-center gap-2 w-full h-full px-1 -mx-1 rounded"
-              style={{ backgroundColor: editOverLimit ? 'rgba(239, 68, 68, 0.2)' : 'transparent' }}
-            >
-              <input
-                ref={inputRef}
-                type="text"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={handleSave}
-                onKeyDown={handleKeyDown}
-                className="flex-1 bg-surface-700 border border-primary-500 rounded px-2 py-1 text-surface-100 text-sm outline-none"
-                style={{ minWidth: 0 }}
-              />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  context.toggleTitleLock(card.id, card);
-                }}
-                className="p-1 rounded hover:bg-surface-700 text-primary-400 flex-shrink-0"
-                title="Lock to auto-generate title"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                </svg>
-              </button>
-              <span className="text-surface-500 text-xs flex-shrink-0 tabular-nums" title="eBay allows 80 characters max">
-                {editCharCount}/80
-              </span>
-            </div>
-          );
-        }
-        
-        return (
-          <div 
-            className="flex items-center gap-2 w-full h-full group px-1 -mx-1 rounded"
-            style={{ backgroundColor: isOverLimit ? 'rgba(239, 68, 68, 0.2)' : 'transparent' }}
-          >
-            <div 
-              className={`flex-1 truncate ${isUnlocked ? 'cursor-text' : ''}`}
-              onClick={() => isUnlocked && setIsEditing(true)}
-              title={displayTitle || (isUnlocked ? 'Click to edit' : 'Add data to the right to create a title or unlock to write your own')}
-            >
-              {displayTitle ? (
-                <span className="text-surface-100">{displayTitle}</span>
-              ) : (
-                <span className="text-surface-500 text-sm italic">
-                  {isUnlocked ? 'Click to edit...' : 'Add data to the right or unlock →'}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                context.toggleTitleLock(card.id, card);
-              }}
-              className={`p-1 rounded hover:bg-surface-700 transition-colors flex-shrink-0 ${
-                isUnlocked ? 'text-primary-400' : 'text-surface-500 hover:text-surface-300'
-              }`}
-              title={isUnlocked ? 'Lock to auto-generate title' : 'Unlock to edit manually'}
-            >
-              {isUnlocked ? (
-                // Unlocked icon (open padlock)
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                </svg>
-              ) : (
-                // Locked icon (closed padlock)
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              )}
-            </button>
-            <span className="text-surface-500 text-xs flex-shrink-0 tabular-nums" title="eBay allows 80 characters max">
-              {charCount}/80
-            </span>
-          </div>
-        );
-      },
-      headerTooltip: 'Auto-generated from Year, Set, Card #, Name, Subset/Parallel. Click lock icon to edit manually. Max 80 characters.',
-      cellClass: (params: CellClassParams<CardItemWithImages>) => {
-        if (!params.data) return '';
-        const title = params.data.title || '';
-        // Show error if title is over 80 characters
-        if (title.length > 80) return 'cell-title-over-limit';
-        // Show error if title is empty (mandatory)
-        if (title.trim() === '') return 'cell-mandatory-empty';
-        return '';
-      },
-    },
-    {
-      headerName: 'Sale Price*',
-      field: 'salePrice',
-      width: 150,
-      minWidth: 120,
-      editable: true,
-      valueFormatter: (params) => params.value ? `$${Number(params.value).toFixed(2)}` : '',
-      valueSetter: (params) => {
-        const val = params.newValue === '' || params.newValue === null ? null : parseFloat(params.newValue);
-        if (params.data && val !== params.oldValue) {
-          onCellChange(params.data.id, 'salePrice', val);
-          return true;
-        }
-        return false;
-      },
-      cellEditor: 'agTextCellEditor',
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('salePrice'),
-    },
-    {
-      headerName: 'Year*',
-      field: 'year',
-      width: 130,
-      minWidth: 100,
-      editable: true,
-      valueSetter: (params) => {
-        const val = params.newValue === '' || params.newValue === null ? null : parseInt(params.newValue);
-        if (params.data && val !== params.oldValue) {
-          onCellChange(params.data.id, 'year', val);
-          return true;
-        }
-        return false;
-      },
-      cellEditor: 'agTextCellEditor',
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('year'),
-    },
-    {
-      headerName: 'Category*',
-      field: 'category',
-      width: 240,
-      minWidth: 200,
-      editable: false,
-      cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
-        const card = params.data;
-        if (!card) return null;
-        return (
-          <SearchableSelect
-            value={params.value || ''}
-            onChange={(val) => onCellChange(card.id, 'category', val)}
-            triggerStyle={{
-              display: 'flex',
-              alignItems: 'center',
-              width: '100%',
-              height: '100%',
-              background: 'transparent',
-              border: 'none',
-              color: params.value ? '#fafafa' : '#a1a1aa',
-              cursor: 'pointer',
-              fontSize: '14px',
-              padding: '0 2px',
-              gap: '4px',
-              textAlign: 'left',
-            }}
-          />
-        );
-      },
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: (params: CellClassParams<CardItemWithImages>) => {
-        if (!params.data) return '';
-        const category = params.data.category;
-        if (!category || !ALL_CATEGORIES_SET.has(category)) {
-          return 'cell-mandatory-empty';
-        }
-        return '';
-      },
-    },
-    {
-      headerName: 'Brand*',
-      field: 'brand',
-      width: 150,
-      minWidth: 120,
-      editable: true,
-      valueSetter: createValueSetter('brand'),
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('brand'),
-    },
-    {
-      headerName: 'Set*',
-      field: 'setName',
-      width: 150,
-      minWidth: 120,
-      editable: true,
-      valueSetter: createValueSetter('setName'),
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('setName'),
-    },
-    {
-      headerName: 'Name*',
-      field: 'name',
-      width: 180,
-      minWidth: 150,
-      editable: true,
-      valueSetter: createValueSetter('name'),
-      headerTooltip: 'Required - Right-click to bulk edit',
-      cellClass: getMandatoryCellClass('name'),
-    },
-    {
-      headerName: 'Card #*',
-      field: 'cardNumber',
-      width: 145,
-      minWidth: 120,
-      editable: true,
-      valueSetter: createValueSetter('cardNumber'),
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('cardNumber'),
-    },
-    {
-      headerName: 'Subset/Parallel*',
-      field: 'subsetParallel',
-      width: 210,
-      minWidth: 180,
-      editable: true,
-      valueSetter: createValueSetter('subsetParallel'),
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('subsetParallel'),
-    },
-    {
-      headerName: 'Attributes',
-      field: 'attributes',
-      width: 175,
-      minWidth: 150,
-      editable: true,
-      valueSetter: createValueSetter('attributes'),
-      headerTooltip: 'Right-click to bulk edit',
-      suppressSizeToFit: true,
-    },
-    {
-      headerName: 'Team',
-      field: 'team',
-      width: 150,
-      minWidth: 120,
-      editable: true,
-      valueSetter: createValueSetter('team'),
-      headerTooltip: 'Right-click to bulk edit',
-      suppressSizeToFit: true,
-    },
-    // Additional columns after the main ones
-    {
-      headerName: 'Variation',
-      field: 'variation',
-      width: 160,
-      minWidth: 140,
-      editable: true,
-      valueSetter: createValueSetter('variation'),
-      headerTooltip: 'Right-click to bulk edit',
-      suppressSizeToFit: true,
-    },
-    // Condition-related columns
-    {
-      headerName: 'Condition Type*',
-      field: 'conditionType',
-      width: 350,
-      minWidth: 300,
-      editable: true,
-      singleClickEdit: true,
-      cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: CONDITION_TYPE_OPTIONS },
-      valueSetter: (params) => {
-        if (params.data && params.newValue !== params.oldValue) {
-          onCellChange(params.data.id, 'conditionType', params.newValue);
-          return true;
-        }
-        return false;
-      },
-      headerTooltip: 'Required - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('conditionType'),
-    },
-    {
-      headerName: 'Card Condition*',
-      field: 'condition',
-      width: 400,
-      minWidth: 350,
-      editable: false,
-      cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
-        const card = params.data;
-        if (!card) return null;
-        const isGraded = isCardGraded(card);
-        
-        if (isGraded) {
-          return <span style={{ color: '#71717a', fontStyle: 'italic' }}>N/A (graded)</span>;
-        }
-        
-        const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-          onCellChange(card.id, 'condition', e.target.value);
-        };
-        
-        return (
-          <select
-            value={params.value || ''}
-            onChange={handleChange}
-            onClick={(e) => e.stopPropagation()}
-            style={{ 
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: '#fafafa',
-              cursor: 'pointer',
-              outline: 'none',
-              width: '100%',
-            }}
-          >
-            <option value="" style={{ backgroundColor: '#27272a', color: '#a1a1aa' }}>Select condition...</option>
-            {CONDITION_OPTIONS.map(opt => (
-              <option key={opt} value={opt} style={{ backgroundColor: '#27272a', color: '#fafafa' }}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        );
-      },
-      headerTooltip: 'Required when ungraded - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('condition'),
-    },
-    {
-      headerName: 'Professional Grader',
-      field: 'grader',
-      width: 350,
-      minWidth: 300,
-      editable: false,
-      cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
-        const card = params.data;
-        if (!card) return null;
-        const isGraded = isCardGraded(card);
-        
-        if (!isGraded) {
-          return null;
-        }
-        
-        const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-          onCellChange(card.id, 'grader', e.target.value);
-        };
-        
-        return (
-          <select
-            value={params.value || ''}
-            onChange={handleChange}
-            onClick={(e) => e.stopPropagation()}
-            style={{ 
-              backgroundColor: isMandatoryFieldEmpty('grader', params.value, card) ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
-              border: 'none',
-              color: '#fafafa',
-              cursor: 'pointer',
-              outline: 'none',
-              width: '100%',
-            }}
-          >
-            <option value="" style={{ backgroundColor: '#27272a', color: '#a1a1aa' }}>Select grader...</option>
-            {GRADER_OPTIONS.map(opt => (
-              <option key={opt} value={opt} style={{ backgroundColor: '#27272a', color: '#fafafa' }}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        );
-      },
-      headerTooltip: 'Required when Graded - Right-click to bulk edit',
-      suppressSizeToFit: true,
-    },
-    {
-      headerName: 'Grade',
-      field: 'grade',
-      width: 150,
-      minWidth: 120,
-      editable: false,
-      cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
-        const card = params.data;
-        if (!card) return null;
-        const isGraded = isCardGraded(card);
-        
-        if (!isGraded) {
-          return null;
-        }
-        
-        const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-          onCellChange(card.id, 'grade', e.target.value);
-        };
-        
-        return (
-          <select
-            value={(params.value as string) || ''}
-            onChange={handleChange}
-            onClick={(e) => e.stopPropagation()}
-            style={{ 
-              backgroundColor: isMandatoryFieldEmpty('grade', params.value, card) ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
-              border: 'none',
-              color: '#fafafa',
-              cursor: 'pointer',
-              outline: 'none',
-              width: '100%',
-            }}
-          >
-            <option value="" style={{ backgroundColor: '#27272a', color: '#a1a1aa' }}>Select...</option>
-            {GRADE_OPTIONS.map(opt => (
-              <option key={opt} value={opt} style={{ backgroundColor: '#27272a', color: '#fafafa' }}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        );
-      },
-      headerTooltip: 'Required when Graded - Right-click to bulk edit',
-      suppressSizeToFit: true,
-    },
-    {
-      headerName: 'Certification Number',
-      field: 'certNo',
-      width: 240,
-      minWidth: 200,
-      editable: false,
-      cellRenderer: (params: ICellRendererParams<CardItemWithImages>) => {
-        const card = params.data;
-        if (!card) return null;
-        const isGraded = isCardGraded(card);
-        
-        if (!isGraded) {
-          return null;
-        }
-        
-        const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-          onCellChange(card.id, 'certNo', e.target.value);
-        };
-        
-        const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-          onCellChange(card.id, 'certNo', e.target.value);
-        };
-        
-        return (
-          <input
-            type="text"
-            defaultValue={params.value || ''}
-            onChange={handleChange}
-            onBlur={handleBlur}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="Enter cert #..."
-            style={{ 
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: '#fafafa',
-              outline: 'none',
-              width: '100%',
-            }}
-          />
-        );
-      },
-      headerTooltip: 'Recommended when graded - Right-click to bulk edit',
-      suppressSizeToFit: true,
-    },
-    {
-      headerName: 'Item Description*',
-      field: 'description',
-      width: 450,
-      minWidth: 300,
-      editable: true,
-      cellEditor: 'agLargeTextCellEditor',
-      cellEditorParams: {
-        maxLength: 5000,
-        rows: 5,
-        cols: 50,
-      },
-      valueSetter: createValueSetter('description'),
-      headerTooltip: 'Required - Custom description for eBay listing - Right-click to bulk edit',
-      suppressSizeToFit: true,
-      cellClass: getMandatoryCellClass('description'),
-    },
-  ], [onCellChange]);
-
-  const defaultColDef = useMemo<ColDef>(() => ({
-    sortable: true,
-    resizable: true,
-    filter: true,
-    suppressAutoSize: true, // Prevent auto-sizing from resetting widths
-  }), []);
-
-  const onGridReady = useCallback((event: GridReadyEvent) => {
-    // Don't auto-size, let columns use their defined widths
+  const onModelUpdated = useCallback((event: ModelUpdatedEvent<CardItemWithImages>) => {
+    setDisplayedCount(event.api.getDisplayedRowCount());
   }, []);
 
-  // Tab navigation: move down the column instead of across the row
   const tabToNextCell = useCallback((params: TabToNextCellParams) => {
     const { backwards, nextCellPosition, previousCellPosition } = params;
-    
-    if (!nextCellPosition) return null;
-    
-    const currentColumn = previousCellPosition?.column;
-    const currentRowIndex = previousCellPosition?.rowIndex ?? 0;
-    const api = params.api;
-    const rowCount = api.getDisplayedRowCount();
-    
-    if (!currentColumn) return nextCellPosition;
-    
-    // Calculate next row index (down for Tab, up for Shift+Tab)
-    let nextRowIndex: number;
-    if (backwards) {
-      // Shift+Tab: move up
-      nextRowIndex = currentRowIndex - 1;
-      if (nextRowIndex < 0) {
-        nextRowIndex = rowCount - 1; // Wrap to last row
-      }
-    } else {
-      // Tab: move down
-      nextRowIndex = currentRowIndex + 1;
-      if (nextRowIndex >= rowCount) {
-        nextRowIndex = 0; // Wrap to first row
-      }
-    }
-    
-    return {
-      rowIndex: nextRowIndex,
-      column: currentColumn, // Stay in the same column
-      rowPinned: null, // Required by CellPosition type
-    };
+    if (tabDirectionRef.current === 'across' || !previousCellPosition) return nextCellPosition ?? false;
+    const rowCount = params.api.getDisplayedRowCount();
+    let row = previousCellPosition.rowIndex + (backwards ? -1 : 1);
+    if (row < 0) row = rowCount - 1;
+    if (row >= rowCount) row = 0;
+    return { rowIndex: row, column: previousCellPosition.column, rowPinned: null };
   }, []);
 
-  // Quick filter when search text changes
-  useMemo(() => {
-    if (gridRef.current?.api) {
-      gridRef.current.api.setGridOption('quickFilterText', searchText);
-    }
-  }, [searchText]);
+  useEffect(() => {
+    api()?.setColumnsVisible(EXTRA_COLUMNS, showMoreColumns);
+  }, [showMoreColumns]);
+
+  const photoCard = useMemo(
+    () => (focusedCardId ? cards.find((card) => card.id === focusedCardId) ?? null : null),
+    [cards, focusedCardId]
+  );
+
+  const selectionScope =
+    selectedCount > 0
+      ? `Applies to the ${selectedCount} selected ${selectedCount === 1 ? 'card' : 'cards'}.`
+      : `No rows are selected, so this applies to all ${displayedCount} ${displayedCount === 1 ? 'card' : 'cards'} shown.`;
+
+  const toolbarButton = (active: boolean) =>
+    `px-2.5 py-1 rounded-md border text-xs font-medium transition-colors ${
+      active
+        ? 'border-primary-500 bg-primary-500/15 text-primary-300'
+        : 'border-surface-700 bg-surface-800 text-surface-300 hover:border-surface-500 hover:text-surface-100'
+    }`;
 
   return (
-    <>
-      <div 
-        className="ag-theme-alpine-dark h-full w-full"
-        onContextMenu={onColumnHeaderContextMenu}
-      >
-        <AgGridReact
-          ref={gridRef}
-          rowData={cards}
-          columnDefs={columns}
-          defaultColDef={defaultColDef}
-          context={gridContext}
-          onGridReady={onGridReady}
-          onCellClicked={onCellClicked}
-          onCellFocused={onCellFocused}
-          onCellContextMenu={onCellContextMenu}
-          onCellValueChanged={onCellValueChanged}
-          getRowId={(params) => params.data.id}
-          animateRows={true}
-          rowSelection="multiple"
-          suppressRowClickSelection={true}
-          stopEditingWhenCellsLoseFocus={true}
-          enterNavigatesVertically={true}
-          enterNavigatesVerticallyAfterEdit={true}
-          singleClickEdit={false}
-          quickFilterText={searchText}
-          tooltipShowDelay={500}
-          rowClassRules={rowClassRules}
-          suppressContextMenu={true}
-          tabToNextCell={tabToNextCell}
-          maintainColumnOrder={true}
-          suppressColumnMoveAnimation={true}
-        />
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-surface-700 bg-surface-900/60">
+        <button onClick={toggleIncompleteOnly} className={toolbarButton(incompleteOnly)} title="Show only cards that still need fields">
+          Incomplete only{incompleteCount > 0 ? ` (${incompleteCount})` : ''}
+        </button>
+        <button onClick={goToNextIncomplete} className={toolbarButton(false)} title="Jump to the next empty required field (Alt+N)">
+          Next incomplete
+        </button>
+        <span className="w-px h-5 bg-surface-700 mx-1" />
+        <button onClick={() => openBulkEdit(api()?.getFocusedCell()?.column.getColId() ?? null)} className={toolbarButton(false)}>
+          {selectedCount > 0 ? `Edit ${selectedCount} selected` : 'Bulk edit'}
+        </button>
+        {selectedCount > 0 && (
+          <button onClick={() => api()?.deselectAll()} className="text-xs text-surface-400 hover:text-surface-200">
+            Clear selection
+          </button>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="hidden lg:inline text-xs text-surface-500" title="Paste works from Excel or Google Sheets starting at the focused cell">
+            Ctrl+D fills down · Ctrl+V pastes cells
+          </span>
+          <div className="flex rounded-md border border-surface-700 overflow-hidden text-xs" title="Where Tab moves after you enter a value">
+            <span className="px-2 py-1 bg-surface-800 text-surface-500">Tab</span>
+            {(['down', 'across'] as const).map((direction) => (
+              <button
+                key={direction}
+                onClick={() => {
+                  setTabDirection(direction);
+                  writeSetting(STORAGE_KEYS.tab, direction);
+                }}
+                className={`px-2 py-1 capitalize ${
+                  tabDirection === direction ? 'bg-primary-600 text-white' : 'bg-surface-800 text-surface-300 hover:text-surface-100'
+                }`}
+              >
+                {direction}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => {
+              const next = !showMoreColumns;
+              setShowMoreColumns(next);
+              writeSetting(STORAGE_KEYS.moreColumns, next ? 'on' : 'off');
+            }}
+            className={toolbarButton(showMoreColumns)}
+            title="Team, Variation, Attributes"
+          >
+            More columns
+          </button>
+          <button
+            onClick={() => {
+              const next = !showPhotos;
+              setShowPhotos(next);
+              writeSetting(STORAGE_KEYS.photos, next ? 'on' : 'off');
+            }}
+            className={toolbarButton(showPhotos)}
+          >
+            Photos
+          </button>
+        </div>
       </div>
-      
+
+      <div className="flex flex-1 min-h-0">
+        <div className="ag-theme-alpine-dark flex-1 min-w-0 h-full" onContextMenu={onHeaderContextMenu}
+          onPaste={handlePaste}
+          onKeyDownCapture={captureTypedAhead}
+        >
+          <AgGridReact<CardItemWithImages>
+            ref={gridRef}
+            rowData={cards}
+            columnDefs={columns}
+            defaultColDef={defaultColDef}
+            context={gridContext}
+            getRowId={getRowId}
+            onCellClicked={onCellClicked}
+            onCellFocused={onCellFocused}
+            onCellKeyDown={onCellKeyDown}
+            onCellContextMenu={onCellContextMenu}
+            onCellValueChanged={onCellValueChanged}
+            onSelectionChanged={onSelectionChanged}
+            onModelUpdated={onModelUpdated}
+            rowSelection={ROW_SELECTION}
+            selectionColumnDef={SELECTION_COLUMN}
+            isExternalFilterPresent={isExternalFilterPresent}
+            doesExternalFilterPass={doesExternalFilterPass}
+            quickFilterText={searchText}
+            animateRows={true}
+            stopEditingWhenCellsLoseFocus={true}
+            enterNavigatesVertically={true}
+            enterNavigatesVerticallyAfterEdit={true}
+            tooltipShowDelay={500}
+            rowClassRules={rowClassRules}
+            suppressContextMenu={true}
+            tabToNextCell={tabToNextCell}
+            maintainColumnOrder={true}
+            suppressColumnMoveAnimation={true}
+          />
+        </div>
+        {showPhotos && (
+          <PhotoPanel
+            card={photoCard}
+            onClose={() => {
+              setShowPhotos(false);
+              writeSetting(STORAGE_KEYS.photos, 'off');
+            }}
+          />
+        )}
+      </div>
+
       <BulkEditModal
         isOpen={showBulkEdit}
-        column={bulkEditColumn}
-        itemCount={cards.length}
+        fields={bulkFields}
+        initialField={bulkField && bulkFields.some((f) => f.field === bulkField) ? bulkField : null}
+        targetCount={selectedCount > 0 ? selectedCount : displayedCount}
+        scopeLabel={selectionScope}
         onClose={() => setShowBulkEdit(false)}
-        onApply={handleBulkEditApply}
+        onApply={handleBulkApply}
       />
 
-      {/* Image Preview Popup */}
-      {previewCard && previewCard.images.length > 0 && (
-        <ImagePreviewPopup
-          images={previewCard.images}
-          cardTitle={previewCard.title || previewCard.name || `Card #${previewCard.cardNumber || previewCard.id.slice(0, 8)}`}
-          onClose={() => setPreviewCard(null)}
-        />
-      )}
-
-      {/* Row Context Menu */}
-      {contextMenu?.show && (
+      {contextMenu && (
         <div
           className="fixed z-50 bg-surface-800 border border-surface-600 rounded-lg shadow-xl overflow-hidden animate-fade-in"
-          style={{
-            left: contextMenu.x,
-            top: contextMenu.y,
-            minWidth: '180px',
-          }}
+          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: '180px' }}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-3 py-2 border-b border-surface-700 bg-surface-900/50">
-            <span className="text-xs text-surface-400 truncate block max-w-[200px]">
-              {contextMenu.cardTitle}
-            </span>
+            <span className="text-xs text-surface-400 truncate block max-w-[200px]">{contextMenu.label}</span>
           </div>
           <button
-            onClick={handleCloneCard}
+            onClick={() => {
+              onCloneCard(contextMenu.cardId);
+              setContextMenu(null);
+            }}
             className="w-full px-3 py-2.5 text-left text-sm hover:bg-surface-700 flex items-center gap-3 transition-colors"
           >
             <svg className="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            <span>Clone Row</span>
+            <span>Clone row</span>
           </button>
           <button
-            onClick={handleDeleteCard}
+            onClick={() => {
+              onDeleteCard(contextMenu.cardId);
+              setContextMenu(null);
+            }}
             className="w-full px-3 py-2.5 text-left text-sm hover:bg-red-900/30 text-red-400 flex items-center gap-3 transition-colors border-t border-surface-700"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
-            <span>Delete Row</span>
+            <span>Delete row</span>
           </button>
         </div>
       )}
-    </>
+    </div>
   );
 }

@@ -52,7 +52,7 @@ export async function GET(
 export async function PATCH(
   request: NextRequest,
   { params }: RouteParams
-): Promise<NextResponse<ApiResponse<CardItemWithImages[]>>> {
+): Promise<NextResponse<ApiResponse<{ updated: number }>>> {
   try {
     const userEmail = await getUserEmail();
     if (!userEmail) {
@@ -78,24 +78,17 @@ export async function PATCH(
       );
     }
     
-    // Update each card in a transaction
-    await prisma.$transaction(
+    // updateMany so a card deleted in another tab is skipped instead of failing the whole batch
+    const results = await prisma.$transaction(
       validation.data.updates.map((update) =>
-        prisma.cardItem.update({
+        prisma.cardItem.updateMany({
           where: { id: update.id, lotId },
           data: update.data,
         })
       )
     );
-    
-    // Fetch updated cards
-    const cards = await prisma.cardItem.findMany({
-      where: { lotId },
-      include: { images: { orderBy: { sortOrder: 'asc' } } },
-      orderBy: { sortOrder: 'asc' },
-    });
 
-    return NextResponse.json({ success: true, data: cards });
+    return NextResponse.json({ success: true, data: { updated: results.reduce((sum, r) => sum + r.count, 0) } });
   } catch (error) {
     console.error('Failed to update cards:', error);
     return NextResponse.json(

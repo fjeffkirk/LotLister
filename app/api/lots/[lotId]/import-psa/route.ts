@@ -8,6 +8,7 @@ import {
   PSALookupResult,
 } from '../../../../../lib/psa';
 import { saveImage } from '../../../../../lib/storage';
+import { fillEmptyFromDefaults, parseCardDefaults } from '../../../../../lib/card-fields';
 import { v4 as uuidv4 } from 'uuid';
 
 interface RouteParams {
@@ -79,6 +80,7 @@ export async function POST(
       select: { sortOrder: true },
     });
     let currentSortOrder = (lastCard?.sortOrder ?? -1) + 1;
+    const lotDefaults = parseCardDefaults(lot.cardDefaults);
 
     const results: ImportResult[] = [];
     let successCount = 0;
@@ -129,8 +131,9 @@ export async function POST(
         continue;
       }
 
-      // Map PSA data to card fields
-      const cardData = mapPSAToCardData(psaResult.data);
+      // Map PSA data to card fields; lot defaults fill whatever PSA left blank (description, price, …)
+      const psaCardData = mapPSAToCardData(psaResult.data);
+      const cardData = { ...psaCardData, ...fillEmptyFromDefaults(psaCardData, lotDefaults) };
       const cardId = uuidv4();
 
       // Download scans and store under uploads/... (relative paths) so the grid + eBay export use /api/images URLs
@@ -178,6 +181,8 @@ export async function POST(
             grade: cardData.grade as string,
             certNo: cardData.certNo as string,
             subsetParallel: cardData.subsetParallel as string,
+            salePrice: (cardData.salePrice as number | undefined) ?? null,
+            description: (cardData.description as string | undefined) ?? null,
             psaImport: true,
             images: {
               create: imageRecords,
