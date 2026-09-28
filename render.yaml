@@ -38,6 +38,8 @@ services:
       # Exact URL entered in eBay, e.g. https://<your-app>.onrender.com/api/ebay/account-deletion
       - key: EBAY_DELETION_ENDPOINT_URL
         sync: false
+      - key: EBAY_ALLOWED_USERS
+        sync: false
     disk:
       name: lotlister-data
       mountPath: /data

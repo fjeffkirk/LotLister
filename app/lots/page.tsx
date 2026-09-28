@@ -27,7 +27,7 @@ function getDaysRemaining(completedAt: string | Date | null): number {
 }
 
 export default function LotsPage() {
-  const { userEmail, isLoading: userLoading } = useUser();
+  const { username, signOut } = useUser();
   const [lots, setLots] = useState<LotWithCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -38,16 +38,10 @@ export default function LotsPage() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
 
   useEffect(() => {
-    // Only fetch lots when we have a user email
-    if (userEmail) {
-      fetchLots();
-      fetchStorage();
-      fetchUserStats();
-    } else if (!userLoading) {
-      // Not loading and no email means modal is showing
-      setLoading(false);
-    }
-  }, [userEmail, userLoading]);
+    fetchLots();
+    fetchStorage();
+    fetchUserStats();
+  }, []);
 
   async function fetchLots() {
     try {
@@ -169,24 +163,6 @@ export default function LotsPage() {
   const inProgressLots = lots.filter(lot => !lot.completed);
   const completedLots = lots.filter(lot => lot.completed);
 
-  // Don't render anything while checking for user
-  if (userLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950 flex items-center justify-center">
-        <div className="spinner w-8 h-8"></div>
-      </div>
-    );
-  }
-
-  // If no email, the EmailModal will show - render minimal UI
-  if (!userEmail) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
-        {/* Empty state - modal will overlay */}
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950">
       {/* Header */}
@@ -239,7 +215,7 @@ export default function LotsPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-                <span className="max-w-[200px] truncate">{userEmail}</span>
+                <span className="max-w-[200px] truncate">{username}</span>
                 {userStats && (
                   <div className="flex items-center gap-1 px-2 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -250,9 +226,13 @@ export default function LotsPage() {
                 )}
               </div>
 
-              <Link href="/settings" className="btn btn-ghost text-sm" title="Connect eBay account">
+              <Link href="/settings" className="btn btn-ghost text-sm" title="eBay account">
                 eBay
               </Link>
+
+              <button onClick={signOut} className="btn btn-ghost text-sm" title="Sign out">
+                Sign out
+              </button>
 
               {/* New Lot button */}
               <button
@@ -297,7 +277,7 @@ export default function LotsPage() {
 
             {/* User info with completed count */}
             <div className="flex items-center gap-2 text-sm text-surface-400">
-              <span className="max-w-[120px] truncate text-xs">{userEmail}</span>
+              <span className="max-w-[120px] truncate text-xs">{username}</span>
               {userStats && (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-900/30 text-green-400 rounded-full text-xs" title="Lifetime completed lots">
                   <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

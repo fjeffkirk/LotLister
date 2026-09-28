@@ -172,6 +172,8 @@ export interface DeletionRequest {
 export interface DeletionOutcome {
   duplicate: boolean;
   connectionsDeleted: number;
+  lotsDeleted: number;
+  /** Cards removed along with the deleted lots. */
   cardsCleared: number;
 }
 
@@ -247,7 +249,7 @@ export async function handleDeletionNotification(options: {
     }
     return {
       status: 204,
-      logMessage: `Processed notification ${notificationId}: removed ${outcome.connectionsDeleted} eBay connection(s), cleared ${outcome.cardsCleared} listing reference(s)`,
+      logMessage: `Processed notification ${notificationId}: removed ${outcome.connectionsDeleted} account(s), ${outcome.lotsDeleted} lot(s), ${outcome.cardsCleared} card(s)`,
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unknown error';
@@ -259,19 +261,26 @@ function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && (error as { code?: string }).code === 'P2002');
 }
 
+const DUPLICATE: DeletionOutcome = { duplicate: true, connectionsDeleted: 0, lotsDeleted: 0, cardsCleared: 0 };
+
 /**
- * Deletes the stored eBay connection (OAuth tokens, user id, username) for the eBay user, clears the
- * eBay listing references LotLister recorded for that seller, and records the notification id so
- * eBay's retries are no-ops. Runs in one transaction so a failure leaves nothing half-deleted.
+ * LotLister accounts are keyed by the eBay user id, so a deletion notice removes the whole account:
+ * the eBay connection (OAuth tokens, user id, username), the user record, and every lot with its cards,
+ * images, and listing settings. The notification id is recorded in the same transaction so eBay's
+ * retries are no-ops. Uploaded photo files are removed after the transaction commits.
  */
-export function createPrismaDeletionStore(prisma: PrismaClient): DeletionStore {
+export function createPrismaDeletionStore(
+  prisma: PrismaClient,
+  deleteLotFiles: (lotId: string) => Promise<void> = async () => undefined
+): DeletionStore {
   return {
     async deleteEbayUserData({ notificationId, userId, username }) {
+      let result: { outcome: DeletionOutcome; lotIds: string[] };
       try {
-        return await prisma.$transaction(async (tx) => {
+        result = await prisma.$transaction(async (tx) => {
           const already = await tx.ebayDeletionNotification.findUnique({ where: { notificationId } });
           if (already) {
-            return { duplicate: true, connectionsDeleted: 0, cardsCleared: 0 };
+            return { outcome: DUPLICATE, lotIds: [] };
           }
 
           const identifiers = [userId, username].filter((value): value is string => Boolean(value));
@@ -283,30 +292,50 @@ export function createPrismaDeletionStore(prisma: PrismaClient): DeletionStore {
                 select: { userEmail: true },
               })
             : [];
-          const emails = connections.map((connection) => connection.userEmail);
+          const accountKeys = [...new Set([...connections.map((c) => c.userEmail), ...(userId ? [userId] : [])])];
+
+          const lots = accountKeys.length
+            ? await tx.lot.findMany({ where: { userEmail: { in: accountKeys } }, select: { id: true } })
+            : [];
+          const lotIds = lots.map((lot) => lot.id);
 
           let cardsCleared = 0;
-          if (emails.length > 0) {
-            const cleared = await tx.cardItem.updateMany({
-              where: { ebayItemId: { not: null }, lot: { userEmail: { in: emails } } },
-              data: { ebayItemId: null, ebayListedAt: null, listings: null },
-            });
-            cardsCleared = cleared.count;
-            await tx.ebayConnection.deleteMany({ where: { userEmail: { in: emails } } });
+          if (lotIds.length > 0) {
+            cardsCleared = await tx.cardItem.count({ where: { lotId: { in: lotIds } } });
+            await tx.lot.deleteMany({ where: { id: { in: lotIds } } });
           }
+          if (accountKeys.length > 0) {
+            await tx.user.deleteMany({ where: { email: { in: accountKeys } } });
+          }
+          const deletedConnections = accountKeys.length
+            ? await tx.ebayConnection.deleteMany({ where: { userEmail: { in: accountKeys } } })
+            : { count: 0 };
 
+          const outcome: DeletionOutcome = {
+            duplicate: false,
+            connectionsDeleted: deletedConnections.count,
+            lotsDeleted: lotIds.length,
+            cardsCleared,
+          };
           await tx.ebayDeletionNotification.create({
-            data: { notificationId, connectionsDeleted: emails.length, cardsCleared },
+            data: {
+              notificationId,
+              connectionsDeleted: outcome.connectionsDeleted,
+              lotsDeleted: outcome.lotsDeleted,
+              cardsCleared: outcome.cardsCleared,
+            },
           });
-
-          return { duplicate: false, connectionsDeleted: emails.length, cardsCleared };
+          return { outcome, lotIds };
         });
       } catch (error) {
-        if (isUniqueViolation(error)) {
-          return { duplicate: true, connectionsDeleted: 0, cardsCleared: 0 };
-        }
+        if (isUniqueViolation(error)) return DUPLICATE;
         throw error;
       }
+
+      for (const lotId of result.lotIds) {
+        await deleteLotFiles(lotId);
+      }
+      return result.outcome;
     },
   };
 }

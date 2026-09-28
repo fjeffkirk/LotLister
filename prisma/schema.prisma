@@ -159,5 +159,6 @@ model EbayDeletionNotification {
   notificationId     String   @id
   processedAt        DateTime @default(now())
   connectionsDeleted Int
+  lotsDeleted        Int      @default(0)
   cardsCleared       Int
 }

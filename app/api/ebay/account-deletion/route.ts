@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { getEbayApplicationToken } from '../../../../lib/ebay';
+import { deleteLotImages } from '../../../../lib/storage';
 import {
   computeChallengeResponse,
   createEbayPublicKeyFetcher,
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const getPublicKey = createEbayPublicKeyFetcher(getEbayApplicationToken);
-const store = createPrismaDeletionStore(prisma);
+const store = createPrismaDeletionStore(prisma, deleteLotImages);
 
 // GET /api/ebay/account-deletion?challenge_code=... - eBay endpoint verification
 export async function GET(request: NextRequest) {

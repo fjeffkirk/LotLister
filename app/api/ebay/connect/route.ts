@@ -1,19 +1,15 @@
 import { randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserEmail } from '../../../../lib/auth';
 import { buildEbayAuthorizeUrl, EBAY_OAUTH_STATE_COOKIE, getEbayCredentials, getPublicBaseUrl } from '../../../../lib/ebay';
 
+// GET /api/ebay/connect - Start "Sign in with eBay"
 export async function GET(request: NextRequest) {
-  const userEmail = await getUserEmail();
   const base = getPublicBaseUrl(request.nextUrl.origin);
-  if (!userEmail) {
-    return NextResponse.redirect(`${base}/settings?ebay=error&message=${encodeURIComponent('Set your email before connecting eBay')}`);
-  }
 
   const creds = await getEbayCredentials();
   if (!creds) {
     return NextResponse.redirect(
-      `${base}/settings?ebay=error&message=${encodeURIComponent('eBay is not configured on the server yet')}`
+      `${base}/lots?signin=error&message=${encodeURIComponent('eBay is not configured on the server yet')}`
     );
   }
 

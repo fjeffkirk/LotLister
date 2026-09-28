@@ -275,7 +275,7 @@ export async function getValidEbayAccessToken(userEmail: string): Promise<string
 
   const connection = await prisma.ebayConnection.findUnique({ where: { userEmail } });
   if (!connection) {
-    throw new Error('Connect your eBay account before listing');
+    throw new Error('Your eBay session has ended. Sign out and sign in with eBay again.');
   }
 
   if (connection.accessExpiresAt.getTime() > Date.now() + 60_000) {

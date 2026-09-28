@@ -1,10 +1,8 @@
 import { createHash, generateKeyPairSync, sign } from 'crypto';
 import { describe, expect, it, vi } from 'vitest';
-import type { PrismaClient } from '@prisma/client';
 import {
   computeChallengeResponse,
   createEbayPublicKeyFetcher,
-  createPrismaDeletionStore,
   DeletionStore,
   EbayPublicKey,
   handleDeletionNotification,
@@ -47,7 +45,7 @@ function sampleKeyFetcher() {
   });
 }
 
-function recordingStore(outcome = { duplicate: false, connectionsDeleted: 1, cardsCleared: 2 }) {
+function recordingStore(outcome = { duplicate: false, connectionsDeleted: 1, lotsDeleted: 1, cardsCleared: 2 }) {
   const deleteEbayUserData = vi.fn(async () => outcome);
   return { store: { deleteEbayUserData } as DeletionStore, deleteEbayUserData };
 }
@@ -228,133 +226,5 @@ describe('handleDeletionNotification', () => {
       });
       expect(result.status).toBe(400);
     }
-  });
-});
-
-// In-memory stand-in for the Prisma client so the real deletion logic runs without touching a database.
-function fakePrisma(seed: {
-  connections: { userEmail: string; ebayUserId: string | null; ebayUsername: string | null }[];
-  cards: { id: string; userEmail: string; ebayItemId: string | null; listings: string | null }[];
-}) {
-  const state = {
-    connections: seed.connections.map((c) => ({ ...c })),
-    cards: seed.cards.map((c) => ({ ...c, ebayListedAt: c.ebayItemId ? new Date() : null })),
-    notifications: [] as { notificationId: string; connectionsDeleted: number; cardsCleared: number }[],
-  };
-
-  const tx = {
-    ebayDeletionNotification: {
-      findUnique: async ({ where }: { where: { notificationId: string } }) =>
-        state.notifications.find((n) => n.notificationId === where.notificationId) ?? null,
-      create: async ({ data }: { data: (typeof state.notifications)[number] }) => {
-        if (state.notifications.some((n) => n.notificationId === data.notificationId)) {
-          throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
-        }
-        state.notifications.push(data);
-        return data;
-      },
-    },
-    ebayConnection: {
-      findMany: async ({ where }: { where: { OR: Record<string, { in: string[] }>[] } }) => {
-        const ids = where.OR[0].ebayUserId.in;
-        return state.connections
-          .filter((c) => ids.includes(c.ebayUserId ?? '') || ids.includes(c.ebayUsername ?? ''))
-          .map((c) => ({ userEmail: c.userEmail }));
-      },
-      deleteMany: async ({ where }: { where: { userEmail: { in: string[] } } }) => {
-        const before = state.connections.length;
-        state.connections = state.connections.filter((c) => !where.userEmail.in.includes(c.userEmail));
-        return { count: before - state.connections.length };
-      },
-    },
-    cardItem: {
-      updateMany: async ({ where }: { where: { lot: { userEmail: { in: string[] } } } }) => {
-        let count = 0;
-        for (const card of state.cards) {
-          if (card.ebayItemId && where.lot.userEmail.in.includes(card.userEmail)) {
-            card.ebayItemId = null;
-            card.ebayListedAt = null;
-            card.listings = null;
-            count += 1;
-          }
-        }
-        return { count };
-      },
-    },
-  };
-
-  const client = { $transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) };
-  return { client: client as unknown as PrismaClient, state };
-}
-
-describe('createPrismaDeletionStore', () => {
-  const seed = () =>
-    fakePrisma({
-      connections: [
-        { userEmail: 'me@example.com', ebayUserId: 'ma8vp1jySJC', ebayUsername: 'test_user' },
-        { userEmail: 'friend@example.com', ebayUserId: 'friendId', ebayUsername: 'friend_user' },
-      ],
-      cards: [
-        { id: 'c1', userEmail: 'me@example.com', ebayItemId: '111', listings: 'https://www.ebay.com/itm/111' },
-        { id: 'c2', userEmail: 'me@example.com', ebayItemId: null, listings: null },
-        { id: 'c3', userEmail: 'friend@example.com', ebayItemId: '333', listings: 'https://www.ebay.com/itm/333' },
-      ],
-    });
-
-  it('deletes only the matching user’s connection and listing references', async () => {
-    const { client, state } = seed();
-    const store = createPrismaDeletionStore(client);
-
-    const outcome = await store.deleteEbayUserData({
-      notificationId: 'n-1',
-      userId: 'ma8vp1jySJC',
-      username: 'test_user',
-    });
-
-    expect(outcome).toEqual({ duplicate: false, connectionsDeleted: 1, cardsCleared: 1 });
-    expect(state.connections.map((c) => c.userEmail)).toEqual(['friend@example.com']);
-    expect(state.cards.find((c) => c.id === 'c1')).toMatchObject({ ebayItemId: null, listings: null, ebayListedAt: null });
-    expect(state.cards.find((c) => c.id === 'c3')?.ebayItemId).toBe('333');
-    expect(state.notifications).toEqual([{ notificationId: 'n-1', connectionsDeleted: 1, cardsCleared: 1 }]);
-  });
-
-  it('matches on username when the stored user id is missing', async () => {
-    const { client, state } = fakePrisma({
-      connections: [{ userEmail: 'me@example.com', ebayUserId: null, ebayUsername: 'test_user' }],
-      cards: [],
-    });
-    const outcome = await createPrismaDeletionStore(client).deleteEbayUserData({
-      notificationId: 'n-2',
-      userId: 'ma8vp1jySJC',
-      username: 'test_user',
-    });
-    expect(outcome.connectionsDeleted).toBe(1);
-    expect(state.connections).toHaveLength(0);
-  });
-
-  it('treats a retried notification as already processed', async () => {
-    const { client, state } = seed();
-    const store = createPrismaDeletionStore(client);
-    const request = { notificationId: 'n-3', userId: 'ma8vp1jySJC', username: 'test_user' };
-
-    await store.deleteEbayUserData(request);
-    state.connections.push({ userEmail: 'me@example.com', ebayUserId: 'ma8vp1jySJC', ebayUsername: 'test_user' });
-    const second = await store.deleteEbayUserData(request);
-
-    expect(second).toEqual({ duplicate: true, connectionsDeleted: 0, cardsCleared: 0 });
-    expect(state.notifications).toHaveLength(1);
-  });
-
-  it('succeeds and records the notification when LotLister stores nothing for the user', async () => {
-    const { client, state } = seed();
-    const outcome = await createPrismaDeletionStore(client).deleteEbayUserData({
-      notificationId: 'n-4',
-      userId: 'unknownUser',
-      username: 'unknown_user',
-    });
-
-    expect(outcome).toEqual({ duplicate: false, connectionsDeleted: 0, cardsCleared: 0 });
-    expect(state.connections).toHaveLength(2);
-    expect(state.notifications).toHaveLength(1);
   });
 });

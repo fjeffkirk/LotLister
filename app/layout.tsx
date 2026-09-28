@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { UserProvider } from '../components/UserProvider';
-import { EmailModal } from '../components/EmailModal';
+import { SignInGate } from '../components/SignInGate';
 
 export const metadata: Metadata = {
   title: 'LotLister - Card Lot Management',
@@ -17,10 +17,11 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <UserProvider>
-          <EmailModal />
-          <div className="min-h-screen flex flex-col">
-            {children}
-          </div>
+          <SignInGate>
+            <div className="min-h-screen flex flex-col">
+              {children}
+            </div>
+          </SignInGate>
         </UserProvider>
       </body>
     </html>

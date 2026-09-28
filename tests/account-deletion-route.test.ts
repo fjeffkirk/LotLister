@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 
 vi.mock('../lib/prisma', () => ({ default: {} }));
 vi.mock('../lib/ebay', () => ({ getEbayApplicationToken: vi.fn(async () => 'app-token') }));
+vi.mock('../lib/storage', () => ({ deleteLotImages: vi.fn(async () => undefined) }));
 
 const { GET, POST } = await import('../app/api/ebay/account-deletion/route');
 

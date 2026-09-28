@@ -527,7 +527,7 @@ export default function LotPage() {
                               ? listableCount > 0
                                 ? `Publish ${listableCount} ready ${listableCount === 1 ? 'card' : 'cards'}`
                                 : 'No ready cards left to list'
-                              : 'Connect your eBay account first'}
+                              : 'eBay is not configured on the server'}
                           </div>
                         </div>
                       </button>

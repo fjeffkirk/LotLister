@@ -9,17 +9,19 @@ export default function PrivacyPage() {
           LotLister is a private tool for listing trading cards. It is used by the operator and a few people they invite.
         </p>
         <p>
-          When you connect an eBay account, LotLister stores that account’s access token and refresh token on this server
-          so it can create listings for you. Those tokens are not shown in the app and are not shared with anyone else.
-          Card photos and listing details stay on this server except when they are sent to eBay to create a listing.
+          You sign in to LotLister with your eBay account. LotLister stores your eBay user id, your eBay username, and the
+          access and refresh tokens eBay issues, so it can identify your account and create listings for you. Those tokens
+          are not shown in the app and are not shared with anyone else. Card photos and listing details stay on this server
+          except when they are sent to eBay to create a listing.
         </p>
         <p>
-          Disconnecting eBay from the settings page deletes the stored tokens for your email. Listing data already sent to
-          eBay remains on eBay under that seller account.
+          If your eBay account is deleted, eBay notifies LotLister and your LotLister account, tokens, lots, and photos are
+          deleted. You can also ask the operator to delete your account at any time. Listing data already sent to eBay
+          remains on eBay under that seller account.
         </p>
       </div>
-      <Link href="/settings" className="inline-block mt-8 text-sm text-primary-400 hover:text-primary-300">
-        Back to eBay settings
+      <Link href="/lots" className="inline-block mt-8 text-sm text-primary-400 hover:text-primary-300">
+        Back to LotLister
       </Link>
     </main>
   );
