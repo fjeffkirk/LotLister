@@ -62,6 +62,46 @@ export interface ListingsData {
   scheduled: number;
 }
 
+export type DashboardChannel = 'all' | 'ebay' | 'shopify';
+
+export interface ShopifyRangeStats {
+  revenue: number;
+  net: number;
+  adSpend: number;
+  orders: number;
+  units: number;
+  aov: number;
+  shipping: number;
+  daily: number[];
+}
+
+export interface ShopifyProductStat {
+  name: string;
+  units: number;
+  revenue: number;
+}
+
+export interface ShopifyRecentOrder {
+  id: string;
+  name: string;
+  customer: string | null;
+  total: number;
+  soldAt: string;
+  href: string | null;
+}
+
+export interface ShopifyData {
+  state: 'ok' | 'not_configured';
+  shop: string | null;
+  lastSync: string | null;
+  ranges: Record<`${DashboardRange}`, ShopifyRangeStats>;
+  unfulfilled: number;
+  overdue: number;
+  lowStock: number;
+  products: Record<`${DashboardRange}`, ShopifyProductStat[]>;
+  recent: ShopifyRecentOrder[];
+}
+
 export interface DashboardData {
   state: 'ok' | 'not_configured' | 'not_connected';
   account: string | null;
@@ -69,4 +109,5 @@ export interface DashboardData {
   sales: DashboardSection<SalesData>;
   shipping: DashboardSection<ShippingData>;
   listings: DashboardSection<ListingsData>;
+  shopify?: DashboardSection<ShopifyData>;
 }

@@ -5,10 +5,11 @@ import './globals.css';
 import { UserProvider } from '../components/UserProvider';
 import { SignInGate } from '../components/SignInGate';
 import { CommandPaletteProvider } from '../components/CommandPalette';
+import { ShopifyIndexer } from '../components/ShopifyIndexer';
 
 export const metadata: Metadata = {
-  title: 'LotLister - Card Lot Management',
-  description: 'Manage trading card lots, import photos, and export to eBay',
+  title: 'LotLister',
+  description: 'eBay card listing and Shopify store operations in one dashboard',
 };
 
 export const viewport: Viewport = {
@@ -23,6 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body>
+        <ShopifyIndexer />
         <UserProvider>
           <SignInGate>
             <CommandPaletteProvider>

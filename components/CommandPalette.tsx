@@ -91,8 +91,10 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
     const pageCommands = Object.values(sources).flat();
     const navigation: Command[] = [
       { id: 'nav-new-lot', label: 'Create a new lot', group: 'General', icon: <PlusIcon />, keywords: 'add', run: () => router.push('/lots?new=1') },
-      { id: 'nav-lots', label: 'Go to dashboard', group: 'General', icon: <LayersIcon />, keywords: 'home lots sales ebay', run: () => router.push('/lots') },
-      { id: 'nav-settings', label: 'Account & eBay settings', group: 'General', icon: <GearIcon />, keywords: 'preferences', run: () => router.push('/settings') },
+      { id: 'nav-lots', label: 'Go to dashboard', group: 'General', icon: <LayersIcon />, keywords: 'home lots sales ebay shopify', run: () => router.push('/lots') },
+      { id: 'nav-orders', label: 'Shopify orders to ship', group: 'General', icon: <LayersIcon />, keywords: 'fulfillment packing', run: () => router.push('/ops/orders') },
+      { id: 'nav-inventory', label: 'Shopify low stock', group: 'General', icon: <LayersIcon />, keywords: 'inventory reorder', run: () => router.push('/ops/inventory') },
+      { id: 'nav-settings', label: 'Account, eBay & Shopify settings', group: 'General', icon: <GearIcon />, keywords: 'preferences', run: () => router.push('/settings') },
       { id: 'nav-signout', label: 'Sign out', group: 'General', icon: <LogOutIcon />, keywords: 'logout', run: () => void signOut() },
     ];
     const lotCommands: Command[] = lots.map((lot) => ({

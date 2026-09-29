@@ -2,9 +2,11 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Shared Postgres database. The LotLister models come first; the StockPilot models
+// (Shopify cache, catalog, inventory, ad budget) follow unchanged so this schema can
+// be pointed at StockPilot's existing database without altering its tables.
 datasource db {
-  provider = "sqlite"
-  // Use DATABASE_URL env var in production, fallback to local file for development
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -19,8 +21,8 @@ model Lot {
   name          String
   userEmail     String         @default("legacy@lotlister.app") // Email used for workspace isolation
   completed     Boolean        @default(false) // Whether the lot is completed
-  completedAt   DateTime?      // When the lot was marked completed (for auto-delete)
-  cardDefaults  String?        // JSON CardDefaults (lib/card-fields.ts) applied to new cards
+  completedAt   DateTime? // When the lot was marked completed (for auto-delete)
+  cardDefaults  String? // JSON CardDefaults (lib/card-fields.ts) applied to new cards
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   cardItems     CardItem[]
@@ -40,11 +42,11 @@ model CardItem {
 
   // Overview fields
   title       String?
-  status      String   @default("Draft") // Draft, Ready, Exported
+  status      String  @default("Draft") // Draft, Ready, Exported
   listings    String?
   salePrice   Float?
   listingType String? // Auction or BuyItNow; null follows the lot's ExportProfile.listingType
-  category    String   @default("Baseball")
+  category    String  @default("Baseball")
   year        Int?
   brand       String?
   setName     String?
@@ -56,14 +58,14 @@ model CardItem {
   attributes     String?
   team           String?
   variation      String?
-  graded         Boolean @default(false)
+  graded         Boolean   @default(false)
   grader         String?
   grade          String?
-  conditionType  String  @default("Ungraded: Not in original packaging or professionally graded")
-  condition      String  @default("Near Mint or Better")
+  conditionType  String    @default("Ungraded: Not in original packaging or professionally graded")
+  condition      String    @default("Near Mint or Better")
   certNo         String?
   description    String? // Custom item description for eBay listing
-  psaImport      Boolean @default(false) // Created via PSA cert import (subset/parallel optional for completion)
+  psaImport      Boolean   @default(false) // Created via PSA cert import (subset/parallel optional for completion)
   ebayItemId     String? // Set after a successful Trading API AddItem
   ebayListedAt   DateTime?
 
@@ -83,11 +85,11 @@ model CardImage {
 }
 
 model ExportProfile {
-  id                     String   @id @default(uuid())
-  lotId                  String   @unique
-  lot                    Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id        String   @id @default(uuid())
+  lotId     String   @unique
+  lot       Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Template
   templateName String @default("7 Day Auction")
@@ -120,9 +122,9 @@ model ExportProfile {
   immediatePayment Boolean @default(false)
 
   // Best Offer
-  bestOfferEnabled          Boolean @default(false)
-  bestOfferAutoAcceptPrice  Float?  // auto-accept any offer >= this amount (optional)
-  bestOfferMinimumPrice     Float?  // auto-decline any offer < this amount (optional)
+  bestOfferEnabled         Boolean @default(false)
+  bestOfferAutoAcceptPrice Float? // auto-accept any offer >= this amount (optional)
+  bestOfferMinimumPrice    Float? // auto-decline any offer < this amount (optional)
 
   // Location
   itemLocationCity  String?
@@ -171,4 +173,224 @@ model EbayDeletionNotification {
   connectionsDeleted Int
   lotsDeleted        Int      @default(0)
   cardsCleared       Int
+}
+
+// ===========================================================================
+// StockPilot (Shopify operations)
+// ===========================================================================
+
+enum SyncMode {
+  manual
+  polling
+  webhook_ready
+}
+
+model AppSetting {
+  id                         String    @id @default(cuid())
+  defaultMarginPercent       Float     @default(35)
+  syncMode                   SyncMode  @default(polling)
+  pollingIntervalMinutes     Int       @default(10)
+  lowStockDefaultThreshold   Int       @default(5)
+  defaultReorderQuantity     Int       @default(1)
+  /// Postage assumed on each $0-shipping order that hit the $100 free-shipping threshold.
+  averageFreeShippingCost    Float     @default(15)
+  /// Unused — past-due uses Shopify FulfillmentOrder.fulfillBy.
+  fulfillmentDueHours        Int       @default(24)
+  lastSuccessfulSyncAt       DateTime?
+  /// From OAuth (Partner / public app) or manual paste; prefer env in air-gapped deploys
+  shopifyShopDomain          String?
+  shopifyAccessToken         String?   @db.Text
+  shopifyShopName            String?
+  shopifyShopLogoUrl         String?   @db.Text
+  shopifyConnectedAt         DateTime?
+  shopifyConnectedAppVersion String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+}
+
+model Location {
+  id                String   @id @default(cuid())
+  shopifyLocationId String?  @unique
+  name              String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  inventorySnapshots InventorySnapshot[]
+}
+
+enum CatalogType {
+  product
+  supply
+}
+
+enum CatalogStatus {
+  active
+  archived
+}
+
+model CatalogItem {
+  id                     String        @id @default(cuid())
+  type                   CatalogType
+  status                 CatalogStatus @default(active)
+  title                  String
+  sku                    String?
+  barcode                String?
+  vendor                 String?
+  category               String?
+  subtype                String?
+  description            String?
+  imageUrl               String?
+  thumbnailUrl           String?
+  internalProductUrl     String?
+  reorderUrl             String?
+  supplierName           String?
+  notes                  String?
+  costBasis              Decimal?      @db.Decimal(14, 4)
+  sellingPrice           Decimal?      @db.Decimal(14, 4)
+  marginPercentOverride  Float?
+  reorderThreshold       Int?
+  reorderQuantity        Int?
+  trackInventory         Boolean       @default(true)
+  skipLowStockAlert      Boolean       @default(false)
+  /// Optional label to consolidate multiple listings into one leaderboard row.
+  /// Items sharing the same productGroup are summed together in reports.
+  productGroup           String?
+  shopifyProductId       String?
+  shopifyVariantId       String?       @unique
+  shopifyInventoryItemId String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  inventorySnapshots InventorySnapshot[]
+  lineItems          OrderLineItem[]
+
+  @@index([type])
+  @@index([status])
+  @@index([sku])
+}
+
+model InventorySnapshot {
+  id            String   @id @default(cuid())
+  catalogItemId String
+  locationId    String
+  available     Int      @default(0)
+  onHand        Int      @default(0)
+  committed     Int      @default(0)
+  incoming      Int      @default(0)
+  reserved      Int      @default(0)
+  snapshotAt    DateTime @default(now())
+
+  catalogItem CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  location    Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([catalogItemId, locationId, snapshotAt])
+}
+
+model Order {
+  id                String    @id @default(cuid())
+  shopifyOrderId    String    @unique
+  orderNumber       Int?
+  orderName         String?
+  customerName      String?
+  customerEmail     String?
+  financialStatus   String?
+  fulfillmentStatus String?
+  currency          String    @default("USD")
+  subtotal          Decimal   @db.Decimal(14, 4)
+  shippingCollected Decimal   @default(0) @db.Decimal(14, 4)
+  tax               Decimal   @default(0) @db.Decimal(14, 4)
+  discountTotal     Decimal   @default(0) @db.Decimal(14, 4)
+  total             Decimal   @db.Decimal(14, 4)
+  estimatedProfit   Decimal?  @db.Decimal(14, 4)
+  profitIsEstimated Boolean   @default(true)
+  orderDate         DateTime
+  /// Shopify FulfillmentOrder.fulfillBy (Admin “Fulfill by” / turnaround SLA).
+  fulfillBy         DateTime?
+  updatedAt         DateTime  @updatedAt
+  sourceChannel     String?
+  rawPayloadJson    String?   @db.Text
+
+  lineItems OrderLineItem[]
+
+  @@index([orderDate])
+  @@index([fulfillmentStatus])
+  @@index([fulfillBy])
+  @@index([sourceChannel])
+  @@index([customerEmail])
+}
+
+model OrderLineItem {
+  id                  String   @id @default(cuid())
+  orderId             String
+  catalogItemId       String?
+  shopifyLineItemId   String   @unique
+  title               String
+  variantTitle        String?
+  sku                 String?
+  quantity            Int
+  unitPrice           Decimal  @db.Decimal(14, 4)
+  lineRevenue         Decimal  @db.Decimal(14, 4)
+  estimatedUnitCost   Decimal? @db.Decimal(14, 4)
+  estimatedLineProfit Decimal? @db.Decimal(14, 4)
+  profitIsExact       Boolean  @default(false)
+  fulfillmentStatus   String?
+
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([catalogItemId])
+  @@index([sku])
+}
+
+enum SyncRunType {
+  full
+  incremental
+  orders
+  products
+  inventory
+  fulfillment
+  test_connection
+}
+
+enum SyncRunStatus {
+  running
+  success
+  failed
+}
+
+// Daily ad budget entries. Each row is a change point — the amount carries
+// forward to every subsequent day until a newer entry is added.
+// Supports retroactive edits and future scheduling.
+model DailyAdBudget {
+  id        String   @id @default(cuid())
+  /// Calendar date this budget takes effect from (stored as UTC midnight DATE)
+  date      DateTime @db.Date
+  /// Daily spend amount in USD
+  amount    Decimal  @db.Decimal(10, 2)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
+  @@index([date])
+}
+
+model SyncRun {
+  id               String        @id @default(cuid())
+  type             SyncRunType
+  startedAt        DateTime      @default(now())
+  completedAt      DateTime?
+  status           SyncRunStatus @default(running)
+  recordsProcessed Int           @default(0)
+  /// Current phase label for UI: locations | products | orders | finishing
+  progressPhase    String?
+  /// Units completed in the current phase (e.g. orders synced so far)
+  progressCurrent  Int           @default(0)
+  /// Expected units in the current phase (from Shopify count); null if unknown
+  progressTotal    Int?
+  errorMessage     String?
+
+  @@index([startedAt])
 }

@@ -6,6 +6,7 @@ import { useUser } from '../../components/UserProvider';
 import { AppHeader } from '../../components/ui/AppHeader';
 import { Avatar } from '../../components/ui/AccountMenu';
 import { AlertIcon, CheckCircleIcon, ChevronDownIcon, ChevronLeftIcon, CopyIcon, LogOutIcon } from '../../components/ui/icons';
+import { ShopifySettings } from '../../components/settings/ShopifySettings';
 
 interface EbaySettings {
   configured: boolean;
@@ -85,6 +86,8 @@ export default function SettingsPage() {
             </div>
           ) : null}
         </section>
+
+        <ShopifySettings />
 
         {settings && (
           <details className="panel group">

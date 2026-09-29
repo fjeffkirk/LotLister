@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['sharp'],
-  },
+  outputFileTracingRoot: __dirname,
+  serverExternalPackages: ['sharp'],
   images: {
     remotePatterns: [],
     unoptimized: true,
