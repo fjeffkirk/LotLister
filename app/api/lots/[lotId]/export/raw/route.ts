@@ -29,6 +29,7 @@ export async function GET(
           include: { images: { orderBy: { sortOrder: 'asc' } } },
           orderBy: { sortOrder: 'asc' },
         },
+        exportProfile: true,
       },
     });
     
@@ -40,7 +41,7 @@ export async function GET(
     }
     
     // Generate CSV
-    const csv = generateRawCSV(lot.cardItems);
+    const csv = generateRawCSV(lot.cardItems, lot.exportProfile);
     
     // Create filename
     const date = format(new Date(), 'MM-dd-yy');

@@ -16,12 +16,15 @@ export const updateLotSchema = z.object({
 
 // CardItem validation
 export const cardStatusSchema = z.enum(['Draft', 'Ready', 'Exported']);
+export const listingTypeSchema = z.enum(['Auction', 'BuyItNow']);
 
 export const updateCardItemSchema = z.object({
   title: z.string().nullable().optional(),
   status: cardStatusSchema.optional(),
   listings: z.string().nullable().optional(),
   salePrice: z.number().nullable().optional(),
+  /** null follows the lot's export profile */
+  listingType: listingTypeSchema.nullable().optional(),
   category: z.string().optional(),
   year: z.number().int().min(1800).max(2100).nullable().optional(),
   brand: z.string().nullable().optional(),
@@ -53,7 +56,6 @@ export const bulkUpdateCardItemsSchema = z.object({
 });
 
 // ExportProfile validation
-export const listingTypeSchema = z.enum(['Auction', 'BuyItNow']);
 export const scheduleModeSchema = z.enum(['Immediate', 'Scheduled']);
 export const durationDaysSchema = z.enum(['1', '3', '5', '7', '10']).transform(Number);
 

@@ -11,7 +11,7 @@
 import { CardImage, CardItem, ExportProfile } from '@prisma/client';
 import prisma from './prisma';
 import { imagePathToEbayPicUrl, isAbsoluteImageUrl } from './imageUrls';
-import { renderDescription } from './card-fields';
+import { cardListingType, renderDescription } from './card-fields';
 import {
   ebayCardConditionValueId,
   ebayGradeValueId,
@@ -425,7 +425,7 @@ function buildAddItemXml(
     return { error: 'No public https photo URL for this card' };
   }
 
-  const isAuction = profile.listingType !== 'BuyItNow';
+  const isAuction = cardListingType(card, profile) === 'Auction';
   const startPrice = isAuction
     ? card.salePrice || profile.startPriceDefault
     : card.salePrice;
@@ -458,16 +458,18 @@ function buildAddItemXml(
       ? `<BuyItNowPrice currencyID="USD">${money(profile.buyItNowPrice)}</BuyItNowPrice>`
       : '';
 
-  const bestOffer = profile.bestOfferEnabled
+  // eBay only offers Best Offer on fixed-price listings; sending it on an auction is rejected
+  const bestOfferEnabled = profile.bestOfferEnabled && !isAuction;
+  const bestOffer = bestOfferEnabled
     ? `<BestOfferDetails><BestOfferEnabled>true</BestOfferEnabled></BestOfferDetails>`
     : '';
   const offerPrices: string[] = [];
-  if (profile.bestOfferEnabled && profile.bestOfferAutoAcceptPrice) {
+  if (bestOfferEnabled && profile.bestOfferAutoAcceptPrice) {
     offerPrices.push(
       `<BestOfferAutoAcceptPrice currencyID="USD">${money(profile.bestOfferAutoAcceptPrice)}</BestOfferAutoAcceptPrice>`
     );
   }
-  if (profile.bestOfferEnabled && profile.bestOfferMinimumPrice) {
+  if (bestOfferEnabled && profile.bestOfferMinimumPrice) {
     offerPrices.push(
       `<MinimumBestOfferPrice currencyID="USD">${money(profile.bestOfferMinimumPrice)}</MinimumBestOfferPrice>`
     );
@@ -504,7 +506,7 @@ function buildAddItemXml(
     ${buyItNow}
     ${bestOffer}
     ${listingDetails}
-    ${profile.immediatePayment ? '<AutoPay>true</AutoPay>' : ''}
+    ${profile.immediatePayment && (!isAuction || buyItNow) ? '<AutoPay>true</AutoPay>' : ''}
     ${scheduleXml}
     <Location>${xmlEscape(location)}</Location>
     ${postalCode ? `<PostalCode>${xmlEscape(postalCode)}</PostalCode>` : ''}

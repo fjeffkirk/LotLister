@@ -318,6 +318,7 @@ export const GRADE_OPTIONS = [
 
 // Listing type options
 export const LISTING_TYPE_OPTIONS = ['Auction', 'BuyItNow'] as const;
+export type ListingType = (typeof LISTING_TYPE_OPTIONS)[number];
 
 // Schedule mode options
 export const SCHEDULE_MODE_OPTIONS = ['Immediate', 'Scheduled'] as const;

@@ -817,6 +817,7 @@ export default function LotPage() {
         ) : isMobile ? (
           <MobileCardList
             cards={lot.cardItems}
+            lotListingType={lot.exportProfile?.listingType ?? 'Auction'}
             searchText={searchText}
             onCardsChange={handleCardsChange}
             onCloneCard={handleCloneCard}
@@ -827,6 +828,7 @@ export default function LotPage() {
           <div className="h-[calc(100vh-96px)] panel overflow-hidden flex flex-col">
             <CardGrid
               cards={lot.cardItems}
+              lotListingType={lot.exportProfile?.listingType ?? 'Auction'}
               onCellChange={handleCellChange}
               onCardsChange={handleCardsChange}
               onCloneCard={handleCloneCard}
@@ -848,6 +850,7 @@ export default function LotPage() {
           setExportModeSettings(false);
         }}
         purpose={settingsPurpose}
+        onSaved={fetchLot}
         onExport={
           exportModeSettings
             ? settingsPurpose === 'list'

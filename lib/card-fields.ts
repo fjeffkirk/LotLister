@@ -9,6 +9,7 @@ import {
   CONDITION_TYPE_OPTIONS,
   GRADER_OPTIONS,
   GRADE_OPTIONS,
+  ListingType,
   SPORTS_CATEGORIES,
   TCG_CATEGORIES,
 } from './types';
@@ -64,6 +65,22 @@ export const CONDITION_TYPE_FIELD_OPTIONS: FieldOption[] = [
 ];
 
 export const GRADE_FIELD_OPTIONS: FieldOption[] = GRADE_OPTIONS.map((value) => ({ value, label: value }));
+
+export const LISTING_TYPE_FIELD_OPTIONS: FieldOption[] = [
+  { value: 'Auction', label: 'Auction', hint: 'Bidding, ends after the lot duration' },
+  { value: 'BuyItNow', label: 'Buy It Now', hint: 'Fixed price, good till cancelled' },
+];
+
+/**
+ * How this card sells. A card with no listing type of its own follows the lot's
+ * export profile, so switching the lot default moves every card that was never switched.
+ */
+export function cardListingType(
+  card: { listingType?: string | null },
+  profile?: { listingType?: string | null } | null
+): ListingType {
+  return (card.listingType || profile?.listingType) === 'BuyItNow' ? 'BuyItNow' : 'Auction';
+}
 
 export const CATEGORY_FIELD_OPTIONS: FieldOption[] = CATEGORY_OPTIONS.map((value) => ({
   value,
@@ -170,6 +187,7 @@ export const TEXT_FIELDS = [
 ] as const;
 
 export const SELECT_FIELD_OPTIONS: Record<string, FieldOption[]> = {
+  listingType: LISTING_TYPE_FIELD_OPTIONS,
   category: CATEGORY_FIELD_OPTIONS,
   conditionType: CONDITION_TYPE_FIELD_OPTIONS,
   condition: CONDITION_FIELD_OPTIONS,
