@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { ExportProfile } from '@prisma/client';
+import { cardListingType } from '../lib/card-fields';
+import { isCardComplete } from '../lib/card-completeness';
 import {
+  CardItemWithImages,
   LISTING_TYPE_OPTIONS,
   SCHEDULE_MODE_OPTIONS,
   DURATION_OPTIONS,
@@ -19,6 +22,8 @@ interface ExportSettingsModalProps {
   onSaved?: () => void; // Settings were written; the lot may need to re-read them
   isExporting?: boolean;
   purpose?: 'csv' | 'list';
+  /** Cards on the lot. List mode reads format, price, and category from these. */
+  cards?: CardItemWithImages[];
 }
 
 const DEFAULT_PROFILE: Partial<ExportProfile> = {
@@ -61,6 +66,7 @@ export default function ExportSettingsModal({
   onSaved,
   isExporting = false,
   purpose = 'csv',
+  cards = [],
 }: ExportSettingsModalProps) {
   const isExportMode = !!onExport;
   const isListMode = isExportMode && purpose === 'list';
@@ -120,16 +126,38 @@ export default function ExportSettingsModal({
     }
   }
   
+  const batch = useMemo(() => {
+    const ready = cards.filter((card) => isCardComplete(card) && !card.ebayItemId);
+    let buyItNow = 0;
+    let auction = 0;
+    const categories = new Map<string, number>();
+    for (const card of ready) {
+      if (cardListingType(card, profile) === 'BuyItNow') buyItNow += 1;
+      else auction += 1;
+      const name = card.category?.trim() || 'Uncategorized';
+      categories.set(name, (categories.get(name) ?? 0) + 1);
+    }
+    return {
+      total: ready.length,
+      buyItNow,
+      auction,
+      categories: [...categories.entries()].sort((a, b) => b[1] - a[1]),
+    };
+  }, [cards, profile]);
+
   // Validate all required fields for export
   function validateForExport(): string[] {
     const errors: string[] = [];
-    
-    if (!profile.templateName?.trim()) errors.push('Template Name');
-    if (!profile.ebayCategory?.trim()) errors.push('eBay Category');
-    if (!profile.listingType) errors.push('Default Listing Type');
-    // Any card can be switched to Auction, so the auction fallbacks always have to be set
-    if (profile.startPriceDefault === null || profile.startPriceDefault === undefined) errors.push('Default Start Bid');
-    if (!profile.durationDays) errors.push('Auction Duration');
+
+    if (!isListMode) {
+      if (!profile.templateName?.trim()) errors.push('Template Name');
+      if (!profile.ebayCategory?.trim()) errors.push('eBay Category');
+      if (!profile.listingType) errors.push('Default Listing Type');
+      if (profile.startPriceDefault === null || profile.startPriceDefault === undefined) errors.push('Default Start Bid');
+    }
+    if (!isListMode || batch.auction > 0) {
+      if (!profile.durationDays) errors.push('Auction length');
+    }
     if (profile.storeCategory === null || profile.storeCategory === undefined || profile.storeCategory === '') errors.push('Store Category');
     
     // Schedule validation
@@ -191,7 +219,7 @@ export default function ExportSettingsModal({
             {isExportMode && (
               <p className="text-xs sm:text-sm text-surface-400 mt-1">
                 {isListMode
-                  ? 'Review listing settings, then publish ready cards that are not already listed'
+                  ? 'Format, price, and category come from each card. These settings apply to the whole batch.'
                   : 'Review your settings before exporting'}
               </p>
             )}
@@ -220,7 +248,27 @@ export default function ExportSettingsModal({
                 </div>
               )}
 
-              {/* Template Name */}
+              {isListMode ? (
+                <div className="p-4 bg-surface-800/50 rounded-lg space-y-2">
+                  <h3 className="font-medium text-surface-200">
+                    {batch.total === 0 ? 'No cards are ready to list' : `${batch.total} ${batch.total === 1 ? 'card' : 'cards'} ready`}
+                  </h3>
+                  {batch.total > 0 && (
+                    <ul className="text-sm text-surface-300 space-y-1">
+                      {batch.buyItNow > 0 && (
+                        <li>{batch.buyItNow} Buy It Now — each card’s Price, listed until it sells</li>
+                      )}
+                      {batch.auction > 0 && (
+                        <li>{batch.auction} Auction — each card’s Price is the starting bid</li>
+                      )}
+                      <li className="text-surface-400">
+                        {batch.categories.map(([name, count]) => `${count} ${name}`).join(' · ')}
+                      </li>
+                    </ul>
+                  )}
+                  <p className="text-xs text-surface-500">Change format or price in the grid. This window does not override those.</p>
+                </div>
+              ) : (
               <div>
                 <label className="block text-sm font-medium text-surface-300 mb-2">
                   Template Name
@@ -232,8 +280,9 @@ export default function ExportSettingsModal({
                   className="w-full"
                 />
               </div>
+              )}
 
-              {/* Listing Type & Category */}
+              {!isListMode && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-2">
@@ -270,9 +319,11 @@ export default function ExportSettingsModal({
                   <p className="mt-1 text-xs text-surface-500">Per-card overrides apply automatically for TCG &amp; Non-Sport cards</p>
                 </div>
               </div>
+              )}
 
-              {/* Pricing / Duration — auction settings apply to whichever cards are set to Auction */}
-              <div className="grid gap-4 grid-cols-3">
+              {/* Auction length applies only to auction cards. Price comes from the grid. */}
+              <div className={`grid gap-4 ${isListMode ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                {!isListMode && (
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-2">
                     Default Start Bid ($)
@@ -287,9 +338,11 @@ export default function ExportSettingsModal({
                   />
                   <p className="mt-1 text-xs text-surface-500">Fallback if an auction card has no price set</p>
                 </div>
+                )}
+                {(!isListMode || batch.auction > 0) && (
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-2">
-                    Auction Duration
+                    {isListMode ? 'Auction length' : 'Auction Duration'}
                   </label>
                   <select
                     value={profile.durationDays || 7}
@@ -302,11 +355,14 @@ export default function ExportSettingsModal({
                       </option>
                     ))}
                   </select>
-                  <p className="mt-1 text-xs text-surface-500">Buy It Now cards run Good Till Cancelled</p>
+                  <p className="mt-1 text-xs text-surface-500">
+                    {isListMode ? 'Buy It Now cards stay up until they sell' : 'Buy It Now cards run Good Till Cancelled'}
+                  </p>
                 </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-2">
-                    Store Category
+                    {isListMode ? 'eBay store category' : 'Store Category'}
                   </label>
                   <input
                     type="text"
@@ -315,16 +371,19 @@ export default function ExportSettingsModal({
                     className="w-full"
                     placeholder="0"
                   />
+                  {isListMode && (
+                    <p className="mt-1 text-xs text-surface-500">Use 0 if you don’t file these into a store category</p>
+                  )}
                 </div>
               </div>
 
-              {/* Schedule */}
+              {/* Schedule — same start time for every card in this batch */}
               <div className="p-4 bg-surface-800/50 rounded-lg space-y-4">
-                <h3 className="font-medium text-surface-200">Schedule</h3>
+                <h3 className="font-medium text-surface-200">{isListMode ? 'When they go live' : 'Schedule'}</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-surface-300 mb-2">
-                      Schedule Mode
+                      {isListMode ? 'Start' : 'Schedule Mode'}
                     </label>
                     <select
                       value={profile.scheduleMode || 'Scheduled'}
@@ -333,7 +392,7 @@ export default function ExportSettingsModal({
                     >
                       {SCHEDULE_MODE_OPTIONS.map((opt) => (
                         <option key={opt} value={opt}>
-                          {opt}
+                          {isListMode ? (opt === 'Immediate' ? 'Right away' : 'On a date and time') : opt}
                         </option>
                       ))}
                     </select>
@@ -382,7 +441,7 @@ export default function ExportSettingsModal({
                             onChange={(e) => updateField('staggerEnabled', e.target.checked)}
                             className="w-4 h-4 rounded border-surface-600"
                           />
-                          <span className="text-sm text-surface-300">Enable stagger</span>
+                          <span className="text-sm text-surface-300">{isListMode ? 'Space listings apart' : 'Enable stagger'}</span>
                         </label>
                         {profile.staggerEnabled && (
                           <div className="flex items-center gap-2">
@@ -579,7 +638,8 @@ export default function ExportSettingsModal({
                 )}
               </div>
 
-              {/* Payment */}
+              {/* Immediate payment and Best Offer only apply to Buy It Now cards */}
+              {(!isListMode || batch.buyItNow > 0) && (
               <div className="space-y-3">
                 <div className="flex items-center gap-6">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -601,8 +661,8 @@ export default function ExportSettingsModal({
                     <span className="text-sm text-surface-300">Allow Best Offers</span>
                   </label>
                 </div>
-                {profile.bestOfferEnabled && (
-                  <p className="text-xs text-surface-500">eBay only allows Best Offer on Buy It Now cards; auction cards skip it.</p>
+                {profile.bestOfferEnabled && batch.auction > 0 && (
+                  <p className="text-xs text-surface-500">Best Offer is sent on the Buy It Now cards only. Auction cards skip it.</p>
                 )}
                 {profile.bestOfferEnabled && (
                   <div className="grid grid-cols-2 gap-4 p-3 rounded-lg bg-surface-800/60 border border-surface-700">
@@ -649,6 +709,7 @@ export default function ExportSettingsModal({
                   </div>
                 )}
               </div>
+              )}
             </>
           )}
         </div>

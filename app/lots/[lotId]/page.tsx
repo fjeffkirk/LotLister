@@ -850,6 +850,7 @@ export default function LotPage() {
           setExportModeSettings(false);
         }}
         purpose={settingsPurpose}
+        cards={lot.cardItems}
         onSaved={fetchLot}
         onExport={
           exportModeSettings
