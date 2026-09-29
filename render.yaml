@@ -4,14 +4,19 @@ services:
     name: lotlister
     runtime: node
     region: oregon
-    buildCommand: npm ci --include=dev && npx prisma generate && NODE_OPTIONS="--max-old-space-size=512" npm run build
-    startCommand: npx prisma db push --skip-generate && npm start
+    buildCommand: npm ci --include=dev && NODE_OPTIONS="--max-old-space-size=512" npm run build
+    # Applies migrations (and the one-time SQLite import when IMPORT_SQLITE_PATH is set), then starts
+    startCommand: node scripts/db-migrate.mjs && npm start
     envVars:
       # Cap Node heap below Render's 512MB container limit (Sharp/native memory sits outside heap)
       - key: NODE_OPTIONS
         value: --max-old-space-size=384
+      # Internal connection string of the shared Render Postgres database (the one StockPilot uses)
       - key: DATABASE_URL
-        value: file:/data/lotlister.sqlite
+        sync: false
+      # Old LotLister SQLite file, copied into Postgres once on the first start after the move
+      - key: IMPORT_SQLITE_PATH
+        value: /data/lotlister.sqlite
       - key: UPLOAD_DIR
         value: /data/uploads
       - key: NODE_ENV

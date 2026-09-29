@@ -26,7 +26,7 @@ function takeTypedAhead(context: { takeTypedAhead?: () => TypedAhead } | undefin
 }
 
 /** Opens the list upward when the cell is near the bottom of the grid, where it would be clipped. */
-function useDropUp(anchor: React.RefObject<HTMLElement>): boolean {
+function useDropUp(anchor: React.RefObject<HTMLElement | null>): boolean {
   const [dropUp, setDropUp] = useState(false);
   useLayoutEffect(() => {
     const el = anchor.current;
@@ -39,7 +39,7 @@ function useDropUp(anchor: React.RefObject<HTMLElement>): boolean {
   return dropUp;
 }
 
-function useScrollActiveIntoView(list: React.RefObject<HTMLElement>, active: number) {
+function useScrollActiveIntoView(list: React.RefObject<HTMLElement | null>, active: number) {
   useEffect(() => {
     const item = list.current?.children[active] as HTMLElement | undefined;
     item?.scrollIntoView({ block: 'nearest' });
