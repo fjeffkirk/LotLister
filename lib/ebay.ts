@@ -550,23 +550,48 @@ function tagText(xml: string, tag: string): string {
   return decodeXml(xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1]?.trim() ?? '');
 }
 
-/** eBay's own error code, both messages, and any parameter it named. Nothing is filled in when eBay left it out. */
+function plainEbayText(value: string): string {
+  return decodeXml(value)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Internal ids and HTML leftovers, not something a seller can act on. */
+function isEbayInternalNote(value: string): boolean {
+  if (!value) return true;
+  if (/^LP_[A-Za-z0-9_]+$/.test(value)) return true;
+  if (/^\d+$/.test(value)) return true;
+  if (/^\(?e\d[\d-]*x?\)?$/i.test(value)) return true;
+  return false;
+}
+
+/** eBay's own error code and the most specific text it sent. HTML and repeated policy lines are left out. */
 function ebayErrorText(body: string): string {
   const code = tagText(body, 'ErrorCode');
-  const longMessage = tagText(body, 'LongMessage');
-  const shortMessage = tagText(body, 'ShortMessage');
+  const longMessage = plainEbayText(tagText(body, 'LongMessage'));
+  const shortMessage = plainEbayText(tagText(body, 'ShortMessage'));
   const named: string[] = [];
   for (const match of body.matchAll(/<ErrorParameters\b([^>]*)>([\s\S]*?)<\/ErrorParameters>/g)) {
-    const id = match[1].match(/ParamID="([^"]*)"/)?.[1]?.trim();
-    const value = decodeXml(match[2].match(/<Value>([\s\S]*?)<\/Value>/)?.[1]?.trim() ?? '');
-    if (!value) continue;
-    named.push(id ? `${value} (parameter ${id})` : value);
+    const value = plainEbayText(match[2].match(/<Value>([\s\S]*?)<\/Value>/)?.[1] ?? '');
+    if (!value || isEbayInternalNote(value) || named.some((item) => item.toLowerCase() === value.toLowerCase())) continue;
+    named.push(value);
   }
 
-  const headline = longMessage || shortMessage || 'eBay rejected this listing and sent no message';
+  const sentences = named.filter((value) => value.length > 80);
+  const specifics = named.filter((value) => !sentences.includes(value));
+  const headline = sentences[0] || longMessage || shortMessage || 'eBay rejected this listing and sent no message';
   const lines = [code ? `eBay error ${code}: ${headline}` : headline];
-  if (shortMessage && shortMessage !== headline) lines.push(`eBay short message: ${shortMessage}`);
-  if (named.length > 0) lines.push(`eBay named: ${named.join(', ')}`);
+  const shortAlreadyShown =
+    !shortMessage ||
+    shortMessage === headline ||
+    headline.startsWith(shortMessage) ||
+    longMessage.startsWith(shortMessage) ||
+    sentences.length > 0;
+  if (!shortAlreadyShown) {
+    lines.push(`eBay short message: ${shortMessage}`);
+  }
+  if (specifics.length > 0) lines.push(`eBay named: ${specifics.join(', ')}`);
   return lines.join('\n');
 }
 
