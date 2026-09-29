@@ -43,6 +43,8 @@ export interface RecentSale {
 
 export interface SalesData {
   ranges: Record<`${DashboardRange}`, RangeStats>;
+  /** Stats for the range currently selected on the dashboard, including Today, Yesterday, and custom. */
+  focus?: RangeStats;
   recent: RecentSale[];
   /** Sold listings whose player name has not been looked up yet (picked up on a later load). */
   pendingLookups: number;
@@ -90,15 +92,25 @@ export interface ShopifyRecentOrder {
   href: string | null;
 }
 
+export interface AdBudgetEntry {
+  date: string;
+  amount: number;
+}
+
 export interface ShopifyData {
   state: 'ok' | 'not_configured';
   shop: string | null;
   lastSync: string | null;
   ranges: Record<`${DashboardRange}`, ShopifyRangeStats>;
+  focus?: ShopifyRangeStats;
+  /** Daily ad budget that carries forward to today. Null when none has been saved. */
+  dailyBudget: number | null;
+  adEntries: AdBudgetEntry[];
   unfulfilled: number;
   overdue: number;
   lowStock: number;
   products: Record<`${DashboardRange}`, ShopifyProductStat[]>;
+  focusProducts?: ShopifyProductStat[];
   recent: ShopifyRecentOrder[];
 }
 

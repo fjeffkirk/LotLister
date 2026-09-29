@@ -38,9 +38,9 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen">
-      <AppHeader maxWidth="max-w-3xl" />
+      <AppHeader />
 
-      <main className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
         <div>
           <Link href="/lots" className="inline-flex items-center gap-1 text-sm text-surface-400 hover:text-surface-200">
             <ChevronLeftIcon size={14} /> Dashboard

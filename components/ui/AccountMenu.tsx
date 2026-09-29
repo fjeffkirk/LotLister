@@ -103,6 +103,9 @@ export function AccountMenu() {
           <Link href="/settings" onClick={close} className="menu-item">
             <GearIcon className="text-surface-400" /> Account &amp; eBay
           </Link>
+          <Link href="/settings#shopify" onClick={close} className="menu-item">
+            <GearIcon className="text-surface-400" /> Shopify settings
+          </Link>
           <button
             onClick={() => {
               close();

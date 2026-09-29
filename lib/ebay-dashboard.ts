@@ -14,6 +14,7 @@ import {
   getValidEbayAccessToken,
   tradingCall,
 } from './ebay';
+import { toZonedTime } from 'date-fns-tz';
 import {
   DASHBOARD_RANGES,
   DashboardData,
@@ -390,15 +391,97 @@ function buildRangeStats(
   };
 }
 
+const NY = 'America/New_York';
+
+function nyDay(time: number): number {
+  const zoned = toZonedTime(new Date(time), NY);
+  return Math.floor(Date.UTC(zoned.getFullYear(), zoned.getMonth(), zoned.getDate()) / DAY_MS);
+}
+
+/** Same totals as buildRangeStats, for an arbitrary inclusive window (Today, Yesterday, or a custom range). */
+function buildWindowStats(
+  orders: Order[],
+  from: Date,
+  to: Date,
+  players: Map<string, string | null>
+): RangeStats {
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
+  const start = nyDay(fromMs);
+  const days = Math.max(1, nyDay(toMs) - start + 1);
+  const daily = new Array<number>(Math.min(days, 120)).fill(0);
+  let gross = 0;
+  let fees = 0;
+  let refunds = 0;
+  let orderCount = 0;
+  let units = 0;
+  let itemRevenue = 0;
+  let unidentifiedUnits = 0;
+  const byPlayer = new Map<string, PlayerStat>();
+
+  for (const order of orders) {
+    const created = Date.parse(order.creationDate);
+    if (!Number.isFinite(created) || created < fromMs || created > toMs) continue;
+
+    const orderGrossValue = orderGross(order);
+    gross += orderGrossValue;
+    fees += amount(order.totalMarketplaceFee);
+    refunds += orderRefunds(order);
+    orderCount += 1;
+
+    const bucket = Math.min(nyDay(created) - start, daily.length - 1);
+    if (bucket >= 0) daily[bucket] += orderGrossValue;
+
+    for (const line of order.lineItems ?? []) {
+      const quantity = line.quantity ?? 1;
+      const cost = amount(line.lineItemCost);
+      units += quantity;
+      itemRevenue += cost;
+      const player = line.legacyItemId ? players.get(line.legacyItemId) : null;
+      if (!player) {
+        unidentifiedUnits += quantity;
+        continue;
+      }
+      const key = player.toLowerCase();
+      const stat = byPlayer.get(key) ?? { name: player, units: 0, revenue: 0 };
+      stat.units += quantity;
+      stat.revenue += cost;
+      byPlayer.set(key, stat);
+    }
+  }
+
+  const topPlayers = [...byPlayer.values()]
+    .sort((a, b) => b.units - a.units || b.revenue - a.revenue)
+    .slice(0, TOP_PLAYERS)
+    .map((stat) => ({ ...stat, revenue: round2(stat.revenue) }));
+
+  return {
+    summary: {
+      gross: round2(gross),
+      net: round2(gross - fees - refunds),
+      fees: round2(fees),
+      refunds: round2(refunds),
+      orders: orderCount,
+      units,
+      avgItemPrice: units > 0 ? round2(itemRevenue / units) : 0,
+      daily: daily.map(round2),
+    },
+    players: topPlayers,
+    unidentifiedUnits,
+  };
+}
+
 async function fetchSales(
   userEmail: string,
   creds: EbayCredentials,
   accessToken: string,
   now: number,
-  tzOffsetMinutes: number
+  tzOffsetMinutes: number,
+  window?: { from: Date; to: Date }
 ): Promise<SalesData> {
   const longest = Math.max(...DASHBOARD_RANGES);
-  const since = new Date(now - longest * DAY_MS).toISOString();
+  const sinceMs = Math.min(now - longest * DAY_MS, window?.from.getTime() ?? now);
+  const since = new Date(sinceMs).toISOString();
   const orders = (await fetchOrders(accessToken, `creationdate:%5B${since}..%5D`)).filter(isCountableSale);
 
   const itemIds = orders.flatMap((order) =>
@@ -409,6 +492,8 @@ async function fetchSales(
   const ranges = Object.fromEntries(
     DASHBOARD_RANGES.map((days) => [String(days), buildRangeStats(orders, days, now, tzOffsetMinutes, players)])
   ) as SalesData['ranges'];
+
+  const focus = window ? buildWindowStats(orders, window.from, window.to, players) : ranges['30'];
 
   const recent: RecentSale[] = orders
     .slice()
@@ -425,7 +510,7 @@ async function fetchSales(
     )
     .slice(0, RECENT_SALES);
 
-  return { ranges, recent, pendingLookups: pending };
+  return { ranges, focus, recent, pendingLookups: pending };
 }
 
 async function fetchShipping(accessToken: string, now: number): Promise<ShippingData> {
@@ -457,7 +542,11 @@ async function fetchShipping(accessToken: string, now: number): Promise<Shipping
   };
 }
 
-export async function getDashboardData(userEmail: string, tzOffsetMinutes: number): Promise<DashboardData> {
+export async function getDashboardData(
+  userEmail: string,
+  tzOffsetMinutes: number,
+  window?: { from: Date; to: Date }
+): Promise<DashboardData> {
   const now = Date.now();
   const empty = { status: 'error', message: '' } as const;
   const base = { fetchedAt: new Date(now).toISOString(), sales: empty, shipping: empty, listings: empty };
@@ -478,7 +567,7 @@ export async function getDashboardData(userEmail: string, tzOffsetMinutes: numbe
   }
 
   const [sales, shipping, listings] = await Promise.allSettled([
-    fetchSales(userEmail, creds, accessToken, now, tzOffsetMinutes),
+    fetchSales(userEmail, creds, accessToken, now, tzOffsetMinutes, window),
     fetchShipping(accessToken, now),
     fetchListings(creds, accessToken),
   ]);

@@ -1,7 +1,8 @@
-import { DashboardRange, DashboardSection, ShopifyData, ShopifyRangeStats } from './dashboard-types';
-import { getComparisonDates, rangeToDates } from './dates';
+import { DashboardSection, ShopifyData, ShopifyRangeStats } from './dashboard-types';
+import { DateRangeKey, getComparisonDates, rangeToDates } from './dates';
 import { tryPrisma } from './db';
-import { getAdSpendForRange } from './queries/ad-budget';
+import { toNumber } from './money';
+import { getAdSpendForRange, getEffectiveDailyBudget, getRecentAdBudgets } from './queries/ad-budget';
 import {
   countLowStockItems,
   getAllTopProducts,
@@ -33,17 +34,25 @@ function emptyShopify(shop: string | null = null): ShopifyData {
     shop,
     lastSync: null,
     ranges: { '7': emptyRange(), '30': emptyRange(), '90': emptyRange() },
+    focus: emptyRange(),
+    dailyBudget: null,
+    adEntries: [],
     unfulfilled: 0,
     overdue: 0,
     lowStock: 0,
     products: { '7': [], '30': [], '90': [] },
+    focusProducts: [],
     recent: [],
   };
 }
 
-async function rangeStats(days: DashboardRange, margin: number, freeShip: number): Promise<ShopifyRangeStats> {
-  const key = `${days}d` as const;
-  const { from, to } = rangeToDates(key);
+async function statsFor(
+  from: Date,
+  to: Date,
+  key: DateRangeKey | null,
+  margin: number,
+  freeShip: number
+): Promise<ShopifyRangeStats> {
   const comparison = getComparisonDates(key, from, to);
   const [currentAds, prevAds, daily] = await Promise.all([
     getAdSpendForRange(from, to),
@@ -70,7 +79,11 @@ async function rangeStats(days: DashboardRange, margin: number, freeShip: number
   };
 }
 
-export async function getShopifyDashboard(): Promise<DashboardSection<ShopifyData>> {
+export async function getShopifyDashboard(window?: {
+  from: Date;
+  to: Date;
+  key: DateRangeKey | null;
+}): Promise<DashboardSection<ShopifyData>> {
   try {
     const [ready, settings] = await Promise.all([isShopifyApiReady(), getAppSettings()]);
     const shop = settings?.shopifyShopName || settings?.shopifyShopDomain || null;
@@ -82,18 +95,14 @@ export async function getShopifyDashboard(): Promise<DashboardSection<ShopifyDat
 
     const margin = settings?.defaultMarginPercent ?? 35;
     const freeShip = settings?.averageFreeShippingCost ?? 15;
+    const selected = window ?? { ...rangeToDates('1d'), key: '1d' as const };
 
-    const window7 = rangeToDates('7d');
-    const window30 = rangeToDates('30d');
-    const window90 = rangeToDates('90d');
-    const [seven, thirty, ninety, products7, products30, products90, recent, ops] = await Promise.all([
-      rangeStats(7, margin, freeShip),
-      rangeStats(30, margin, freeShip),
-      rangeStats(90, margin, freeShip),
-      getAllTopProducts(window7.from, window7.to, margin),
-      getAllTopProducts(window30.from, window30.to, margin),
-      getAllTopProducts(window90.from, window90.to, margin),
+    const [focus, tops, recent, budget, entries, ops] = await Promise.all([
+      statsFor(selected.from, selected.to, selected.key, margin, freeShip),
+      getAllTopProducts(selected.from, selected.to, margin),
       getRecentOrders(8),
+      getEffectiveDailyBudget(),
+      getRecentAdBudgets(8),
       tryPrisma(async (db) => {
         const [lowStock, overdue, unfulfilled] = await Promise.all([
           countLowStockItems(db, settings?.lowStockDefaultThreshold),
@@ -109,8 +118,7 @@ export async function getShopifyDashboard(): Promise<DashboardSection<ShopifyDat
       }),
     ]);
 
-    const toProducts = (tops: Awaited<ReturnType<typeof getAllTopProducts>>) =>
-      tops.byUnits.slice(0, 10).map((row) => ({ name: row.title, units: row.units, revenue: row.revenue }));
+    const focusProducts = tops.byUnits.slice(0, 10).map((row) => ({ name: row.title, units: row.units, revenue: row.revenue }));
 
     return {
       status: 'ok',
@@ -118,11 +126,18 @@ export async function getShopifyDashboard(): Promise<DashboardSection<ShopifyDat
         state: ready || (orderCount ?? 0) > 0 ? 'ok' : 'not_configured',
         shop,
         lastSync: settings?.lastSuccessfulSyncAt?.toISOString() ?? null,
-        ranges: { '7': seven, '30': thirty, '90': ninety },
+        ranges: { '7': focus, '30': focus, '90': focus },
+        focus,
+        dailyBudget: budget,
+        adEntries: entries.map((entry) => ({
+          date: entry.date.toISOString().slice(0, 10),
+          amount: toNumber(entry.amount),
+        })),
         unfulfilled: ops?.unfulfilled ?? 0,
         overdue: ops?.overdue ?? 0,
         lowStock: ops?.lowStock ?? 0,
-        products: { '7': toProducts(products7), '30': toProducts(products30), '90': toProducts(products90) },
+        products: { '7': focusProducts, '30': focusProducts, '90': focusProducts },
+        focusProducts,
         recent: recent.map((order) => ({
           id: order.id,
           name: order.orderName || 'Shopify order',

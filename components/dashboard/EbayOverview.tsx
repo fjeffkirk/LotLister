@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-  DASHBOARD_RANGES,
+  AdBudgetEntry,
   DashboardChannel,
   DashboardData,
-  DashboardRange,
   DashboardSection,
   RangeStats,
   ShopifyData,
@@ -21,8 +20,18 @@ import {
   WalletIcon,
 } from '../ui/icons';
 
-const RANGE_STORAGE_KEY = 'lotlister.dashboardRange';
-const CHANNEL_STORAGE_KEY = 'lotlister.dashboardChannel';
+const RANGE_STORAGE_KEY = 'lotlister.dashboardRange.v2';
+const CHANNEL_STORAGE_KEY = 'lotlister.dashboardChannel.v2';
+const PRESETS = ['1d', 'yesterday', '7d', '30d', '90d'] as const;
+type Preset = (typeof PRESETS)[number];
+
+const PRESET_LABELS: Record<Preset, string> = {
+  '1d': 'Today',
+  yesterday: 'Yesterday',
+  '7d': '7D',
+  '30d': '30D',
+  '90d': '90D',
+};
 const SELLER_HUB = {
   orders: 'https://www.ebay.com/sh/ord',
   awaiting: 'https://www.ebay.com/sh/ord/?filter=status:AWAITING_SHIPMENT',
@@ -65,38 +74,62 @@ export function EbayOverview() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState<string | null>(null);
-  const [range, setRange] = useState<DashboardRange>(30);
-  const [channel, setChannel] = useState<DashboardChannel>('all');
+  const [range, setRange] = useState<Preset | 'custom'>('1d');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [channel, setChannel] = useState<DashboardChannel>('shopify');
+  const [prefsReady, setPrefsReady] = useState(false);
 
   useEffect(() => {
-    const saved = Number(window.localStorage.getItem(RANGE_STORAGE_KEY));
-    if ((DASHBOARD_RANGES as readonly number[]).includes(saved)) setRange(saved as DashboardRange);
+    const saved = window.localStorage.getItem(RANGE_STORAGE_KEY);
+    if (saved && (PRESETS as readonly string[]).includes(saved)) setRange(saved as Preset);
+    const savedFrom = window.localStorage.getItem(`${RANGE_STORAGE_KEY}.from`);
+    const savedTo = window.localStorage.getItem(`${RANGE_STORAGE_KEY}.to`);
+    if (saved === 'custom' && savedFrom && savedTo) {
+      setRange('custom');
+      setCustomFrom(savedFrom);
+      setCustomTo(savedTo);
+    }
     const savedChannel = window.localStorage.getItem(CHANNEL_STORAGE_KEY);
     if (savedChannel === 'all' || savedChannel === 'ebay' || savedChannel === 'shopify') setChannel(savedChannel);
+    setPrefsReady(true);
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setFailed(null);
+    const query =
+      range === 'custom' && customFrom && customTo
+        ? `from=${customFrom}&to=${customTo}`
+        : `range=${range === 'custom' ? '1d' : range}`;
     try {
-      const res = await fetch(`/api/dashboard?tz=${new Date().getTimezoneOffset()}`, { cache: 'no-store' });
+      const res = await fetch(`/api/dashboard?tz=${new Date().getTimezoneOffset()}&${query}`, { cache: 'no-store' });
       const body = await res.json();
-      if (!body.success) throw new Error(body.error || 'Could not load eBay data');
+      if (!body.success) throw new Error(body.error || 'Could not load dashboard data');
       setData(body.data as DashboardData);
     } catch (error) {
-      setFailed(error instanceof Error ? error.message : 'Could not load eBay data');
+      setFailed(error instanceof Error ? error.message : 'Could not load dashboard data');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [range, customFrom, customTo]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (prefsReady) load();
+  }, [prefsReady, load]);
 
-  function chooseRange(next: DashboardRange) {
+  function chooseRange(next: Preset) {
     setRange(next);
-    window.localStorage.setItem(RANGE_STORAGE_KEY, String(next));
+    window.localStorage.setItem(RANGE_STORAGE_KEY, next);
+  }
+
+  function applyCustom(from: string, to: string) {
+    setCustomFrom(from);
+    setCustomTo(to);
+    setRange('custom');
+    window.localStorage.setItem(RANGE_STORAGE_KEY, 'custom');
+    window.localStorage.setItem(`${RANGE_STORAGE_KEY}.from`, from);
+    window.localStorage.setItem(`${RANGE_STORAGE_KEY}.to`, to);
   }
 
   function chooseChannel(next: DashboardChannel) {
@@ -109,10 +142,11 @@ export function EbayOverview() {
   const listings = sectionData(data?.listings);
   const shopify = sectionData(data?.shopify);
   const shopifyReady = shopify?.state === 'ok';
-  const stats: RangeStats | null = sales ? sales.ranges[`${range}`] : null;
-  const shopRange = shopify?.ranges[`${range}`] ?? null;
+  const stats: RangeStats | null = sales?.focus ?? (sales ? sales.ranges['30'] : null);
+  const periodLabel = range === 'custom' && customFrom && customTo ? `${customFrom} – ${customTo}` : range === 'custom' ? 'Today' : PRESET_LABELS[range];
+  const shopRange = shopify?.focus ?? shopify?.ranges['30'] ?? null;
   const needsReconnect = [data?.sales, data?.shipping, data?.listings].some((s) => s?.status === 'reconnect');
-  const busy = loading && !data;
+  const busy = loading;
   const showEbayConnect = Boolean(data && data.state !== 'ok' && !shopifyReady && channel !== 'shopify');
 
   const combinedSales = (stats?.summary.gross ?? 0) + (shopRange?.revenue ?? 0);
@@ -156,9 +190,19 @@ export function EbayOverview() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ChannelToggle value={channel} onChange={chooseChannel} />
-          <RangeToggle value={range} onChange={chooseRange} />
+          <RangeToggle value={range} customFrom={customFrom} customTo={customTo} onChange={chooseRange} onCustom={applyCustom} />
         </div>
       </div>
+
+      {channel !== 'ebay' && (
+        <AdSpendBar
+          dailyBudget={shopify?.dailyBudget ?? null}
+          periodSpend={shopRange?.adSpend ?? 0}
+          periodLabel={periodLabel}
+          entries={shopify?.adEntries ?? []}
+          onSaved={load}
+        />
+      )}
 
       {failed && !data && (
         <div className="panel flex items-center justify-between gap-4 px-4 py-3 text-sm text-red-200 border-red-500/30 bg-red-500/10">
@@ -183,7 +227,7 @@ export function EbayOverview() {
               icon={<TrendIcon size={16} />}
               tone="primary"
               label="Sales"
-              suffix={`${range}d`}
+              suffix={periodLabel}
               loading={busy}
               section={data?.sales}
               value={stats ? money(stats.summary.gross) : null}
@@ -197,7 +241,7 @@ export function EbayOverview() {
               tone="emerald"
               label="Net earnings"
               shortLabel="Net"
-              suffix={`${range}d`}
+              suffix={periodLabel}
               loading={busy}
               section={data?.sales}
               value={stats ? money(stats.summary.net) : null}
@@ -248,7 +292,7 @@ export function EbayOverview() {
               icon={<TrendIcon size={16} />}
               tone="primary"
               label="Sales"
-              suffix={`${range}d`}
+              suffix={periodLabel}
               loading={busy}
               section={data?.shopify}
               value={shopRange ? money(shopRange.revenue) : null}
@@ -261,7 +305,7 @@ export function EbayOverview() {
               tone="emerald"
               label="Est. profit"
               shortLabel="Profit"
-              suffix={`${range}d`}
+              suffix={periodLabel}
               loading={busy}
               section={data?.shopify}
               value={shopRange ? money(shopRange.net) : null}
@@ -298,7 +342,7 @@ export function EbayOverview() {
               icon={<TrendIcon size={16} />}
               tone="primary"
               label="Sales"
-              suffix={`${range}d`}
+              suffix={periodLabel}
               loading={busy}
               section={data?.sales?.status === 'ok' || shopifyReady ? { status: 'ok', data: true } : data?.sales}
               value={!busy ? money(combinedSales) : null}
@@ -311,7 +355,7 @@ export function EbayOverview() {
               tone="emerald"
               label="Net earnings"
               shortLabel="Net"
-              suffix={`${range}d`}
+              suffix={periodLabel}
               loading={busy}
               section={data?.sales?.status === 'ok' || shopifyReady ? { status: 'ok', data: true } : data?.sales}
               value={!busy ? money(combinedNet) : null}
@@ -351,19 +395,19 @@ export function EbayOverview() {
       {channel === 'all' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
           <TopPlayers
-            range={range}
+            label={periodLabel}
             loading={busy}
             section={data?.sales}
             stats={stats}
             pendingLookups={sales?.pendingLookups ?? 0}
           />
-          <TopShopifyProducts range={range} loading={busy} shopify={shopify} section={data?.shopify} />
+          <TopShopifyProducts label={periodLabel} loading={busy} shopify={shopify} section={data?.shopify} />
         </div>
       ) : channel === 'ebay' ? (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
           <TopPlayers
             className="lg:col-span-3"
-            range={range}
+            label={periodLabel}
             loading={busy}
             section={data?.sales}
             stats={stats}
@@ -373,7 +417,7 @@ export function EbayOverview() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
-          <TopShopifyProducts className="lg:col-span-3" range={range} loading={busy} shopify={shopify} section={data?.shopify} />
+          <TopShopifyProducts className="lg:col-span-3" label={periodLabel} loading={busy} shopify={shopify} section={data?.shopify} />
           <RecentShopifyOrders className="lg:col-span-2" loading={busy} shopify={shopify} section={data?.shopify} />
         </div>
       )}
@@ -394,9 +438,9 @@ function mergeDaily(a?: number[], b?: number[]): number[] {
 
 function ChannelToggle({ value, onChange }: { value: DashboardChannel; onChange: (channel: DashboardChannel) => void }) {
   const options: { id: DashboardChannel; label: string }[] = [
-    { id: 'all', label: 'All' },
-    { id: 'ebay', label: 'eBay' },
     { id: 'shopify', label: 'Shopify' },
+    { id: 'ebay', label: 'eBay' },
+    { id: 'all', label: 'All' },
   ];
   return (
     <div role="radiogroup" aria-label="Sales channel" className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5">
@@ -417,22 +461,64 @@ function ChannelToggle({ value, onChange }: { value: DashboardChannel; onChange:
   );
 }
 
-function RangeToggle({ value, onChange }: { value: DashboardRange; onChange: (range: DashboardRange) => void }) {
+function RangeToggle({
+  value,
+  customFrom,
+  customTo,
+  onChange,
+  onCustom,
+}: {
+  value: Preset | 'custom';
+  customFrom: string;
+  customTo: string;
+  onChange: (range: Preset) => void;
+  onCustom: (from: string, to: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(customFrom);
+  const [to, setTo] = useState(customTo);
   return (
-    <div role="radiogroup" aria-label="Date range" className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5">
-      {DASHBOARD_RANGES.map((days) => (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <div role="radiogroup" aria-label="Date range" className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5">
+        {PRESETS.map((preset) => (
+          <button
+            key={preset}
+            role="radio"
+            aria-checked={value === preset}
+            onClick={() => onChange(preset)}
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+              value === preset ? 'bg-white/[0.1] text-white shadow-sm' : 'text-surface-400 hover:text-surface-100'
+            }`}
+          >
+            {preset === 'yesterday' ? <><span className="sm:hidden">Yday</span><span className="hidden sm:inline">Yesterday</span></> : PRESET_LABELS[preset]}
+          </button>
+        ))}
         <button
-          key={days}
-          role="radio"
-          aria-checked={value === days}
-          onClick={() => onChange(days)}
-          className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-            value === days ? 'bg-white/[0.1] text-white shadow-sm' : 'text-surface-400 hover:text-surface-100'
+          type="button"
+          aria-pressed={value === 'custom'}
+          onClick={() => setOpen((current) => !current)}
+          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+            value === 'custom' ? 'bg-white/[0.1] text-white shadow-sm' : 'text-surface-400 hover:text-surface-100'
           }`}
         >
-          {days} days
+          Custom
         </button>
-      ))}
+      </div>
+      {open && (
+        <form
+          className="flex flex-wrap items-center gap-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!from || !to) return;
+            onCustom(from <= to ? from : to, from <= to ? to : from);
+            setOpen(false);
+          }}
+        >
+          <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 py-0 text-xs" aria-label="From" />
+          <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-8 py-0 text-xs" aria-label="To" />
+          <button type="submit" className="btn btn-secondary btn-sm">Apply</button>
+        </form>
+      )}
     </div>
   );
 }
@@ -588,14 +674,14 @@ function PanelMessage({ children }: { children: React.ReactNode }) {
 
 function TopPlayers({
   className,
-  range,
+  label,
   loading,
   section,
   stats,
   pendingLookups,
 }: {
   className?: string;
-  range: DashboardRange;
+  label: string;
   loading: boolean;
   section: DashboardSection<unknown> | undefined;
   stats: RangeStats | null;
@@ -607,7 +693,7 @@ function TopPlayers({
       className={className}
       icon={<TrophyIcon size={16} className="text-amber-300" />}
       title="Best-selling players"
-      aside={<span className="text-xs text-surface-500">Last {range} days</span>}
+      aside={<span className="text-xs text-surface-500">{label}</span>}
     >
       {loading ? (
         <div className="space-y-3">
@@ -621,7 +707,7 @@ function TopPlayers({
         <PanelMessage>
           {stats && stats.summary.units > 0
             ? 'Sold cards in this range had no player listed.'
-            : `No sales in the last ${range} days yet.`}
+            : `No eBay sales for ${label}.`}
         </PanelMessage>
       ) : (
         <>
@@ -756,24 +842,24 @@ function RankedItems({
 
 function TopShopifyProducts({
   className,
-  range,
+  label,
   loading,
   shopify,
   section,
 }: {
   className?: string;
-  range: DashboardRange;
+  label: string;
   loading: boolean;
   shopify: ShopifyData | null;
   section: DashboardSection<unknown> | undefined;
 }) {
-  const items = shopify?.products[`${range}`] ?? [];
+  const items = shopify?.focusProducts ?? [];
   return (
     <PanelShell
       className={className}
       icon={<TrophyIcon size={16} className="text-emerald-300" />}
       title="Best-selling Shopify products"
-      aside={<span className="text-xs text-surface-500">Last {range} days</span>}
+      aside={<span className="text-xs text-surface-500">{label}</span>}
     >
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }, (_, i) => <div key={i} className="skeleton h-6 w-full" />)}</div>
@@ -782,7 +868,7 @@ function TopShopifyProducts({
       ) : !shopify || shopify.state === 'not_configured' ? (
         <PanelMessage>Connect Shopify to see store bestsellers.</PanelMessage>
       ) : items.length === 0 ? (
-        <PanelMessage>{`No Shopify sales in the last ${range} days.`}</PanelMessage>
+        <PanelMessage>{`No Shopify sales for ${label}.`}</PanelMessage>
       ) : (
         <RankedItems items={items} />
       )}
@@ -848,6 +934,102 @@ function RecentShopifyOrders({
         </ul>
       )}
     </PanelShell>
+  );
+}
+
+function AdSpendBar({
+  dailyBudget,
+  periodSpend,
+  periodLabel,
+  entries,
+  onSaved,
+}: {
+  dailyBudget: number | null;
+  periodSpend: number;
+  periodLabel: string;
+  entries: AdBudgetEntry[];
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [amount, setAmount] = useState(dailyBudget != null ? String(dailyBudget) : '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function openEditor() {
+    setDate(new Date().toLocaleDateString('en-CA'));
+    setAmount(dailyBudget != null ? String(dailyBudget) : '');
+    setError(null);
+    setOpen(true);
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    const num = Number(amount);
+    if (!date || !Number.isFinite(num) || num < 0) {
+      setError('Enter a date and an amount of 0 or more.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/ad-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, amount: num }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || 'Could not save ad spend');
+      setOpen(false);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save ad spend');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="panel px-3 py-2">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-surface-400">Ad spend</span>
+        <span className="font-medium text-white tabular-nums">{dailyBudget != null ? `${money(dailyBudget)}/day` : 'not set'}</span>
+        <span className="text-surface-500 tabular-nums">· {money(periodSpend)} {periodLabel}</span>
+        <button type="button" onClick={openEditor} className="btn btn-ghost btn-icon btn-sm ml-auto" aria-label="Edit ad spend" title="Edit ad spend">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
+      </div>
+      {open && (
+        <form onSubmit={save} className="mt-3 grid gap-2 sm:grid-cols-[auto_auto_auto] sm:items-end">
+          <label className="text-xs text-surface-400">
+            Effective date
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 block" />
+          </label>
+          <label className="text-xs text-surface-400">
+            Daily amount
+            <input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 block" />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" disabled={saving} className="btn btn-primary btn-sm">{saving ? 'Saving…' : 'Save'}</button>
+            <button type="button" onClick={() => setOpen(false)} className="btn btn-ghost btn-sm">Cancel</button>
+          </div>
+          <p className="sm:col-span-3 text-[11px] text-surface-500">
+            This amount carries forward from the date you pick until you change it. To fill a 7D or 30D view, set a date at the start of that period.
+          </p>
+          {error && <p className="sm:col-span-3 text-xs text-red-300">{error}</p>}
+          {entries.length > 0 && (
+            <ul className="sm:col-span-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-surface-500">
+              {entries.slice(0, 6).map((entry) => (
+                <li key={entry.date} className="tabular-nums">{entry.date} · {money(entry.amount)}</li>
+              ))}
+            </ul>
+          )}
+        </form>
+      )}
+    </div>
   );
 }
 
