@@ -227,12 +227,26 @@ function CardSheet({
             label="Title"
             missing={empty('title')}
             extra={
-              <button onClick={() => {
-                if (manualTitle) onChange({ title: autoTitle });
-                setManualTitle(!manualTitle);
-              }} className="text-xs text-primary-300">
-                {manualTitle ? 'Use automatic' : 'Write my own'}
-              </button>
+              <span className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={!card.title?.trim()}
+                  onClick={() => {
+                    const text = card.title?.trim();
+                    if (!text) return;
+                    navigator.clipboard?.writeText(text);
+                  }}
+                  className="text-xs text-surface-300 disabled:opacity-30"
+                >
+                  Copy
+                </button>
+                <button onClick={() => {
+                  if (manualTitle) onChange({ title: autoTitle });
+                  setManualTitle(!manualTitle);
+                }} className="text-xs text-primary-300">
+                  {manualTitle ? 'Use automatic' : 'Write my own'}
+                </button>
+              </span>
             }
           >
             {manualTitle ? (

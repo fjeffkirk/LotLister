@@ -198,13 +198,13 @@ async function refreshEbayAccessToken(creds: EbayCredentials, refreshToken: stri
   );
 }
 
-let cachedAppToken: { token: string; expiresAt: number } | null = null;
+const appTokens = new Map<string, { token: string; expiresAt: number }>();
+const DEFAULT_APP_SCOPE = 'https://api.ebay.com/oauth/api_scope';
 
-/** Client-credentials token for app-level calls such as the Notification API public key lookup. */
-export async function getEbayApplicationToken(): Promise<string> {
-  if (cachedAppToken && cachedAppToken.expiresAt > Date.now() + 60_000) {
-    return cachedAppToken.token;
-  }
+/** Client-credentials token. Pass a scope when the call needs more than the base application scope. */
+export async function getEbayApplicationToken(scope = DEFAULT_APP_SCOPE): Promise<string> {
+  const cached = appTokens.get(scope);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
   const creds = await getEbayCredentials();
   if (!creds) {
     throw new Error(`eBay is not configured on the server. Missing: ${missingEbayEnvVars().join(', ')}`);
@@ -213,10 +213,10 @@ export async function getEbayApplicationToken(): Promise<string> {
     creds,
     new URLSearchParams({
       grant_type: 'client_credentials',
-      scope: 'https://api.ebay.com/oauth/api_scope',
+      scope,
     })
   );
-  cachedAppToken = { token: token.access_token, expiresAt: Date.now() + token.expires_in * 1000 };
+  appTokens.set(scope, { token: token.access_token, expiresAt: Date.now() + token.expires_in * 1000 });
   return token.access_token;
 }
 

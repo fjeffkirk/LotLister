@@ -36,7 +36,7 @@ import {
   missingFieldLabels,
   TITLE_MAX_LENGTH,
 } from '../lib/card-completeness';
-import { CheckIcon, ImageIcon, PhotosIcon } from './ui/icons';
+import { CheckIcon, CopyIcon, ImageIcon, PhotosIcon } from './ui/icons';
 import {
   cardListingType,
   CATEGORY_FIELD_OPTIONS,
@@ -218,6 +218,7 @@ function StatusCell(props: ICellRendererParams<CardItemWithImages>) {
 function TitleCell(props: ICellRendererParams<CardItemWithImages>) {
   const card = props.data;
   const context = props.context as GridContext;
+  const [copied, setCopied] = useState(false);
   if (!card) return null;
   const manual = context.isManualTitle(card.id);
   const title = card.title || '';
@@ -232,6 +233,26 @@ function TitleCell(props: ICellRendererParams<CardItemWithImages>) {
           </span>
         )}
       </span>
+      <button
+        type="button"
+        tabIndex={-1}
+        disabled={!title}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (!title) return;
+          navigator.clipboard?.writeText(title).then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+        className="p-1 rounded hover:bg-surface-700 transition-colors flex-shrink-0 text-surface-500 hover:text-surface-200 disabled:opacity-30 disabled:pointer-events-none"
+        title={copied ? 'Copied' : 'Copy title'}
+        aria-label="Copy title"
+      >
+        {copied ? <CheckIcon size={14} className="text-emerald-300" /> : <CopyIcon size={14} />}
+      </button>
       <button
         tabIndex={-1}
         onClick={(e) => {

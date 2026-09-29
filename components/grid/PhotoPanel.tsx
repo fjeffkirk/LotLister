@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { isReadyForSoldComps } from '../../lib/card-completeness';
 import type { CardImage, CardItemWithImages } from '../../lib/types';
 import { imagePathToBrowserSrc } from '../../lib/imageUrls';
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, ImageIcon, PhotosIcon } from '../ui/icons';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, ImageIcon, PhotosIcon } from '../ui/icons';
 
 export function sortCardImages(images: CardImage[]): CardImage[] {
   return [...images].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -17,7 +18,9 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
   useEffect(() => setIndex(0), [card?.id]);
 
   const current = images[Math.min(index, images.length - 1)];
+  const [copied, setCopied] = useState(false);
   const label = card ? card.title || card.name || (card.cardNumber ? `Card #${card.cardNumber}` : 'Untitled card') : '';
+  const title = card?.title?.trim() ?? '';
 
   if (!card) {
     return (
@@ -39,10 +42,28 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
         <span className="text-sm font-medium text-surface-100 truncate" title={label}>
           {label}
         </span>
+        <button
+          type="button"
+          disabled={!title}
+          onClick={() => {
+            if (!title) return;
+            navigator.clipboard?.writeText(title).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+          className="p-1.5 rounded-md text-surface-400 hover:text-surface-100 hover:bg-white/[0.06] disabled:opacity-30 disabled:pointer-events-none"
+          aria-label="Copy title"
+          title={copied ? 'Copied' : 'Copy title'}
+        >
+          {copied ? <CheckIcon size={14} className="text-emerald-300" /> : <CopyIcon size={14} />}
+        </button>
         <button onClick={onClose} className="p-1.5 rounded-md text-surface-400 hover:text-surface-100 hover:bg-white/[0.06]" aria-label="Hide photos">
           <CloseIcon size={14} />
         </button>
       </div>
+
+      <RecentSales card={card} />
 
       {images.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-surface-500">
@@ -98,5 +119,139 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
         </>
       )}
     </aside>
+  );
+}
+
+interface SoldSale {
+  title: string;
+  price: number;
+  soldAt: string | null;
+  url: string | null;
+}
+
+const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+function soldDate(iso: string | null): string {
+  if (!iso) return '';
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return '';
+  return new Date(time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function compKey(card: CardItemWithImages): string {
+  return [
+    card.id,
+    card.year,
+    card.brand,
+    card.setName,
+    card.name,
+    card.cardNumber,
+    card.subsetParallel,
+    card.grader,
+    card.grade,
+    card.conditionType,
+    card.category,
+    card.description,
+    card.title,
+    card.images.length,
+  ].join('|');
+}
+
+function RecentSales({ card }: { card: CardItemWithImages }) {
+  const ready = isReadyForSoldComps(card);
+  const key = compKey(card);
+  const [sales, setSales] = useState<SoldSale[]>([]);
+  const [searchUrl, setSearchUrl] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ready) {
+      setSales([]);
+      setSearchUrl(null);
+      setMessage(null);
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      fetch('/api/ebay/comps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ card }),
+        signal: controller.signal,
+      })
+        .then((res) => res.json())
+        .then((body) => {
+          if (!body.success) throw new Error(body.error || 'Could not load recent sales');
+          setSales(body.data?.sales ?? []);
+          setSearchUrl(body.data?.searchUrl ?? null);
+          setMessage(body.data?.message ?? null);
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          setSales([]);
+          setMessage(error instanceof Error ? error.message : 'Could not load recent sales');
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 400);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [ready, key, card]);
+
+  return (
+    <div className="border-b border-white/[0.06] px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-surface-500">Recent sales</span>
+        {searchUrl && (
+          <a href={searchUrl} target="_blank" rel="noreferrer" className="text-[11px] text-surface-400 hover:text-white inline-flex items-center gap-1">
+            eBay <ExternalIcon size={11} />
+          </a>
+        )}
+      </div>
+      {!ready ? (
+        <p className="mt-1.5 text-xs text-surface-500">Fill every field except price to see the last 3 eBay sales.</p>
+      ) : loading ? (
+        <div className="mt-2 space-y-1.5">
+          <div className="skeleton h-4 w-full" />
+          <div className="skeleton h-4 w-5/6" />
+          <div className="skeleton h-4 w-4/6" />
+        </div>
+      ) : message && sales.length === 0 ? (
+        <p className="mt-1.5 text-xs text-surface-400">{message}</p>
+      ) : sales.length === 0 ? (
+        <p className="mt-1.5 text-xs text-surface-500">No recent eBay sales matched this card.</p>
+      ) : (
+        <ul className="mt-1.5 space-y-1.5">
+          {sales.map((sale) => {
+            const row = (
+              <>
+                <span className="text-sm font-medium text-white tabular-nums flex-shrink-0">{money.format(sale.price)}</span>
+                <span className="min-w-0 text-xs text-surface-400 truncate">
+                  {soldDate(sale.soldAt)}
+                  {sale.soldAt ? ' · ' : ''}
+                  {sale.title}
+                </span>
+              </>
+            );
+            const className = 'flex items-baseline gap-2 min-w-0';
+            return (
+              <li key={`${sale.title}-${sale.soldAt}-${sale.price}`}>
+                {sale.url ? (
+                  <a href={sale.url} target="_blank" rel="noreferrer" className={`${className} hover:text-white`}>{row}</a>
+                ) : (
+                  <div className={className}>{row}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }

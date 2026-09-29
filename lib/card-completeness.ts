@@ -78,3 +78,9 @@ export function firstMissingField(card: CardItemWithImages): string | null {
 export function isCardComplete(card: CardItemWithImages): boolean {
   return firstMissingField(card) === null;
 }
+
+/** Enough identity to look up sold prices: every required field is filled, and price may still be empty. */
+export function isReadyForSoldComps(card: CardItemWithImages): boolean {
+  const missing = missingFieldLabels(card);
+  return missing.length === 0 || (missing.length === 1 && missing[0] === 'Price');
+}
