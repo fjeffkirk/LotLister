@@ -12,6 +12,7 @@ import {
 import {
   AlertIcon,
   ExternalIcon,
+  LayersIcon,
   RotateIcon,
   TagIcon,
   TrendIcon,
@@ -314,26 +315,28 @@ export function EbayOverview() {
               footer={shopRange && shopRange.orders > 0 ? <FootNote>{money(shopRange.aov)} AOV</FootNote> : null}
             />
             <MetricTile
-              icon={<TruckIcon size={16} />}
-              tone={shopify && shopify.overdue > 0 ? 'danger' : 'amber'}
-              label="Awaiting shipment"
-              shortLabel="To ship"
+              icon={<LayersIcon size={16} />}
+              tone="amber"
+              label="Order amount"
+              shortLabel="Orders"
+              suffix={periodLabel}
               loading={busy}
               section={data?.shopify}
-              value={shopify ? shopify.unfulfilled.toLocaleString() : null}
-              sub={shopify ? (shopify.unfulfilled === 0 ? 'All caught up' : 'Open Shopify orders') : null}
-              href="/ops/orders"
-              footer={shopify && shopify.overdue > 0 ? <FootNote tone="danger">{plural(shopify.overdue, 'order')} past fulfill-by</FootNote> : null}
+              value={shopRange ? shopRange.orders.toLocaleString() : null}
+              sub={shopRange && shopRange.orders > 0 ? `${money(shopRange.aov)} average` : 'Shopify orders'}
+              title="Number of Shopify orders in this range, excluding draft orders."
             />
             <MetricTile
               icon={<TagIcon size={16} />}
-              tone={shopify && shopify.lowStock > 0 ? 'danger' : 'violet'}
-              label="Low stock"
+              tone="violet"
+              label="Items sold"
+              shortLabel="Items"
+              suffix={periodLabel}
               loading={busy}
               section={data?.shopify}
-              value={shopify ? shopify.lowStock.toLocaleString() : null}
-              sub="Products at or below reorder"
-              href="/ops/inventory"
+              value={shopRange ? shopRange.units.toLocaleString() : null}
+              sub="Units on those orders"
+              title="Quantity of items sold on Shopify in this range."
             />
           </>
         ) : (
