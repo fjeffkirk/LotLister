@@ -50,7 +50,6 @@ import {
   GRADER_FIELD_OPTIONS,
   graderShortLabel,
   isFieldEditable,
-  LISTING_TYPE_FIELD_OPTIONS,
   parseFieldValue,
 } from '../lib/card-fields';
 import { imagePathToBrowserSrc } from '../lib/imageUrls';
@@ -284,48 +283,40 @@ function TitleCell(props: ICellRendererParams<CardItemWithImages>) {
   );
 }
 
-/** Two-position switch between Auction and Buy It Now for a single card. */
+/** One label for the card's format. Click switches Auction and Buy Now. */
 function ListingTypeCell(props: ICellRendererParams<CardItemWithImages>) {
   const card = props.data;
   const context = props.context as GridContext;
   if (!card) return null;
   const selected = cardListingType(card, { listingType: context.lotListingType });
   const following = !card.listingType;
+  const buyNow = selected === 'BuyItNow';
+  const label = buyNow ? 'Buy Now' : 'Auction';
+  const next = buyNow ? 'Auction' : 'BuyItNow';
   return (
     <div className="flex items-center h-full">
-      <div
-        className="grid grid-cols-2 w-full p-0.5 rounded-md bg-white/[0.04] ring-1 ring-inset ring-white/[0.06]"
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={(e) => {
+          e.stopPropagation();
+          context.setListingType(card.id, next);
+        }}
         title={
           following
-            ? 'Following the lot default. Click to set this card on its own.'
-            : selected === 'BuyItNow'
-              ? 'Buy It Now: sells at the price in the Price column'
-              : 'Auction: the Price column is the starting bid'
+            ? `${label}, following the lot. Click to set this card to ${buyNow ? 'Auction' : 'Buy Now'}.`
+            : buyNow
+              ? 'Buy Now at the Price column. Click to switch to Auction.'
+              : 'Auction. The Price column is the starting bid. Click to switch to Buy Now.'
         }
+        className={`h-6 px-2 rounded-md text-[11px] font-medium transition-colors ${
+          buyNow
+            ? 'bg-primary-500/15 text-primary-200 hover:bg-primary-500/25'
+            : 'bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
+        } ${following ? 'opacity-70' : ''}`}
       >
-        {LISTING_TYPE_FIELD_OPTIONS.map((option) => {
-          const active = option.value === selected;
-          return (
-            <button
-              key={option.value}
-              tabIndex={-1}
-              onClick={(e) => {
-                e.stopPropagation();
-                context.setListingType(card.id, option.value);
-              }}
-              className={`h-6 rounded text-[11px] font-medium transition-colors ${
-                active
-                  ? following
-                    ? 'bg-white/[0.08] text-surface-200'
-                    : 'bg-primary-500 text-white shadow-glow'
-                  : 'text-surface-400 hover:text-surface-100'
-              }`}
-            >
-              {option.value === 'BuyItNow' ? 'Buy Now' : option.label}
-            </button>
-          );
-        })}
-      </div>
+        {label}
+      </button>
     </div>
   );
 }
@@ -610,13 +601,13 @@ export default function CardGrid({
         headerName: HEADERS.listingType,
         colId: 'listingType',
         field: 'listingType',
-        width: 132,
+        width: 100,
         editable: false,
         cellRenderer: ListingTypeCell,
         valueGetter: (params) =>
           params.data ? cardListingType(params.data, { listingType: gridContext.lotListingType }) : '',
         suppressSizeToFit: true,
-        headerTooltip: 'How each card sells. Cards you never switch follow the lot default in Listing & export settings.',
+        headerTooltip: 'How this card sells. Click to switch between Buy Now and Auction.',
       },
       required(select('category', 200, CATEGORY_FIELD_OPTIONS)),
       required(text('year', 90)),

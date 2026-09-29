@@ -6,8 +6,11 @@ import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { LotWithCards, CardItemWithImages } from '../../../lib/types';
 import { isCardComplete as isCardReadyForExport } from '../../../lib/card-completeness';
-import { parseCardDefaults, CardDefaults, COMPLETED_DELETE_DAYS } from '../../../lib/card-fields';
+import { cardListingType, parseCardDefaults, CardDefaults, COMPLETED_DELETE_DAYS } from '../../../lib/card-fields';
+import { applyListEvent, readListEvents, type ListRun } from '../../../lib/list-progress';
+import { imagePathToBrowserSrc } from '../../../lib/imageUrls';
 import ExportSettingsModal from '../../../components/ExportSettingsModal';
+import ListProgressModal from '../../../components/ListProgressModal';
 import PSAImportModal from '../../../components/PSAImportModal';
 import LotDefaultsModal from '../../../components/LotDefaultsModal';
 import MobileCardList from '../../../components/MobileCardList';
@@ -21,7 +24,6 @@ import {
   ChevronDownIcon,
   ChevronLeftIcon,
   CloseIcon,
-  ExternalIcon,
   FileIcon,
   GearIcon,
   MoreIcon,
@@ -30,7 +32,6 @@ import {
   SearchIcon,
   ShieldIcon,
   SlidersIcon,
-  SparklesIcon,
   TableIcon,
   TagIcon,
   UploadIcon,
@@ -91,14 +92,7 @@ export default function LotPage() {
   const [exporting, setExporting] = useState(false);
   const [listing, setListing] = useState(false);
   const [ebayReady, setEbayReady] = useState<boolean | null>(null);
-  const [listResult, setListResult] = useState<{
-    listedCount: number;
-    failedCount: number;
-    skippedNotReady: number;
-    skippedAlreadyListed: number;
-    remainingReady: number;
-    results: { cardId: string; title: string; success: boolean; listingUrl?: string; error?: string }[];
-  } | null>(null);
+  const [listRun, setListRun] = useState<ListRun | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -147,6 +141,16 @@ export default function LotPage() {
   const listableCount = useMemo(() => {
     if (!lot) return 0;
     return lot.cardItems.filter((card) => isCardReadyForExport(card) && !card.ebayItemId).length;
+  }, [lot]);
+
+  const listThumbs = useMemo(() => {
+    const thumbs: Record<string, string> = {};
+    for (const card of lot?.cardItems ?? []) {
+      const image = card.images.slice().sort((a, b) => a.sortOrder - b.sortOrder)[0];
+      const src = image ? imagePathToBrowserSrc(image.thumbPath || image.originalPath) : '';
+      if (src) thumbs[card.id] = src;
+    }
+    return thumbs;
   }, [lot]);
 
   useEffect(() => {
@@ -501,29 +505,65 @@ export default function LotPage() {
     }
   }
 
+  function previewListRun(): ListRun {
+    const cards = (lot?.cardItems ?? [])
+      .filter((card) => isCardReadyForExport(card) && !card.ebayItemId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    return {
+      phase: 'saving',
+      detail: 'Saving the latest card changes',
+      total: cards.length,
+      skippedNotReady: 0,
+      skippedAlreadyListed: 0,
+      remainingReady: 0,
+      items: cards.map((card) => ({
+        cardId: card.id,
+        title: card.title?.trim() || 'Untitled card',
+        format: cardListingType(card, { listingType: lot?.exportProfile?.listingType }) === 'BuyItNow' ? 'Buy Now' : 'Auction',
+        price: card.salePrice === null || card.salePrice === undefined ? null : Number(card.salePrice),
+        category: card.category?.trim() || '',
+        status: 'waiting',
+      })),
+    };
+  }
+
   async function performList() {
     setListing(true);
     setError(null);
+    setShowExportSettings(false);
+    setExportModeSettings(false);
+    setListRun(previewListRun());
     try {
       await saveAll();
+      setListRun((run) => (run ? { ...run, phase: 'running', detail: 'Connecting to eBay' } : run));
       const timezoneOffset = new Date().getTimezoneOffset();
       const res = await fetch(`/api/lots/${lotId}/list-ebay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tzOffset: timezoneOffset }),
       });
-      const data = await res.json();
-      if (!data.success) {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
         throw new Error(data.error || 'Listing failed');
       }
-      setShowExportSettings(false);
-      setExportModeSettings(false);
-      setListResult(data.data);
+      if (!res.ok) throw new Error('Listing failed');
+      let sawDone = false;
+      await readListEvents(res.body, (event) => {
+        if (event.type === 'done') sawDone = true;
+        setListRun((run) => (run ? applyListEvent(run, event) : run));
+      });
+      if (!sawDone) {
+        setListRun((run) =>
+          run && run.phase !== 'error' && run.phase !== 'done'
+            ? { ...run, phase: 'error', detail: 'Listing stopped before eBay finished' }
+            : run
+        );
+      }
       fetchLot();
     } catch (err) {
-      setShowExportSettings(false);
-      setExportModeSettings(false);
-      setError(err instanceof Error ? err.message : 'Listing failed. Please try again.');
+      const message = err instanceof Error ? err.message : 'Listing failed. Please try again.';
+      setListRun((run) => (run ? { ...run, phase: 'error', detail: message } : run));
     } finally {
       setListing(false);
     }
@@ -566,12 +606,15 @@ export default function LotPage() {
   useRegisterCommands('lot', commands);
 
   useEffect(() => {
-    if (listResult && listResult.listedCount > 0 && listResult.failedCount === 0) {
+    if (!listRun || listRun.phase !== 'done') return;
+    const listed = listRun.items.filter((item) => item.status === 'listed').length;
+    const failed = listRun.items.filter((item) => item.status === 'failed').length;
+    if (listed > 0 && failed === 0) {
       setCelebrate(true);
       const timer = setTimeout(() => setCelebrate(false), 4000);
       return () => clearTimeout(timer);
     }
-  }, [listResult]);
+  }, [listRun]);
 
   const saveIndicator =
     saveState === 'error' ? (
@@ -862,66 +905,8 @@ export default function LotPage() {
         isExporting={exporting || listing}
       />
 
-      {listResult && (
-        <div className="modal-overlay" onClick={() => setListResult(null)}>
-          <div
-            className="modal-content w-full max-w-lg mx-4 sm:mx-auto max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4 p-5 border-b border-white/[0.07]">
-              <div className="flex items-center gap-3">
-                <span className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-                  listResult.failedCount === 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'
-                }`}>
-                  {listResult.failedCount === 0 ? <SparklesIcon size={22} /> : <AlertIcon size={22} />}
-                </span>
-                <div>
-                  <h2 className="text-lg font-semibold text-white">
-                    {listResult.failedCount === 0 && listResult.listedCount > 0
-                      ? `${listResult.listedCount} ${listResult.listedCount === 1 ? 'card is' : 'cards are'} live on eBay`
-                      : 'eBay listing results'}
-                  </h2>
-                  <p className="text-sm text-surface-400">
-                    Listed {listResult.listedCount} · Failed {listResult.failedCount}
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setListResult(null)} className="btn btn-ghost btn-icon" aria-label="Close">
-                <CloseIcon size={18} />
-              </button>
-            </div>
-            <div className="p-5 overflow-y-auto space-y-3 text-sm">
-              {listResult.remainingReady > 0 && (
-                <p className="text-surface-200">
-                  {listResult.remainingReady} more ready {listResult.remainingReady === 1 ? 'card is' : 'cards are'} waiting. List again to publish them.
-                </p>
-              )}
-              {(listResult.skippedAlreadyListed > 0 || listResult.skippedNotReady > 0) && (
-                <p className="text-surface-400">
-                  Skipped {listResult.skippedAlreadyListed} already listed and {listResult.skippedNotReady} missing required fields.
-                </p>
-              )}
-              <ul className="space-y-2">
-                {listResult.results.map((result) => (
-                  <li key={result.cardId} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
-                    <span className={result.success ? 'text-emerald-300' : 'text-red-300'}>
-                      {result.success ? <CheckCircleIcon /> : <AlertIcon />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-surface-100 truncate">{result.title}</div>
-                      {!result.success && <div className="text-xs text-red-300">{result.error}</div>}
-                    </div>
-                    {result.success && result.listingUrl && (
-                      <a href={result.listingUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm text-primary-300">
-                        View <ExternalIcon size={13} />
-                      </a>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
+      {listRun && (
+        <ListProgressModal run={listRun} thumbs={listThumbs} onClose={() => setListRun(null)} />
       )}
 
       {celebrate && <Confetti />}

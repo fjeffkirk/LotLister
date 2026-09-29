@@ -12,6 +12,7 @@ import { CardImage, CardItem, ExportProfile } from '@prisma/client';
 import prisma from './prisma';
 import { imagePathToEbayPicUrl, isAbsoluteImageUrl } from './imageUrls';
 import { cardListingType, renderDescription } from './card-fields';
+import type { EbayListEvent, EbayListQueueCard } from './list-progress';
 import {
   ebayCardConditionValueId,
   ebayGradeValueId,
@@ -37,7 +38,6 @@ export const EBAY_OAUTH_SCOPES = [
   EBAY_FULFILLMENT_READ_SCOPE,
 ];
 
-export const MAX_LISTINGS_PER_REQUEST = 25;
 export const EBAY_OAUTH_STATE_COOKIE = 'ebay_oauth_state';
 
 export interface EbayCredentials {
@@ -73,6 +73,8 @@ export interface EbayListSummary {
   remainingReady: number;
   results: EbayListCardResult[];
 }
+
+export type { EbayListEvent, EbayListQueueCard } from './list-progress';
 
 export function getPublicBaseUrl(requestOrigin: string): string {
   const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
@@ -544,7 +546,31 @@ export function decodeXml(value: string): string {
     .replace(/&amp;/g, '&');
 }
 
-function parseAddItemResponse(xml: string): { ok: boolean; itemId?: string; error?: string } {
+function tagText(xml: string, tag: string): string {
+  return decodeXml(xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1]?.trim() ?? '');
+}
+
+/** eBay's own error code, both messages, and any parameter it named. Nothing is filled in when eBay left it out. */
+function ebayErrorText(body: string): string {
+  const code = tagText(body, 'ErrorCode');
+  const longMessage = tagText(body, 'LongMessage');
+  const shortMessage = tagText(body, 'ShortMessage');
+  const named: string[] = [];
+  for (const match of body.matchAll(/<ErrorParameters\b([^>]*)>([\s\S]*?)<\/ErrorParameters>/g)) {
+    const id = match[1].match(/ParamID="([^"]*)"/)?.[1]?.trim();
+    const value = decodeXml(match[2].match(/<Value>([\s\S]*?)<\/Value>/)?.[1]?.trim() ?? '');
+    if (!value) continue;
+    named.push(id ? `${value} (parameter ${id})` : value);
+  }
+
+  const headline = longMessage || shortMessage || 'eBay rejected this listing and sent no message';
+  const lines = [code ? `eBay error ${code}: ${headline}` : headline];
+  if (shortMessage && shortMessage !== headline) lines.push(`eBay short message: ${shortMessage}`);
+  if (named.length > 0) lines.push(`eBay named: ${named.join(', ')}`);
+  return lines.join('\n');
+}
+
+export function parseAddItemResponse(xml: string): { ok: boolean; itemId?: string; error?: string } {
   const ack = xml.match(/<Ack>([^<]+)<\/Ack>/)?.[1] ?? '';
   const itemId = xml.match(/<ItemID>([^<]+)<\/ItemID>/)?.[1];
   const messages: string[] = [];
@@ -553,11 +579,7 @@ function parseAddItemResponse(xml: string): { ok: boolean; itemId?: string; erro
     const body = block[1];
     const severity = body.match(/<SeverityCode>([^<]+)<\/SeverityCode>/)?.[1] ?? 'Error';
     if (severity === 'Warning') continue;
-    const msg =
-      body.match(/<LongMessage>([\s\S]*?)<\/LongMessage>/)?.[1] ||
-      body.match(/<ShortMessage>([\s\S]*?)<\/ShortMessage>/)?.[1] ||
-      'eBay rejected this listing';
-    messages.push(decodeXml(msg.trim()));
+    messages.push(ebayErrorText(body));
   }
 
   if ((ack === 'Success' || ack === 'Warning') && itemId) {
@@ -566,7 +588,7 @@ function parseAddItemResponse(xml: string): { ok: boolean; itemId?: string; erro
 
   return {
     ok: false,
-    error: messages.join(' ') || `eBay did not create a listing (Ack: ${ack || 'none'})`,
+    error: messages.join('\n\n') || `eBay did not create a listing (Ack: ${ack || 'none'})`,
   };
 }
 
@@ -611,14 +633,28 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function queueCard(card: CardWithImages, profile: ExportProfile): EbayListQueueCard {
+  const auction = cardListingType(card, profile) === 'Auction';
+  const raw = auction ? (card.salePrice ?? profile.startPriceDefault) : card.salePrice;
+  const price = raw === null || raw === undefined ? null : Number(raw);
+  return {
+    cardId: card.id,
+    title: generateTitle(card).slice(0, 80),
+    format: auction ? 'Auction' : 'Buy Now',
+    price: price !== null && Number.isFinite(price) ? price : null,
+    category: card.category?.trim() || '',
+  };
+}
+
 export async function listLotOnEbay(options: {
   userEmail: string;
   cards: CardWithImages[];
   profile: ExportProfile;
   imageBaseUrl: string;
   clientTzOffsetMinutes: number;
+  onEvent?: (event: EbayListEvent) => void;
 }): Promise<EbayListSummary> {
-  const { userEmail, cards, profile, imageBaseUrl, clientTzOffsetMinutes } = options;
+  const { userEmail, cards, profile, imageBaseUrl, clientTzOffsetMinutes, onEvent } = options;
   const sorted = cards.slice().sort((a, b) => a.sortOrder - b.sortOrder);
 
   let skippedNotReady = 0;
@@ -673,13 +709,21 @@ export async function listLotOnEbay(options: {
   }
   const accessToken = await getValidEbayAccessToken(userEmail);
 
-  const batch = ready.slice(0, MAX_LISTINGS_PER_REQUEST);
-  const remainingReady = ready.length - batch.length;
   const results: EbayListCardResult[] = [];
 
-  for (let i = 0; i < batch.length; i++) {
-    const { card, index } = batch[i];
+  onEvent?.({
+    type: 'start',
+    total: ready.length,
+    skippedNotReady,
+    skippedAlreadyListed,
+    remainingReady: 0,
+    cards: ready.map(({ card }) => queueCard(card, profile)),
+  });
+
+  for (let i = 0; i < ready.length; i++) {
+    const { card, index } = ready[i];
     const title = generateTitle(card).slice(0, 80);
+    onEvent?.({ type: 'sending', cardId: card.id, index: i + 1, total: ready.length });
     const built = buildAddItemXml(card, profile, imageBaseUrl, index, clientTzOffsetMinutes);
 
     if ('error' in built) {
@@ -714,18 +758,25 @@ export async function listLotOnEbay(options: {
       }
     }
 
-    if (i < batch.length - 1) {
+    const latest = results[results.length - 1];
+    if (latest) {
+      onEvent?.({ type: 'result', index: i + 1, total: ready.length, result: latest });
+    }
+
+    if (i < ready.length - 1) {
       await sleep(300);
     }
   }
 
   const listedCount = results.filter((result) => result.success).length;
-  return {
+  const summary: EbayListSummary = {
     listedCount,
     failedCount: results.length - listedCount,
     skippedNotReady,
     skippedAlreadyListed,
-    remainingReady,
+    remainingReady: 0,
     results,
   };
+  onEvent?.({ type: 'done', summary });
+  return summary;
 }
