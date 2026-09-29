@@ -68,9 +68,9 @@ function periodDayCount(range: Preset | 'custom', customFrom: string, customTo: 
   return 1;
 }
 
-/** Last-365-day total, expressed as the average for the length of the selected range. */
-function yearAverage(total: number, days: number): number {
-  return (total / YEAR_DAYS) * days;
+/** This range stretched to a full year. A $200 day becomes $200 × 365. */
+function annualized(value: number, days: number): number {
+  return (value / days) * YEAR_DAYS;
 }
 
 function countAverage(n: number): string {
@@ -176,11 +176,10 @@ export function EbayOverview() {
   const periodLabel = range === 'custom' && customFrom && customTo ? `${customFrom} – ${customTo}` : range === 'custom' ? 'Today' : PRESET_LABELS[range];
   const shopRange = shopify?.focus ?? shopify?.ranges['30'] ?? null;
   const rangeDays = periodDayCount(range, customFrom, customTo);
-  const year = shopify?.year;
-  const yearSales = year ? yearAverage(year.revenue, rangeDays) : null;
-  const yearProfit = year ? yearAverage(year.net, rangeDays) : null;
-  const yearOrders = year ? yearAverage(year.orders, rangeDays) : null;
-  const yearUnits = year ? yearAverage(year.units, rangeDays) : null;
+  const yearSales = shopRange ? annualized(shopRange.revenue, rangeDays) : null;
+  const yearProfit = shopRange ? annualized(shopRange.net, rangeDays) : null;
+  const yearOrders = shopRange ? annualized(shopRange.orders, rangeDays) : null;
+  const yearUnits = shopRange ? annualized(shopRange.units, rangeDays) : null;
   const needsReconnect = [data?.sales, data?.shipping, data?.listings].some((s) => s?.status === 'reconnect');
   const busy = loading;
   const showEbayConnect = Boolean(data && data.state !== 'ok' && !shopifyReady && channel !== 'shopify');
@@ -339,7 +338,7 @@ export function EbayOverview() {
                   <div className="space-y-2">
                     {shopRange.revenue > 0 && <Sparkline values={shopRange.daily} />}
                     {yearSales !== null && (
-                      <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {money(yearSales)}</FootNote>
+                      <FootNote title="This range stretched across 365 days.">Over 365 days {money(yearSales)}</FootNote>
                     )}
                   </div>
                 ) : null
@@ -358,7 +357,7 @@ export function EbayOverview() {
               title="Line profit minus ads and estimated free-shipping cost."
               footer={
                 yearProfit !== null ? (
-                  <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {money(yearProfit)}</FootNote>
+                  <FootNote title="This range stretched across 365 days.">Over 365 days {money(yearProfit)}</FootNote>
                 ) : null
               }
             />
@@ -375,7 +374,7 @@ export function EbayOverview() {
               title="Number of Shopify orders in this range, excluding draft orders."
               footer={
                 yearOrders !== null ? (
-                  <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {countAverage(yearOrders)}</FootNote>
+                  <FootNote title="This range stretched across 365 days.">Over 365 days {countAverage(yearOrders)}</FootNote>
                 ) : null
               }
             />
@@ -392,7 +391,7 @@ export function EbayOverview() {
               title="Quantity of items sold on Shopify in this range."
               footer={
                 yearUnits !== null ? (
-                  <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {countAverage(yearUnits)}</FootNote>
+                  <FootNote title="This range stretched across 365 days.">Over 365 days {countAverage(yearUnits)}</FootNote>
                 ) : null
               }
             />
