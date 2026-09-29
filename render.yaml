@@ -7,6 +7,7 @@ services:
     buildCommand: npm ci --include=dev && NODE_OPTIONS="--max-old-space-size=512" npm run build
     # Applies migrations (and the one-time SQLite import when IMPORT_SQLITE_PATH is set), then starts
     startCommand: node scripts/db-migrate.mjs && npm start
+    healthCheckPath: /api/health
     envVars:
       # Cap Node heap below Render's 512MB container limit (Sharp/native memory sits outside heap)
       - key: NODE_OPTIONS
@@ -44,6 +45,19 @@ services:
       - key: EBAY_DELETION_ENDPOINT_URL
         sync: false
       - key: EBAY_ALLOWED_USERS
+        sync: false
+      # Shopify (optional). Either OAuth client credentials or a store custom-app token.
+      - key: SHOPIFY_CLIENT_ID
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+      - key: SHOPIFY_APP_URL
+        sync: false
+      - key: SHOPIFY_SHOP_DOMAIN
+        sync: false
+      - key: SHOPIFY_ACCESS_TOKEN
+        sync: false
+      - key: CRON_SECRET
         sync: false
     disk:
       name: lotlister-data

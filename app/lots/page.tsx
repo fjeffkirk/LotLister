@@ -181,7 +181,7 @@ export default function LotsPage() {
 
         <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Dashboard</h1>
-          <p className="mt-1 text-sm text-surface-400">How your eBay store is doing, and the lots you are working on.</p>
+          <p className="mt-1 text-sm text-surface-400">Sales and shipping across eBay and Shopify, then the lots you are listing.</p>
         </div>
 
         <EbayOverview />
