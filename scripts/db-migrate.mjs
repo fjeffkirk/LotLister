@@ -15,6 +15,19 @@ import { PrismaClient } from '@prisma/client';
 const STOCKPILOT_BASELINE = '20260929000000_stockpilot_baseline';
 const prismaBin = path.join('node_modules', '.bin', process.platform === 'win32' ? 'prisma.cmd' : 'prisma');
 
+const databaseUrl = process.env.DATABASE_URL?.trim() ?? '';
+if (!/^postgres(ql)?:\/\//i.test(databaseUrl)) {
+  console.error(
+    [
+      '[db] DATABASE_URL must be a Postgres URL starting with postgresql://.',
+      '[db] On Render, open the StockPilot Postgres database, copy its Internal Database URL,',
+      '[db] and set that as DATABASE_URL on the LotLister service (replace the old file: SQLite value).',
+      '[db] Leave IMPORT_SQLITE_PATH=/data/lotlister.sqlite. Existing lots are copied from that file on first start.',
+    ].join('\n')
+  );
+  process.exit(1);
+}
+
 function prisma(args, options = {}) {
   return execFileSync(prismaBin, args, { stdio: 'inherit', shell: process.platform === 'win32', ...options });
 }
