@@ -59,6 +59,7 @@ export async function POST(
         status: 'Draft', // Reset status to Draft for cloned cards
         listings: null,
         salePrice: originalCard.salePrice,
+        listingType: originalCard.listingType,
         category: originalCard.category,
         year: originalCard.year,
         brand: originalCard.brand,

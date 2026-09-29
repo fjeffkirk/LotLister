@@ -38,6 +38,7 @@ import {
 } from '../lib/card-completeness';
 import { CheckIcon, ImageIcon, PhotosIcon } from './ui/icons';
 import {
+  cardListingType,
   CATEGORY_FIELD_OPTIONS,
   CONDITION_FIELD_OPTIONS,
   CONDITION_TYPE_FIELD_OPTIONS,
@@ -49,6 +50,7 @@ import {
   GRADER_FIELD_OPTIONS,
   graderShortLabel,
   isFieldEditable,
+  LISTING_TYPE_FIELD_OPTIONS,
   parseFieldValue,
 } from '../lib/card-fields';
 import { imagePathToBrowserSrc } from '../lib/imageUrls';
@@ -61,6 +63,8 @@ type TabDirection = 'down' | 'across';
 
 interface CardGridProps {
   cards: CardItemWithImages[];
+  /** The lot's default listing format, used by cards that haven't been switched. */
+  lotListingType: string;
   onCellChange: (cardId: string, field: string, value: unknown) => void;
   onCardsChange: (updates: CardUpdate[]) => void;
   onCloneCard: (cardId: string) => void;
@@ -77,11 +81,14 @@ interface GridContext {
   takeTypedAhead: () => TypedAhead;
   isManualTitle: (cardId: string) => boolean;
   toggleTitleLock: (card: CardItemWithImages, rowIndex: number | null) => void;
+  lotListingType: string;
+  setListingType: (cardId: string, value: string) => void;
 }
 
 const HEADERS: Record<string, string> = {
   title: 'Title',
   salePrice: 'Price',
+  listingType: 'Format',
   category: 'Category',
   year: 'Year',
   brand: 'Brand',
@@ -256,6 +263,52 @@ function TitleCell(props: ICellRendererParams<CardItemWithImages>) {
   );
 }
 
+/** Two-position switch between Auction and Buy It Now for a single card. */
+function ListingTypeCell(props: ICellRendererParams<CardItemWithImages>) {
+  const card = props.data;
+  const context = props.context as GridContext;
+  if (!card) return null;
+  const selected = cardListingType(card, { listingType: context.lotListingType });
+  const following = !card.listingType;
+  return (
+    <div className="flex items-center h-full">
+      <div
+        className="grid grid-cols-2 w-full p-0.5 rounded-md bg-white/[0.04] ring-1 ring-inset ring-white/[0.06]"
+        title={
+          following
+            ? 'Following the lot default. Click to set this card on its own.'
+            : selected === 'BuyItNow'
+              ? 'Buy It Now: sells at the price in the Price column'
+              : 'Auction: the Price column is the starting bid'
+        }
+      >
+        {LISTING_TYPE_FIELD_OPTIONS.map((option) => {
+          const active = option.value === selected;
+          return (
+            <button
+              key={option.value}
+              tabIndex={-1}
+              onClick={(e) => {
+                e.stopPropagation();
+                context.setListingType(card.id, option.value);
+              }}
+              className={`h-6 rounded text-[11px] font-medium transition-colors ${
+                active
+                  ? following
+                    ? 'bg-white/[0.08] text-surface-200'
+                    : 'bg-primary-500 text-white shadow-glow'
+                  : 'text-surface-400 hover:text-surface-100'
+              }`}
+            >
+              {option.value === 'BuyItNow' ? 'Buy Now' : option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Shows the short label plus a chevron that opens the typeahead, for mouse users. */
 function SelectCell(props: ICellRendererParams<CardItemWithImages>) {
   const editable = props.node && props.column ? props.column.isCellEditable(props.node) : false;
@@ -288,6 +341,7 @@ function SelectCell(props: ICellRendererParams<CardItemWithImages>) {
 
 export default function CardGrid({
   cards,
+  lotListingType,
   onCellChange,
   onCardsChange,
   onCloneCard,
@@ -398,8 +452,18 @@ export default function CardGrid({
     },
     isManualTitle: (id) => manualTitlesRef.current.has(id),
     toggleTitleLock,
+    lotListingType,
+    setListingType: (cardId, value) => onCellChangeRef.current(cardId, 'listingType', value),
   }).current;
   gridContext.suggestions = mergedSuggestions;
+  gridContext.lotListingType = lotListingType;
+
+  // The Format switch also shows whether a card is following the lot default, which the grid's
+  // own change detection can't see: switching a card to the format it already shows keeps the
+  // same value. Refresh the column instead of leaving the switch looking untouched.
+  useEffect(() => {
+    api()?.refreshCells({ columns: ['listingType'], force: true });
+  }, [cards, lotListingType]);
 
   // ── Column definitions (built once) ───────────────────────────────────────
   const columns = useMemo<ColDef<CardItemWithImages>[]>(() => {
@@ -521,6 +585,18 @@ export default function CardGrid({
           valueFormatter: (params) => (params.value === null || params.value === undefined ? '' : `$${Number(params.value).toFixed(2)}`),
         })
       ),
+      {
+        headerName: HEADERS.listingType,
+        colId: 'listingType',
+        field: 'listingType',
+        width: 132,
+        editable: false,
+        cellRenderer: ListingTypeCell,
+        valueGetter: (params) =>
+          params.data ? cardListingType(params.data, { listingType: gridContext.lotListingType }) : '',
+        suppressSizeToFit: true,
+        headerTooltip: 'How each card sells. Cards you never switch follow the lot default in Listing & export settings.',
+      },
       required(select('category', 200, CATEGORY_FIELD_OPTIONS)),
       required(text('year', 90)),
       required(suggest('brand', 140)),
@@ -571,7 +647,7 @@ export default function CardGrid({
       suggest('variation', 150, { initialHide: !initialShowMore }),
       text('attributes', 170, { initialHide: !initialShowMore }),
     ];
-  }, [initialShowMore]);
+  }, [initialShowMore, gridContext]);
 
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -813,7 +889,11 @@ export default function CardGrid({
     (event: CellKeyDownEvent<CardItemWithImages>) => {
       const key = event.event as KeyboardEvent | undefined;
       if (!key || event.rowIndex === null || event.api.getEditingCells().length > 0) return;
-      if ((key.ctrlKey || key.metaKey) && key.key.toLowerCase() === 'd') {
+      if (event.column.getColId() === 'listingType' && (key.key === 'Enter' || key.key === ' ') && event.data) {
+        key.preventDefault();
+        const current = cardListingType(event.data, { listingType: gridContext.lotListingType });
+        onCellChangeRef.current(event.data.id, 'listingType', current === 'Auction' ? 'BuyItNow' : 'Auction');
+      } else if ((key.ctrlKey || key.metaKey) && key.key.toLowerCase() === 'd') {
         key.preventDefault();
         fillDown(event.rowIndex, event.column.getColId());
       } else if (key.altKey && key.key.toLowerCase() === 'n') {
@@ -821,7 +901,7 @@ export default function CardGrid({
         goToNextIncomplete();
       }
     },
-    [fillDown, goToNextIncomplete]
+    [fillDown, goToNextIncomplete, gridContext]
   );
 
   const onCellClicked = useCallback((event: CellClickedEvent<CardItemWithImages>) => {

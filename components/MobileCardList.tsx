@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { CardItemWithImages } from '../lib/types';
 import { COMPLETENESS_LABELS, isCardGraded, isMandatoryFieldEmpty, missingFieldLabels, TITLE_MAX_LENGTH } from '../lib/card-completeness';
 import {
+  cardListingType,
   CONDITION_FIELD_OPTIONS,
   conditionShortLabel,
   generateAutoTitle,
   GRADE_FIELD_OPTIONS,
   GRADED_CONDITION_TYPE,
   GRADER_FIELD_OPTIONS,
+  LISTING_TYPE_FIELD_OPTIONS,
   parseFieldValue,
   RAW_CONDITION_TYPE,
 } from '../lib/card-fields';
@@ -18,12 +20,14 @@ import { sortCardImages } from './grid/PhotoPanel';
 import SearchableSelect from './SearchableSelect';
 import { BoltIcon, ChevronLeftIcon, ChevronRightIcon, CopyIcon, ImageIcon, TrashIcon } from './ui/icons';
 
-const LABELS: Record<string, string> = { ...COMPLETENESS_LABELS, certNo: 'Cert #' };
+const LABELS: Record<string, string> = { ...COMPLETENESS_LABELS, certNo: 'Cert #', listingType: 'Format' };
 
 const TITLE_FIELDS = new Set(['year', 'brand', 'setName', 'cardNumber', 'name', 'subsetParallel']);
 
 interface MobileCardListProps {
   cards: CardItemWithImages[];
+  /** The lot's default listing format, used by cards that haven't been switched. */
+  lotListingType: string;
   searchText: string;
   onCardsChange: (updates: { id: string; data: Record<string, unknown> }[]) => void;
   onCloneCard: (cardId: string) => void;
@@ -32,7 +36,7 @@ interface MobileCardListProps {
 }
 
 /** Phone layout: a stacked list of cards; tapping one opens a full-screen editor. */
-export default function MobileCardList({ cards, searchText, onCardsChange, onCloneCard, onDeleteCard, notify }: MobileCardListProps) {
+export default function MobileCardList({ cards, lotListingType, searchText, onCardsChange, onCloneCard, onDeleteCard, notify }: MobileCardListProps) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   const visible = useMemo(() => {
@@ -90,6 +94,7 @@ export default function MobileCardList({ cards, searchText, onCardsChange, onClo
         <CardSheet
           key={openCard.id}
           card={openCard}
+          lotListingType={lotListingType}
           position={`${openIndex + 1} of ${visible.length}`}
           onPrev={openIndex > 0 ? () => setOpenId(visible[openIndex - 1].id) : undefined}
           onNext={openIndex < visible.length - 1 ? () => setOpenId(visible[openIndex + 1].id) : undefined}
@@ -109,6 +114,7 @@ export default function MobileCardList({ cards, searchText, onCardsChange, onClo
 
 function CardSheet({
   card,
+  lotListingType,
   position,
   onPrev,
   onNext,
@@ -119,6 +125,7 @@ function CardSheet({
   notify,
 }: {
   card: CardItemWithImages;
+  lotListingType: string;
   position: string;
   onPrev?: () => void;
   onNext?: () => void;
@@ -131,6 +138,7 @@ function CardSheet({
   const images = useMemo(() => sortCardImages(card.images), [card.images]);
   const [photo, setPhoto] = useState(0);
   const graded = isCardGraded(card);
+  const listingType = cardListingType(card, { listingType: lotListingType });
   const autoTitle = generateAutoTitle(card);
   const [manualTitle, setManualTitle] = useState(() => Boolean(card.title?.trim()) && card.title !== autoTitle);
 
@@ -248,6 +256,25 @@ function CardSheet({
             {text('salePrice', { inputMode: 'decimal', placeholder: '4.99', format: (v) => (typeof v === 'number' ? v.toFixed(2) : '') })}
             {text('year', { inputMode: 'numeric', placeholder: '2024' })}
           </div>
+
+          <Field label="Format">
+            <div className="grid grid-cols-2 p-1 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+              {LISTING_TYPE_FIELD_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => commit('listingType', option.value)}
+                  className={`py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    listingType === option.value ? 'bg-primary-500 text-white shadow-glow' : 'text-surface-300'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-surface-500">
+              {listingType === 'BuyItNow' ? 'Sells at the price above, good till cancelled' : 'The price above is the starting bid'}
+            </p>
+          </Field>
 
           <Field label="Category" missing={empty('category')}>
             <SearchableSelect

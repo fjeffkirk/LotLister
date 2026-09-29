@@ -9,7 +9,11 @@ export interface BulkField {
   headerName: string;
 }
 
-const CLEARABLE_SELECTS = new Set(['grader', 'grade']);
+const EMPTY_OPTION_LABELS: Record<string, string> = {
+  grader: '(clear the value)',
+  grade: '(clear the value)',
+  listingType: '(follow the lot default)',
+};
 
 export default function BulkEditModal({
   isOpen,
@@ -84,7 +88,7 @@ export default function BulkEditModal({
           <SearchableSelect value={value} onChange={setValue} triggerClassName="input text-sm py-2 text-left flex items-center justify-between gap-2" />
         ) : options ? (
           <select value={value} onChange={(e) => setValue(e.target.value)} className="w-full" autoFocus>
-            <option value="">{CLEARABLE_SELECTS.has(field) ? '(clear the value)' : '-- Select --'}</option>
+            <option value="">{EMPTY_OPTION_LABELS[field] ?? '-- Select --'}</option>
             {options.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}

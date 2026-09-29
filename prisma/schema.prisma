@@ -39,14 +39,15 @@ model CardItem {
   images    CardImage[]
 
   // Overview fields
-  title     String?
-  status    String   @default("Draft") // Draft, Ready, Exported
-  listings  String?
-  salePrice Float?
-  category  String   @default("Baseball")
-  year      Int?
-  brand     String?
-  setName   String?
+  title       String?
+  status      String   @default("Draft") // Draft, Ready, Exported
+  listings    String?
+  salePrice   Float?
+  listingType String? // Auction or BuyItNow; null follows the lot's ExportProfile.listingType
+  category    String   @default("Baseball")
+  year        Int?
+  brand       String?
+  setName     String?
 
   // Inspector fields
   name           String?
@@ -95,7 +96,7 @@ model ExportProfile {
   ebayCategory  String @default("261328")
   storeCategory String @default("0")
 
-  // Listing Type
+  // Listing Type — the lot default; each card can override it with CardItem.listingType
   listingType       String @default("Auction") // Auction, BuyItNow
   startPriceDefault Float  @default(4.99)
   buyItNowPrice     Float?

@@ -5,7 +5,7 @@
 import { CardItem, CardImage, ExportProfile } from '@prisma/client';
 import { format, addSeconds, parseISO } from 'date-fns';
 import { imagePathToEbayPicUrl } from './imageUrls';
-import { renderDescription } from './card-fields';
+import { cardListingType, renderDescription } from './card-fields';
 import { isSportsCategory, isTcgCategory, getCategoryEbayId } from './types';
 
 type CardItemWithImages = CardItem & { images: CardImage[] };
@@ -60,6 +60,7 @@ const RAW_CSV_HEADERS = [
   'Status',
   'Listings',
   'Sale Price',
+  'Listing Format',
   'Category',
   'Year',
   'Brand',
@@ -76,7 +77,10 @@ const RAW_CSV_HEADERS = [
   'Cert No.',
 ];
 
-export function generateRawCSV(cards: CardItemWithImages[]): string {
+export function generateRawCSV(
+  cards: CardItemWithImages[],
+  profile?: Pick<ExportProfile, 'listingType'> | null
+): string {
   const rows: string[] = [];
   
   // Header row
@@ -96,6 +100,7 @@ export function generateRawCSV(cards: CardItemWithImages[]): string {
         card.status,
         card.listings,
         card.salePrice,
+        cardListingType(card, profile) === 'BuyItNow' ? 'Buy It Now' : 'Auction',
         card.category,
         card.year,
         card.brand,
@@ -455,16 +460,17 @@ export function generateEbayCSV(
     // Description - use custom description if provided, otherwise use title
     const description = renderDescription(card, title) || `<p>${title}</p>`;
     
-    // Format and pricing
+    // Format and pricing — each card carries its own format, falling back to the lot default
     // For FixedPrice: *StartPrice IS the listing price; BuyItNowPrice is an auction-only add-on field
     // For Auction:    *StartPrice is the starting bid; BuyItNowPrice is an optional instant-buy add-on
-    const ebayFormat = EBAY_FORMATS[profile.listingType as keyof typeof EBAY_FORMATS] || 'Auction';
-    const startPrice = profile.listingType === 'BuyItNow'
+    const isBuyItNow = cardListingType(card, profile) === 'BuyItNow';
+    const ebayFormat = isBuyItNow ? EBAY_FORMATS.BuyItNow : EBAY_FORMATS.Auction;
+    const startPrice = isBuyItNow
       ? (card.salePrice ?? '')
       : (card.salePrice || profile.startPriceDefault);
-    const buyItNowPrice = profile.listingType === 'Auction'
-      ? (profile.buyItNowPrice || '')
-      : '';
+    const buyItNowPrice = isBuyItNow ? '' : (profile.buyItNowPrice || '');
+    // eBay only offers Best Offer on fixed-price listings; sending it on an auction row is rejected
+    const bestOffer = isBuyItNow && profile.bestOfferEnabled;
     
     // Location — *Location is a required (starred) eBay field and must never be blank.
     // PostalCode is optional but improves shipping-estimate accuracy. Provide both when available.
@@ -552,14 +558,14 @@ export function generateEbayCSV(
       description,                              // *Description
       ebayFormat,                               // *Format
       // FixedPrice must use GTC (Good Till Cancelled); Auction uses numeric days
-      profile.listingType === 'BuyItNow' ? 'GTC' : profile.durationDays, // *Duration
+      isBuyItNow ? 'GTC' : profile.durationDays, // *Duration
       startPrice,                               // *StartPrice
       buyItNowPrice,                            // BuyItNowPrice (Auction add-on only; empty for FixedPrice)
-      profile.bestOfferEnabled ? '1' : '0',    // BestOfferEnabled
-      profile.bestOfferEnabled && profile.bestOfferAutoAcceptPrice
+      bestOffer ? '1' : '0',                    // BestOfferEnabled
+      bestOffer && profile.bestOfferAutoAcceptPrice
         ? String(profile.bestOfferAutoAcceptPrice)
         : '',                                   // BestOfferAutoAcceptPrice
-      profile.bestOfferEnabled && profile.bestOfferMinimumPrice
+      bestOffer && profile.bestOfferMinimumPrice
         ? String(profile.bestOfferMinimumPrice)
         : '',                                   // MinimumBestOfferPrice
       '1',                                      // *Quantity
