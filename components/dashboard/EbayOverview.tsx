@@ -51,6 +51,35 @@ function money(n: number): string {
   return Math.abs(n) >= 100_000 ? compactCurrency.format(n) : currency.format(n);
 }
 
+const YEAR_DAYS = 365;
+
+function periodDayCount(range: Preset | 'custom', customFrom: string, customTo: string): number {
+  if (range === '1d' || range === 'yesterday') return 1;
+  if (range === '7d') return 7;
+  if (range === '30d') return 30;
+  if (range === '90d') return 90;
+  if (customFrom && customTo) {
+    const from = Date.parse(`${customFrom}T00:00:00Z`);
+    const to = Date.parse(`${customTo}T00:00:00Z`);
+    if (Number.isFinite(from) && Number.isFinite(to)) {
+      return Math.max(1, Math.round(Math.abs(to - from) / 86_400_000) + 1);
+    }
+  }
+  return 1;
+}
+
+/** Last-365-day total, expressed as the average for the length of the selected range. */
+function yearAverage(total: number, days: number): number {
+  return (total / YEAR_DAYS) * days;
+}
+
+function countAverage(n: number): string {
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded)
+    ? rounded.toLocaleString()
+    : rounded.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
@@ -146,6 +175,12 @@ export function EbayOverview() {
   const stats: RangeStats | null = sales?.focus ?? (sales ? sales.ranges['30'] : null);
   const periodLabel = range === 'custom' && customFrom && customTo ? `${customFrom} – ${customTo}` : range === 'custom' ? 'Today' : PRESET_LABELS[range];
   const shopRange = shopify?.focus ?? shopify?.ranges['30'] ?? null;
+  const rangeDays = periodDayCount(range, customFrom, customTo);
+  const year = shopify?.year;
+  const yearSales = year ? yearAverage(year.revenue, rangeDays) : null;
+  const yearProfit = year ? yearAverage(year.net, rangeDays) : null;
+  const yearOrders = year ? yearAverage(year.orders, rangeDays) : null;
+  const yearUnits = year ? yearAverage(year.units, rangeDays) : null;
   const needsReconnect = [data?.sales, data?.shipping, data?.listings].some((s) => s?.status === 'reconnect');
   const busy = loading;
   const showEbayConnect = Boolean(data && data.state !== 'ok' && !shopifyReady && channel !== 'shopify');
@@ -299,7 +334,16 @@ export function EbayOverview() {
               value={shopRange ? money(shopRange.revenue) : null}
               sub={shopRange ? `${plural(shopRange.orders, 'order')} · ${plural(shopRange.units, 'item')}` : null}
               title="Shopify order totals for the range, excluding draft orders."
-              footer={shopRange && shopRange.revenue > 0 ? <Sparkline values={shopRange.daily} /> : null}
+              footer={
+                shopRange ? (
+                  <div className="space-y-2">
+                    {shopRange.revenue > 0 && <Sparkline values={shopRange.daily} />}
+                    {yearSales !== null && (
+                      <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {money(yearSales)}</FootNote>
+                    )}
+                  </div>
+                ) : null
+              }
             />
             <MetricTile
               icon={<WalletIcon size={16} />}
@@ -312,7 +356,11 @@ export function EbayOverview() {
               value={shopRange ? money(shopRange.net) : null}
               sub={shopRange ? `after ${money(shopRange.adSpend)} ads` : null}
               title="Line profit minus ads and estimated free-shipping cost."
-              footer={shopRange && shopRange.orders > 0 ? <FootNote>{money(shopRange.aov)} AOV</FootNote> : null}
+              footer={
+                yearProfit !== null ? (
+                  <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {money(yearProfit)}</FootNote>
+                ) : null
+              }
             />
             <MetricTile
               icon={<LayersIcon size={16} />}
@@ -325,6 +373,11 @@ export function EbayOverview() {
               value={shopRange ? shopRange.orders.toLocaleString() : null}
               sub={shopRange && shopRange.orders > 0 ? `${money(shopRange.aov)} average` : 'Shopify orders'}
               title="Number of Shopify orders in this range, excluding draft orders."
+              footer={
+                yearOrders !== null ? (
+                  <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {countAverage(yearOrders)}</FootNote>
+                ) : null
+              }
             />
             <MetricTile
               icon={<TagIcon size={16} />}
@@ -337,6 +390,11 @@ export function EbayOverview() {
               value={shopRange ? shopRange.units.toLocaleString() : null}
               sub="Units on those orders"
               title="Quantity of items sold on Shopify in this range."
+              footer={
+                yearUnits !== null ? (
+                  <FootNote title="Average of the last 365 days, sized to this range.">365-day avg {countAverage(yearUnits)}</FootNote>
+                ) : null
+              }
             />
           </>
         ) : (
@@ -616,9 +674,9 @@ function MetricTile({
   );
 }
 
-function FootNote({ children, tone }: { children: React.ReactNode; tone?: 'danger' }) {
+function FootNote({ children, tone, title }: { children: React.ReactNode; tone?: 'danger'; title?: string }) {
   return (
-    <p className={`text-[11px] ${tone === 'danger' ? 'text-red-300' : 'text-surface-500'} truncate`}>{children}</p>
+    <p title={title} className={`text-[11px] ${tone === 'danger' ? 'text-red-300' : 'text-surface-500'} truncate`}>{children}</p>
   );
 }
 

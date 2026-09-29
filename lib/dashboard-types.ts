@@ -103,6 +103,8 @@ export interface ShopifyData {
   lastSync: string | null;
   ranges: Record<`${DashboardRange}`, ShopifyRangeStats>;
   focus?: ShopifyRangeStats;
+  /** Totals for the last 365 days, used to show an average scaled to the selected range. */
+  year?: Pick<ShopifyRangeStats, 'revenue' | 'net' | 'orders' | 'units'>;
   /** Daily ad budget that carries forward to today. Null when none has been saved. */
   dailyBudget: number | null;
   adEntries: AdBudgetEntry[];

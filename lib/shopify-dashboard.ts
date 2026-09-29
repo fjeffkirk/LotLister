@@ -51,13 +51,14 @@ async function statsFor(
   to: Date,
   key: DateRangeKey | null,
   margin: number,
-  freeShip: number
+  freeShip: number,
+  includeDaily = true
 ): Promise<ShopifyRangeStats> {
   const comparison = getComparisonDates(key, from, to);
   const [currentAds, prevAds, daily] = await Promise.all([
     getAdSpendForRange(from, to),
     getAdSpendForRange(comparison.prevFrom, comparison.prevTo),
-    getRevenueByDay(from, to),
+    includeDaily ? getRevenueByDay(from, to) : Promise.resolve([]),
   ]);
   const kpis = await getDashboardKpis(
     from,
@@ -97,8 +98,10 @@ export async function getShopifyDashboard(window?: {
     const freeShip = settings?.averageFreeShippingCost ?? 15;
     const selected = window ?? { ...rangeToDates('1d'), key: '1d' as const };
 
-    const [focus, tops, recent, budget, entries, ops] = await Promise.all([
+    const yearDates = rangeToDates('365d');
+    const [focus, year, tops, recent, budget, entries, ops] = await Promise.all([
       statsFor(selected.from, selected.to, selected.key, margin, freeShip),
+      statsFor(yearDates.from, yearDates.to, '365d', margin, freeShip, false),
       getAllTopProducts(selected.from, selected.to, margin),
       getRecentOrders(8),
       getEffectiveDailyBudget(),
@@ -128,6 +131,7 @@ export async function getShopifyDashboard(window?: {
         lastSync: settings?.lastSuccessfulSyncAt?.toISOString() ?? null,
         ranges: { '7': focus, '30': focus, '90': focus },
         focus,
+        year: { revenue: year.revenue, net: year.net, orders: year.orders, units: year.units },
         dailyBudget: budget,
         adEntries: entries.map((entry) => ({
           date: entry.date.toISOString().slice(0, 10),
