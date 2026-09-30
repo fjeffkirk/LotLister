@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertIcon, CheckCircleIcon, RotateIcon } from '../ui/icons';
+import { ProductMargins } from './ProductMargins';
 
 type SyncMode = 'manual' | 'polling' | 'webhook_ready';
 
@@ -258,6 +259,8 @@ export function ShopifySettings() {
           <button type="submit" disabled={saving} className="btn btn-primary btn-sm">{saving ? 'Saving…' : 'Save settings'}</button>
         </div>
       </form>
+
+      <ProductMargins defaultMargin={ops.defaultMarginPercent} />
 
       {message && <p className="text-sm text-emerald-300">{message}</p>}
       {error && <p className="text-sm text-red-300">{error}</p>}

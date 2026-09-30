@@ -43,6 +43,20 @@ export async function POST(request: Request) {
         ...(reorderThreshold !== undefined ? { reorderThreshold } : {}),
       },
     });
+    if (marginPercent !== undefined) {
+      const settings = await prisma.appSetting.findFirst({ select: { defaultMarginPercent: true } });
+      const rate = (marginPercent ?? settings?.defaultMarginPercent ?? 35) / 100;
+      const costRate = 1 - rate;
+      await prisma.$executeRaw`
+        UPDATE "OrderLineItem"
+        SET "estimatedLineProfit" = "lineRevenue" * ${rate},
+            "estimatedUnitCost" = CASE
+              WHEN quantity > 0 THEN ("lineRevenue" / quantity) * ${costRate}
+              ELSE "lineRevenue" * ${costRate}
+            END
+        WHERE "catalogItemId" = ${id} AND "profitIsExact" = false
+      `;
+    }
     revalidateDashboardFigures();
     return NextResponse.json({ ok: true }, { headers: noStore });
   } catch {
