@@ -33,6 +33,7 @@ export type DashboardKpis = {
   fulfilledOrders: number;
   marginPercent: number;
   avgMargin: number;
+  prior: { revenue: number; estProfit: number; orderCount: number; itemCount: number };
   trends: {
     revenue: KpiTrend;
     estProfit: KpiTrend;
@@ -54,7 +55,7 @@ function calcTrend(current: number, prev: number): KpiTrend {
 }
 function emptyKpis(marginPercent: number): DashboardKpis {
   const t = flatTrend();
-  return { orderCount: 0, itemCount: 0, revenue: 0, estProfit: 0, grossProfit: 0, adSpend: 0, shipping: 0, aov: 0, unfulfilledOrders: 0, fulfilledOrders: 0, marginPercent, avgMargin: marginPercent, trends: { revenue: t, estProfit: t, orderCount: t, aov: t, itemCount: t, shipping: t } };
+  return { orderCount: 0, itemCount: 0, revenue: 0, estProfit: 0, grossProfit: 0, adSpend: 0, shipping: 0, aov: 0, unfulfilledOrders: 0, fulfilledOrders: 0, marginPercent, avgMargin: marginPercent, prior: { revenue: 0, estProfit: 0, orderCount: 0, itemCount: 0 }, trends: { revenue: t, estProfit: t, orderCount: t, aov: t, itemCount: t, shipping: t } };
 }
 
 
@@ -186,6 +187,12 @@ export async function getDashboardKpis(
       fulfilledOrders: fulfilled,
       marginPercent: margin * 100,
       avgMargin,
+      prior: {
+        revenue: prevRevenue,
+        estProfit: prevNetProfit,
+        orderCount: prevOrderCount,
+        itemCount: prevItemCount,
+      },
       trends: {
         revenue:    calcTrend(revenue,     prevRevenue),
         estProfit:  calcTrend(netProfit,   prevNetProfit),

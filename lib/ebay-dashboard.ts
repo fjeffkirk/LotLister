@@ -15,6 +15,7 @@ import {
   tradingCall,
 } from './ebay';
 import { toZonedTime } from 'date-fns-tz';
+import { DateRangeKey, getComparisonDates } from './dates';
 import {
   DASHBOARD_RANGES,
   DashboardData,
@@ -477,10 +478,11 @@ async function fetchSales(
   accessToken: string,
   now: number,
   tzOffsetMinutes: number,
-  window?: { from: Date; to: Date }
+  window?: { from: Date; to: Date; key?: DateRangeKey | null }
 ): Promise<SalesData> {
   const longest = Math.max(...DASHBOARD_RANGES);
-  const sinceMs = Math.min(now - longest * DAY_MS, window?.from.getTime() ?? now);
+  const comparison = window ? getComparisonDates(window.key ?? null, window.from, window.to) : null;
+  const sinceMs = Math.min(now - longest * DAY_MS, window?.from.getTime() ?? now, comparison?.prevFrom.getTime() ?? now);
   const since = new Date(sinceMs).toISOString();
   const orders = (await fetchOrders(accessToken, `creationdate:%5B${since}..%5D`)).filter(isCountableSale);
 
@@ -494,6 +496,15 @@ async function fetchSales(
   ) as SalesData['ranges'];
 
   const focus = window ? buildWindowStats(orders, window.from, window.to, players) : ranges['30'];
+  const priorStats = comparison ? buildWindowStats(orders, comparison.prevFrom, comparison.prevTo, players) : null;
+  const prior = priorStats
+    ? {
+        gross: priorStats.summary.gross,
+        net: priorStats.summary.net,
+        orders: priorStats.summary.orders,
+        units: priorStats.summary.units,
+      }
+    : undefined;
 
   const recent: RecentSale[] = orders
     .slice()
@@ -510,7 +521,7 @@ async function fetchSales(
     )
     .slice(0, RECENT_SALES);
 
-  return { ranges, focus, recent, pendingLookups: pending };
+  return { ranges, focus, prior, recent, pendingLookups: pending };
 }
 
 async function fetchShipping(accessToken: string, now: number): Promise<ShippingData> {
@@ -545,7 +556,7 @@ async function fetchShipping(accessToken: string, now: number): Promise<Shipping
 export async function getDashboardData(
   userEmail: string,
   tzOffsetMinutes: number,
-  window?: { from: Date; to: Date }
+  window?: { from: Date; to: Date; key?: DateRangeKey | null }
 ): Promise<DashboardData> {
   const now = Date.now();
   const empty = { status: 'error', message: '' } as const;

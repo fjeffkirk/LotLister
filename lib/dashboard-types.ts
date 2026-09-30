@@ -45,6 +45,8 @@ export interface SalesData {
   ranges: Record<`${DashboardRange}`, RangeStats>;
   /** Stats for the range currently selected on the dashboard, including Today, Yesterday, and custom. */
   focus?: RangeStats;
+  /** The matching stretch immediately before `focus`, used for the percent change. */
+  prior?: { gross: number; net: number; orders: number; units: number };
   recent: RecentSale[];
   /** Sold listings whose player name has not been looked up yet (picked up on a later load). */
   pendingLookups: number;
@@ -81,6 +83,8 @@ export interface ShopifyRangeStats {
   aov: number;
   shipping: number;
   daily: number[];
+  /** The matching stretch immediately before this range. */
+  prior?: { revenue: number; net: number; orders: number; units: number };
   change: {
     revenue: PeriodChange;
     net: PeriodChange;

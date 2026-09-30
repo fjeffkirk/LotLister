@@ -74,6 +74,12 @@ function annualized(value: number, days: number): number {
   return (value / days) * YEAR_DAYS;
 }
 
+function periodChange(current: number, prior: number): PeriodChange {
+  if (prior === 0) return current > 0 ? { pct: 0, direction: 'none' } : { pct: 0, direction: 'flat' };
+  const pct = Math.round(((current - prior) / Math.abs(prior)) * 100);
+  return { pct: Math.abs(pct), direction: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat' };
+}
+
 function compareWith(range: Preset | 'custom'): string {
   if (range === '1d') return 'the same time yesterday';
   if (range === 'yesterday') return 'the day before';
@@ -191,12 +197,17 @@ export function EbayOverview() {
   const yearProfit = shopRange ? annualized(shopRange.net, rangeDays) : null;
   const yearOrders = shopRange ? annualized(shopRange.orders, rangeDays) : null;
   const yearUnits = shopRange ? annualized(shopRange.units, rangeDays) : null;
+  const ebayPrior = sales?.prior;
+  const ebaySalesChange = stats && ebayPrior ? periodChange(stats.summary.gross, ebayPrior.gross) : undefined;
+  const ebayNetChange = stats && ebayPrior ? periodChange(stats.summary.net, ebayPrior.net) : undefined;
   const needsReconnect = [data?.sales, data?.shipping, data?.listings].some((s) => s?.status === 'reconnect');
   const busy = loading;
   const showEbayConnect = Boolean(data && data.state !== 'ok' && !shopifyReady && channel !== 'shopify');
 
   const combinedSales = (stats?.summary.gross ?? 0) + (shopRange?.revenue ?? 0);
   const combinedNet = (stats?.summary.net ?? 0) + (shopRange?.net ?? 0);
+  const allSalesChange = periodChange(combinedSales, (ebayPrior?.gross ?? 0) + (shopRange?.prior?.revenue ?? 0));
+  const allNetChange = periodChange(combinedNet, (ebayPrior?.net ?? 0) + (shopRange?.prior?.net ?? 0));
   const combinedOrders = (stats?.summary.orders ?? 0) + (shopRange?.orders ?? 0);
   const combinedUnits = (stats?.summary.units ?? 0) + (shopRange?.units ?? 0);
   const combinedDaily = mergeDaily(stats?.summary.daily, shopRange?.daily);
@@ -280,7 +291,16 @@ export function EbayOverview() {
               sub={stats ? `${plural(stats.summary.orders, 'order')} · ${plural(stats.summary.units, 'card')}` : null}
               href={SELLER_HUB.orders}
               title="Item price plus shipping the buyer paid, before sales tax."
-              footer={stats && stats.summary.gross > 0 ? <Sparkline values={stats.summary.daily} /> : null}
+              delta={ebaySalesChange}
+              deltaLabel={comparedWith}
+              footer={
+                stats ? (
+                  <div className="space-y-2">
+                    {stats.summary.gross > 0 && <Sparkline values={stats.summary.daily} />}
+                    <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(stats.summary.gross, rangeDays))}</FootNote>
+                  </div>
+                ) : null
+              }
             />
             <MetricTile
               icon={<WalletIcon size={16} />}
@@ -297,7 +317,16 @@ export function EbayOverview() {
                   : null
               }
               title="Sales minus eBay fees and refunds. Promoted listing ads are not included."
-              footer={stats && stats.summary.units > 0 ? <FootNote>{money(stats.summary.avgItemPrice)} avg per card</FootNote> : null}
+              delta={ebayNetChange}
+              deltaLabel={comparedWith}
+              footer={
+                stats ? (
+                  <div className="space-y-1">
+                    {stats.summary.units > 0 && <FootNote>{money(stats.summary.avgItemPrice)} avg per card</FootNote>}
+                    <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(stats.summary.net, rangeDays))}</FootNote>
+                  </div>
+                ) : null
+              }
             />
             <MetricTile
               icon={<TruckIcon size={16} />}
@@ -427,7 +456,16 @@ export function EbayOverview() {
               value={!busy ? money(combinedSales) : null}
               sub={`${plural(combinedOrders, 'order')} · ${plural(combinedUnits, 'item')}`}
               title="eBay sales (item + shipping) plus Shopify order totals."
-              footer={combinedSales > 0 ? <Sparkline values={combinedDaily} /> : null}
+              delta={!busy ? allSalesChange : undefined}
+              deltaLabel={comparedWith}
+              footer={
+                !busy ? (
+                  <div className="space-y-2">
+                    {combinedSales > 0 && <Sparkline values={combinedDaily} />}
+                    <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(combinedSales, rangeDays))}</FootNote>
+                  </div>
+                ) : null
+              }
             />
             <MetricTile
               icon={<WalletIcon size={16} />}
@@ -440,6 +478,13 @@ export function EbayOverview() {
               value={!busy ? money(combinedNet) : null}
               sub="eBay after fees + Shopify after ads"
               title="eBay net (after marketplace fees) plus Shopify estimated profit (after ads)."
+              delta={!busy ? allNetChange : undefined}
+              deltaLabel={comparedWith}
+              footer={
+                !busy ? (
+                  <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(combinedNet, rangeDays))}</FootNote>
+                ) : null
+              }
             />
             <MetricTile
               icon={<TruckIcon size={16} />}

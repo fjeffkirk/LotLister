@@ -79,6 +79,12 @@ async function statsFor(
     aov: kpis.aov,
     shipping: kpis.shipping,
     daily: daily.map((point) => point.value),
+    prior: {
+      revenue: kpis.prior.revenue,
+      net: kpis.prior.estProfit,
+      orders: kpis.prior.orderCount,
+      units: kpis.prior.itemCount,
+    },
     change: {
       revenue: kpis.trends.revenue,
       net: kpis.trends.estProfit,
