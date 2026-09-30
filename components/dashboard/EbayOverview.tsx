@@ -6,6 +6,7 @@ import {
   DashboardChannel,
   DashboardData,
   DashboardSection,
+  PeriodChange,
   RangeStats,
   ShopifyData,
 } from '../../lib/dashboard-types';
@@ -71,6 +72,15 @@ function periodDayCount(range: Preset | 'custom', customFrom: string, customTo: 
 /** This range stretched to a full year. A $200 day becomes $200 × 365. */
 function annualized(value: number, days: number): number {
   return (value / days) * YEAR_DAYS;
+}
+
+function compareWith(range: Preset | 'custom'): string {
+  if (range === '1d') return 'the same time yesterday';
+  if (range === 'yesterday') return 'the day before';
+  if (range === '7d') return 'the 7 days before';
+  if (range === '30d') return 'the 30 days before';
+  if (range === '90d') return 'the 90 days before';
+  return 'the period just before this one';
 }
 
 function countAverage(n: number): string {
@@ -174,6 +184,7 @@ export function EbayOverview() {
   const shopifyReady = shopify?.state === 'ok';
   const stats: RangeStats | null = sales?.focus ?? (sales ? sales.ranges['30'] : null);
   const periodLabel = range === 'custom' && customFrom && customTo ? `${customFrom} – ${customTo}` : range === 'custom' ? 'Today' : PRESET_LABELS[range];
+  const comparedWith = compareWith(range);
   const shopRange = shopify?.focus ?? shopify?.ranges['30'] ?? null;
   const rangeDays = periodDayCount(range, customFrom, customTo);
   const yearSales = shopRange ? annualized(shopRange.revenue, rangeDays) : null;
@@ -333,6 +344,8 @@ export function EbayOverview() {
               value={shopRange ? money(shopRange.revenue) : null}
               sub={shopRange ? `${plural(shopRange.orders, 'order')} · ${plural(shopRange.units, 'item')}` : null}
               title="Shopify order totals for the range, excluding draft orders."
+              delta={shopRange?.change?.revenue}
+              deltaLabel={comparedWith}
               footer={
                 shopRange ? (
                   <div className="space-y-2">
@@ -355,6 +368,8 @@ export function EbayOverview() {
               value={shopRange ? money(shopRange.net) : null}
               sub={shopRange ? `after ${money(shopRange.adSpend)} ads` : null}
               title="Line profit minus ads and estimated free-shipping cost."
+              delta={shopRange?.change?.net}
+              deltaLabel={comparedWith}
               footer={
                 yearProfit !== null ? (
                   <FootNote title="This range stretched across 365 days.">Over 365 days {money(yearProfit)}</FootNote>
@@ -372,6 +387,8 @@ export function EbayOverview() {
               value={shopRange ? shopRange.orders.toLocaleString() : null}
               sub={shopRange && shopRange.orders > 0 ? `${money(shopRange.aov)} average` : 'Shopify orders'}
               title="Number of Shopify orders in this range, excluding draft orders."
+              delta={shopRange?.change?.orders}
+              deltaLabel={comparedWith}
               footer={
                 yearOrders !== null ? (
                   <FootNote title="This range stretched across 365 days.">Over 365 days {countAverage(yearOrders)}</FootNote>
@@ -389,6 +406,8 @@ export function EbayOverview() {
               value={shopRange ? shopRange.units.toLocaleString() : null}
               sub="Units on those orders"
               title="Quantity of items sold on Shopify in this range."
+              delta={shopRange?.change?.units}
+              deltaLabel={comparedWith}
               footer={
                 yearUnits !== null ? (
                   <FootNote title="This range stretched across 365 days.">Over 365 days {countAverage(yearUnits)}</FootNote>
@@ -606,6 +625,8 @@ function MetricTile({
   href,
   title,
   footer,
+  delta,
+  deltaLabel,
 }: {
   icon: React.ReactNode;
   tone: Tone;
@@ -619,6 +640,8 @@ function MetricTile({
   href?: string;
   title?: string;
   footer?: React.ReactNode;
+  delta?: PeriodChange;
+  deltaLabel?: string;
 }) {
   const unavailable = !loading && section && section.status !== 'ok';
   return (
@@ -664,12 +687,28 @@ function MetricTile({
         </div>
       ) : (
         <>
-          <div className="mt-3 text-2xl sm:text-[28px] font-semibold tracking-tight text-white tabular-nums truncate">{value}</div>
+          <div className="mt-3 flex items-baseline gap-2 min-w-0">
+            <div className="text-2xl sm:text-[28px] font-semibold tracking-tight text-white tabular-nums truncate">{value}</div>
+            <PeriodDelta change={delta} label={deltaLabel} />
+          </div>
           {sub && <p className="mt-0.5 text-xs text-surface-400 truncate">{sub}</p>}
           {footer && <div className="mt-auto pt-3">{footer}</div>}
         </>
       )}
     </div>
+  );
+}
+
+function PeriodDelta({ change, label }: { change?: PeriodChange; label?: string }) {
+  if (!change || change.direction === 'none') return null;
+  const sign = change.direction === 'up' ? '+' : change.direction === 'down' ? '−' : '';
+  const color =
+    change.direction === 'up' ? 'text-emerald-300' : change.direction === 'down' ? 'text-red-300' : 'text-surface-400';
+  return (
+    <span title={label ? `Compared with ${label}` : undefined} className={`flex-shrink-0 text-sm font-medium tabular-nums ${color}`}>
+      {sign}
+      {change.pct}%
+    </span>
   );
 }
 

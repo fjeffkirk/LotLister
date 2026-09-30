@@ -17,6 +17,8 @@ import { isShopifyApiReady } from './shopify/config';
 
 const OPEN_FULFILLMENT = ['UNFULFILLED', 'PARTIALLY_FULFILLED', 'PARTIAL', 'unfulfilled', 'partial'];
 
+const flatChange = { pct: 0, direction: 'flat' as const };
+
 const emptyRange = (): ShopifyRangeStats => ({
   revenue: 0,
   net: 0,
@@ -26,6 +28,7 @@ const emptyRange = (): ShopifyRangeStats => ({
   aov: 0,
   shipping: 0,
   daily: [],
+  change: { revenue: flatChange, net: flatChange, orders: flatChange, units: flatChange },
 });
 
 function emptyShopify(shop: string | null = null): ShopifyData {
@@ -76,6 +79,12 @@ async function statsFor(
     aov: kpis.aov,
     shipping: kpis.shipping,
     daily: daily.map((point) => point.value),
+    change: {
+      revenue: kpis.trends.revenue,
+      net: kpis.trends.estProfit,
+      orders: kpis.trends.orderCount,
+      units: kpis.trends.itemCount,
+    },
   };
 }
 

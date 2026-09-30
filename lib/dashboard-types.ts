@@ -66,6 +66,12 @@ export interface ListingsData {
 
 export type DashboardChannel = 'all' | 'ebay' | 'shopify';
 
+export interface PeriodChange {
+  pct: number;
+  /** "none" means the previous period had nothing to compare. */
+  direction: 'up' | 'down' | 'flat' | 'none';
+}
+
 export interface ShopifyRangeStats {
   revenue: number;
   net: number;
@@ -75,6 +81,12 @@ export interface ShopifyRangeStats {
   aov: number;
   shipping: number;
   daily: number[];
+  change: {
+    revenue: PeriodChange;
+    net: PeriodChange;
+    orders: PeriodChange;
+    units: PeriodChange;
+  };
 }
 
 export interface ShopifyProductStat {
