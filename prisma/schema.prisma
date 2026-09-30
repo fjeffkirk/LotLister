@@ -117,6 +117,10 @@ model ExportProfile {
   freeShipping           Boolean @default(false)
   shippingCost           Float   @default(3.99)
   eachAdditionalItemCost Float   @default(1.49)
+  packageWeightOz       Float   @default(4)
+  packageLengthIn       Float   @default(7)
+  packageWidthIn        Float   @default(5)
+  packageHeightIn       Float   @default(2)
 
   // Payment
   immediatePayment Boolean @default(false)

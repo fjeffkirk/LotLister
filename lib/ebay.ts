@@ -307,6 +307,37 @@ function money(value: number): string {
   return value.toFixed(2);
 }
 
+/** eBay wants pounds plus leftover ounces, and calls package height PackageDepth. */
+export function shippingPackageXml(profile: {
+  packageWeightOz?: number | null;
+  packageLengthIn?: number | null;
+  packageWidthIn?: number | null;
+  packageHeightIn?: number | null;
+}): string {
+  const oz = Number(profile.packageWeightOz);
+  const length = Number(profile.packageLengthIn);
+  const width = Number(profile.packageWidthIn);
+  const height = Number(profile.packageHeightIn);
+  if (![oz, length, width, height].every((value) => Number.isFinite(value) && value > 0)) return '';
+
+  let pounds = Math.floor(oz / 16);
+  let ounces = Math.round((oz - pounds * 16) * 10) / 10;
+  if (ounces >= 16) {
+    pounds += 1;
+    ounces = 0;
+  }
+  const dim = (value: number) => String(Math.round(value * 100) / 100);
+
+  return `<ShippingPackageDetails>
+      <MeasurementUnit>English</MeasurementUnit>
+      <WeightMajor unit="lbs">${pounds}</WeightMajor>
+      <WeightMinor unit="oz">${ounces}</WeightMinor>
+      <PackageLength unit="in">${dim(length)}</PackageLength>
+      <PackageWidth unit="in">${dim(width)}</PackageWidth>
+      <PackageDepth unit="in">${dim(height)}</PackageDepth>
+    </ShippingPackageDetails>`;
+}
+
 function isCardGraded(card: CardItem): boolean {
   return card.conditionType === 'Graded: Professionally graded';
 }
@@ -448,6 +479,7 @@ function buildAddItemXml(
     !free && profile.eachAdditionalItemCost > 0
       ? `<ShippingServiceAdditionalCost>${money(profile.eachAdditionalItemCost)}</ShippingServiceAdditionalCost>`
       : '';
+  const packageXml = shippingPackageXml(profile);
 
   const storeCategory = profile.storeCategory?.trim();
   const storeXml =
@@ -523,6 +555,7 @@ function buildAddItemXml(
         ${additional}
       </ShippingServiceOptions>
     </ShippingDetails>
+    ${packageXml}
     <ReturnPolicy>
       <ReturnsAcceptedOption>${returnsAccepted}</ReturnsAcceptedOption>
       <RefundOption>${refund}</RefundOption>

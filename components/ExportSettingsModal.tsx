@@ -44,6 +44,10 @@ const DEFAULT_PROFILE: Partial<ExportProfile> = {
   freeShipping: false,
   shippingCost: 3.99,
   eachAdditionalItemCost: 1.49,
+  packageWeightOz: 4,
+  packageLengthIn: 7,
+  packageWidthIn: 5,
+  packageHeightIn: 2,
   immediatePayment: false,
   bestOfferEnabled: false,
   bestOfferAutoAcceptPrice: null,
@@ -172,6 +176,10 @@ export default function ExportSettingsModal({
     if (!profile.freeShipping && (profile.shippingCost === null || profile.shippingCost === undefined)) {
       errors.push('Shipping Cost');
     }
+    if (!profile.packageWeightOz || profile.packageWeightOz <= 0) errors.push('Package weight');
+    if (!profile.packageLengthIn || profile.packageLengthIn <= 0) errors.push('Package length');
+    if (!profile.packageWidthIn || profile.packageWidthIn <= 0) errors.push('Package width');
+    if (!profile.packageHeightIn || profile.packageHeightIn <= 0) errors.push('Package height');
     
     // Location validation
     if (!profile.itemLocationCity?.trim()) errors.push('City');
@@ -530,6 +538,56 @@ export default function ExportSettingsModal({
                       </div>
                     </>
                   )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-surface-300 mb-2">Package</p>
+                  <p className="text-xs text-surface-500 mb-3">Same weight and size for every card in this lot.</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs text-surface-400 mb-1">Weight (oz)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        value={profile.packageWeightOz ?? ''}
+                        onChange={(e) => updateField('packageWeightOz', parseFloat(e.target.value) || 0)}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-surface-400 mb-1">Length (in)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        value={profile.packageLengthIn ?? ''}
+                        onChange={(e) => updateField('packageLengthIn', parseFloat(e.target.value) || 0)}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-surface-400 mb-1">Width (in)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        value={profile.packageWidthIn ?? ''}
+                        onChange={(e) => updateField('packageWidthIn', parseFloat(e.target.value) || 0)}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-surface-400 mb-1">Height (in)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        value={profile.packageHeightIn ?? ''}
+                        onChange={(e) => updateField('packageHeightIn', parseFloat(e.target.value) || 0)}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
