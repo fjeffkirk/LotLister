@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useUser } from '../UserProvider';
-import { useCommandPalette } from '../CommandPalette';
 import { Dropdown } from './Dropdown';
-import { CheckCircleIcon, CommandIcon, DatabaseIcon, GearIcon, LogOutIcon } from './icons';
+import { CheckCircleIcon, DatabaseIcon, GearIcon, LogOutIcon } from './icons';
 
 interface StorageInfo {
   usedMB: number;
@@ -33,7 +32,6 @@ export function Avatar({ name, size = 32 }: { name: string | null; size?: number
 /** Avatar button holding the account, storage, lifetime stats, settings, and sign-out. */
 export function AccountMenu() {
   const { username, signOut } = useUser();
-  const { open: openPalette } = useCommandPalette();
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [completedCount, setCompletedCount] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -101,24 +99,8 @@ export function AccountMenu() {
           </div>
           <div className="menu-divider" />
           <Link href="/settings" onClick={close} className="menu-item">
-            <GearIcon className="text-surface-400" /> Account &amp; eBay
+            <GearIcon className="text-surface-400" /> Settings
           </Link>
-          <Link href="/settings#shopify" onClick={close} className="menu-item">
-            <GearIcon className="text-surface-400" /> Shopify settings
-          </Link>
-          <button
-            onClick={() => {
-              close();
-              openPalette();
-            }}
-            className="menu-item"
-          >
-            <CommandIcon className="text-surface-400" /> Quick actions
-            <span className="ml-auto flex gap-1">
-              <kbd className="kbd">Ctrl</kbd>
-              <kbd className="kbd">K</kbd>
-            </span>
-          </button>
           <div className="menu-divider" />
           <button onClick={signOut} className="menu-item text-red-300 hover:text-red-200">
             <LogOutIcon /> Sign out
