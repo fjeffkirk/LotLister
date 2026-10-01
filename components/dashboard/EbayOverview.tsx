@@ -207,18 +207,22 @@ export function EbayOverview() {
   const showEbayConnect = Boolean(data && data.state !== 'ok' && !shopifyReady && (channel === 'ebay' || channel === 'all'));
 
   const combinedSales = (stats?.summary.gross ?? 0) + (shopRange?.revenue ?? 0) + (etsyReady ? etsy?.revenue ?? 0 : 0);
-  const combinedNet = (stats?.summary.net ?? 0) + (shopRange?.net ?? 0);
+  const combinedNet = (stats?.summary.net ?? 0) + (shopRange?.net ?? 0) + (etsyReady && etsy?.profit != null ? etsy.profit : 0);
   const allSalesChange = periodChange(
     combinedSales,
     (ebayPrior?.gross ?? 0) + (shopRange?.prior?.revenue ?? 0) + (etsy?.prior?.revenue ?? 0)
   );
-  const allNetChange = periodChange(combinedNet, (ebayPrior?.net ?? 0) + (shopRange?.prior?.net ?? 0));
+  const allNetChange = periodChange(
+    combinedNet,
+    (ebayPrior?.net ?? 0) + (shopRange?.prior?.net ?? 0) + (etsy?.prior?.profit ?? 0)
+  );
   const combinedOrders = (stats?.summary.orders ?? 0) + (shopRange?.orders ?? 0) + (etsyReady ? etsy?.orders ?? 0 : 0);
   const combinedUnits = (stats?.summary.units ?? 0) + (shopRange?.units ?? 0) + (etsyReady ? etsy?.units ?? 0 : 0);
   const combinedDaily = mergeDaily(mergeDaily(stats?.summary.daily, shopRange?.daily), etsyReady ? etsy?.daily : undefined);
   const toShip = (shipping?.orders ?? 0) + (shopify?.unfulfilled ?? 0) + (etsyReady ? etsy?.unshipped ?? 0 : 0);
   const overdue = (shipping?.overdue ?? 0) + (shopify?.overdue ?? 0);
   const etsySalesChange = etsy?.prior ? periodChange(etsy.revenue, etsy.prior.revenue) : undefined;
+  const etsyProfitChange = etsy?.profit != null && etsy.prior?.profit != null ? periodChange(etsy.profit, etsy.prior.profit) : undefined;
   const etsyOrdersChange = etsy?.prior ? periodChange(etsy.orders, etsy.prior.orders) : undefined;
   const etsyUnitsChange = etsy?.prior ? periodChange(etsy.units, etsy.prior.units) : undefined;
 
@@ -261,7 +265,7 @@ export function EbayOverview() {
         </div>
       </div>
 
-      {channel !== 'ebay' && (
+      {channel === 'shopify' && (
         <AdSpendBar
           dailyBudget={shopify?.dailyBudget ?? null}
           periodSpend={shopRange?.adSpend ?? 0}
@@ -330,7 +334,7 @@ export function EbayOverview() {
                   ? `after ${money(stats.summary.fees)} eBay fees${stats.summary.refunds > 0 ? ` · ${money(stats.summary.refunds)} refunded` : ''}`
                   : null
               }
-              title="Sales minus eBay fees and refunds. Promoted listing ads are not included."
+              title="Sales minus the marketplace fees and refunds eBay deducts on the order. eBay takes promoted listing charges out of the payout."
               delta={ebayNetChange}
               deltaLabel={comparedWith}
               footer={
@@ -402,6 +406,24 @@ export function EbayOverview() {
             <MetricTile
               icon={<WalletIcon size={16} />}
               tone="emerald"
+              label="Profit"
+              suffix={periodLabel}
+              loading={busy}
+              section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
+              value={etsy ? (etsy.profit != null ? money(etsy.profit) : '—') : null}
+              sub={etsy?.fees != null ? `after ${money(etsy.fees)} Etsy fees and ads` : 'Etsy did not return the fee ledger'}
+              title="What Etsy left in the payment account for this range after its fees, Offsite Ads, and refunds. Money Etsy sent to the bank is not subtracted again."
+              delta={etsyProfitChange}
+              deltaLabel={comparedWith}
+              footer={
+                etsy?.profit != null ? (
+                  <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(etsy.profit, rangeDays))}</FootNote>
+                ) : null
+              }
+            />
+            <MetricTile
+              icon={<LayersIcon size={16} />}
+              tone="amber"
               label="Orders"
               suffix={periodLabel}
               loading={busy}
@@ -553,8 +575,8 @@ export function EbayOverview() {
               loading={busy}
               section={data?.sales?.status === 'ok' || shopifyReady ? { status: 'ok', data: true } : data?.sales}
               value={!busy ? money(combinedNet) : null}
-              sub="eBay after fees + Shopify after ads"
-              title="eBay net (after marketplace fees) plus Shopify estimated profit (after ads)."
+              sub="eBay after fees + Shopify after ads + Etsy after its fees"
+              title="eBay net, Shopify estimated profit after ads, and the Etsy payment-ledger profit."
               delta={!busy ? allNetChange : undefined}
               deltaLabel={comparedWith}
               footer={
@@ -1230,7 +1252,7 @@ function AdSpendBar({
   return (
     <div className="panel px-3 py-2">
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-surface-400">Ad spend</span>
+        <span className="text-surface-400">Shopify ad spend</span>
         <span className="font-medium text-white tabular-nums">{dailyBudget != null ? `${money(dailyBudget)}/day` : 'not set'}</span>
         <span className="text-surface-500 tabular-nums">· {money(periodSpend)} {periodLabel}</span>
         <button type="button" onClick={openEditor} className="btn btn-ghost btn-icon btn-sm ml-auto" aria-label="Edit ad spend" title="Edit ad spend">

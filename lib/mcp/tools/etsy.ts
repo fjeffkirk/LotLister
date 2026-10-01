@@ -30,7 +30,7 @@ registerTool({
 
 registerTool({
   name: 'etsy_receipts_get',
-  description: 'Read paid Etsy orders for a recent range: revenue, order count, items, and the latest receipts. Does not refund or ship anything.',
+  description: 'Read paid Etsy orders for a recent range: sales, profit after the fees and ads Etsy recorded, order count, and the latest receipts. Does not refund or ship anything.',
   effect: 'read',
   inputSchema: {
     type: 'object',
@@ -47,6 +47,8 @@ registerTool({
       connected: section.data.state === 'ok',
       range: key,
       revenue: section.data.revenue,
+      profit: section.data.profit,
+      fees: section.data.fees,
       orders: section.data.orders,
       units: section.data.units,
       unshipped: section.data.unshipped,

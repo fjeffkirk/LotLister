@@ -34,6 +34,8 @@ describe('LotLister MCP policy', () => {
     const names = ((listed.body?.result as { tools: { name: string }[] }).tools).map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(['lots_list', 'ebay_listings_get', 'etsy_receipts_get', 'shopify_summary_get']));
     expect(names).not.toContain('etsy_drafts_create');
+    expect(names).not.toContain('etsy_drafts_create_product');
+    expect(names).toContain('etsy_listing_requirements_get');
 
     const denied = await dispatchMcp({
       jsonrpc: '2.0',

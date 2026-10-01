@@ -76,6 +76,23 @@ export function shopFromEtsyPayload(body: unknown): { shopId: string; shopName: 
   return { shopId: String(shop.shop_id), shopName: shop.shop_name?.trim() || 'Etsy shop' };
 }
 
+const BANK_LEDGER = /disburse|recoup/i;
+
+/** Sum of Etsy payment-ledger amounts in minor units, excluding bank deposits. */
+export function etsyLedgerProfit(entries: { amount?: number; ledger_type?: string }[]): { profit: number; fees: number } {
+  let profit = 0;
+  let fees = 0;
+  for (const entry of entries) {
+    if (BANK_LEDGER.test(entry.ledger_type ?? '')) continue;
+    const minor = Number(entry.amount);
+    if (!Number.isFinite(minor)) continue;
+    const dollars = minor / 100;
+    profit += dollars;
+    if (dollars < 0) fees += -dollars;
+  }
+  return { profit: Math.round(profit * 100) / 100, fees: Math.round(fees * 100) / 100 };
+}
+
 export function etsyMoney(value: { amount?: number; divisor?: number } | null | undefined): number {
   if (!value || !value.divisor) return 0;
   const amount = Number(value.amount);

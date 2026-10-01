@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { etsyErrorText, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from '../lib/etsy-listing';
+import { etsyErrorText, etsyLedgerProfit, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from '../lib/etsy-listing';
 
 describe('etsy listing fields', () => {
   it('maps a card year onto an Etsy era', () => {
@@ -25,6 +25,15 @@ describe('etsy listing fields', () => {
     });
     expect(shopFromEtsyPayload({ results: [{ shop_id: 9, shop_name: 'Other' }] })?.shopId).toBe('9');
     expect(shopFromEtsyPayload({})).toBeNull();
+  });
+
+  it('turns Etsy ledger credits and fee debits into profit, and ignores bank deposits', () => {
+    expect(etsyLedgerProfit([
+      { amount: 18212, ledger_type: 'transaction' },
+      { amount: -1200, ledger_type: 'offsite_ads_fee' },
+      { amount: -800, ledger_type: 'transaction_fee' },
+      { amount: -15000, ledger_type: 'DISBURSE2' },
+    ])).toEqual({ profit: 162.12, fees: 20 });
   });
 
   it('turns a description template into plain text and keeps the Etsy error', () => {

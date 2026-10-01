@@ -142,11 +142,14 @@ export interface EtsyData {
   state: 'ok' | 'not_connected';
   shop: string | null;
   revenue: number;
+  /** Payment-ledger net after Etsy fees, ads, and refunds. Null when Etsy did not return the ledger. */
+  profit: number | null;
+  fees: number | null;
   orders: number;
   units: number;
   unshipped: number;
   daily: number[];
-  prior?: { revenue: number; orders: number; units: number };
+  prior?: { revenue: number; profit: number | null; orders: number; units: number };
   recent: EtsyRecentSale[];
 }
 

@@ -19,7 +19,7 @@ import { resolveImagePath } from './storage';
 import { getComparisonDates, type DateRangeKey } from './dates';
 import type { DashboardSection, EtsyData } from './dashboard-types';
 import type { EbayListEvent } from './list-progress';
-import { etsyErrorText, etsyMoney, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from './etsy-listing';
+import { etsyErrorText, etsyLedgerProfit, etsyMoney, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from './etsy-listing';
 
 const API = 'https://api.etsy.com/v3';
 const AUTH_URL = 'https://www.etsy.com/oauth/connect';
@@ -618,8 +618,33 @@ function summarize(receipts: EtsyReceipt[]) {
   );
 }
 
+interface EtsyLedgerEntry {
+  amount?: number;
+  ledger_type?: string;
+}
+
+async function fetchLedger(creds: EtsyCreds, accessToken: string, shopId: string, from: Date, to: Date): Promise<EtsyLedgerEntry[]> {
+  const entries: EtsyLedgerEntry[] = [];
+  for (let page = 0; page < 15; page += 1) {
+    const query = new URLSearchParams({
+      min_created: String(Math.floor(from.getTime() / 1000)),
+      max_created: String(Math.floor(to.getTime() / 1000)),
+      limit: '100',
+      offset: String(page * 100),
+    });
+    const body = await readJson<{ results?: EtsyLedgerEntry[] }>(
+      await etsyFetch(creds, accessToken, `/application/shops/${shopId}/payment-account/ledger-entries?${query}`)
+    );
+    const batch = body.results ?? [];
+    entries.push(...batch);
+    if (batch.length < 100) break;
+    await sleep(120);
+  }
+  return entries;
+}
+
 function emptyEtsy(state: EtsyData['state'], shop: string | null = null): EtsyData {
-  return { state, shop, revenue: 0, orders: 0, units: 0, unshipped: 0, daily: [], recent: [] };
+  return { state, shop, revenue: 0, profit: null, fees: null, orders: 0, units: 0, unshipped: 0, daily: [], recent: [] };
 }
 
 export async function getEtsyDashboard(
@@ -631,26 +656,37 @@ export async function getEtsyDashboard(
     if (!connection?.shopId) return { status: 'ok', data: emptyEtsy('not_connected') };
     const { creds, accessToken, shopId } = await getValidEtsyAccessToken(userEmail);
     const { prevFrom, prevTo } = getComparisonDates(window.key, window.from, window.to);
-    const [current, prior, open] = await Promise.all([
+    const [current, prior, open, currentLedger, priorLedger] = await Promise.all([
       fetchReceipts(creds, accessToken, shopId, window.from, window.to),
       fetchReceipts(creds, accessToken, shopId, prevFrom, prevTo),
       readJson<{ count?: number; results?: EtsyReceipt[] }>(
         await etsyFetch(creds, accessToken, `/application/shops/${shopId}/receipts?was_shipped=false&was_paid=true&limit=100`)
       ).catch((): { count?: number; results?: EtsyReceipt[] } => ({ results: [] })),
+      fetchLedger(creds, accessToken, shopId, window.from, window.to).catch(() => null),
+      fetchLedger(creds, accessToken, shopId, prevFrom, prevTo).catch(() => null),
     ]);
     const totals = summarize(current);
     const previous = summarize(prior);
+    const profit = currentLedger ? etsyLedgerProfit(currentLedger) : null;
+    const priorProfit = priorLedger ? etsyLedgerProfit(priorLedger) : null;
     return {
       status: 'ok',
       data: {
         state: 'ok',
         shop: connection.shopName,
         revenue: Math.round(totals.revenue * 100) / 100,
+        profit: profit?.profit ?? null,
+        fees: profit?.fees ?? null,
         orders: totals.orders,
         units: totals.units,
         unshipped: open.results?.length ?? open.count ?? 0,
         daily: dailyRevenue(window.from, window.to, current),
-        prior: { revenue: Math.round(previous.revenue * 100) / 100, orders: previous.orders, units: previous.units },
+        prior: {
+          revenue: Math.round(previous.revenue * 100) / 100,
+          profit: priorProfit?.profit ?? null,
+          orders: previous.orders,
+          units: previous.units,
+        },
         recent: current.slice(0, 8).map((receipt) => ({
           id: String(receipt.receipt_id ?? ''),
           title: receipt.transactions?.[0]?.title || `Receipt ${receipt.receipt_id ?? ''}`,

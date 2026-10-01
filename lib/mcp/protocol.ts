@@ -45,7 +45,7 @@ export async function dispatchMcp(message: JsonRpc, session: McpSession | null):
       protocolVersion,
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: 'lotlister', version: '1.0.0' },
-      instructions: 'Read store details and create Etsy drafts. Publishing and deleting are not available.',
+      instructions: 'Read store details and create unpublished Etsy drafts for cards or other physical products. Publishing and deleting are not available.',
     });
   }
 
