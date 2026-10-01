@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { etsyErrorText, etsyTags, etsyTitle, plainDescription, whenMadeFromYear } from '../lib/etsy-listing';
+import { etsyErrorText, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from '../lib/etsy-listing';
 
 describe('etsy listing fields', () => {
   it('maps a card year onto an Etsy era', () => {
@@ -16,6 +16,15 @@ describe('etsy listing fields', () => {
       'Shohei Ohtani',
       'trading card',
     ]);
+  });
+
+  it('reads the shop Etsy returns directly, not only a list', () => {
+    expect(shopFromEtsyPayload({ shop_id: 555, shop_name: 'OBDprints' })).toEqual({
+      shopId: '555',
+      shopName: 'OBDprints',
+    });
+    expect(shopFromEtsyPayload({ results: [{ shop_id: 9, shop_name: 'Other' }] })?.shopId).toBe('9');
+    expect(shopFromEtsyPayload({})).toBeNull();
   });
 
   it('turns a description template into plain text and keeps the Etsy error', () => {

@@ -64,6 +64,18 @@ export function etsyTags(parts: Array<string | number | null | undefined>): stri
   return tags;
 }
 
+export function shopFromEtsyPayload(body: unknown): { shopId: string; shopName: string } | null {
+  if (!body || typeof body !== 'object') return null;
+  const record = body as {
+    shop_id?: number | string;
+    shop_name?: string;
+    results?: { shop_id?: number | string; shop_name?: string }[];
+  };
+  const shop = record.shop_id ? record : record.results?.find((item) => item.shop_id);
+  if (!shop?.shop_id) return null;
+  return { shopId: String(shop.shop_id), shopName: shop.shop_name?.trim() || 'Etsy shop' };
+}
+
 export function etsyMoney(value: { amount?: number; divisor?: number } | null | undefined): number {
   if (!value || !value.divisor) return 0;
   const amount = Number(value.amount);

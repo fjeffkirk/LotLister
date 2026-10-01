@@ -19,7 +19,7 @@ import { resolveImagePath } from './storage';
 import { getComparisonDates, type DateRangeKey } from './dates';
 import type { DashboardSection, EtsyData } from './dashboard-types';
 import type { EbayListEvent } from './list-progress';
-import { etsyErrorText, etsyMoney, etsyTags, etsyTitle, plainDescription, whenMadeFromYear } from './etsy-listing';
+import { etsyErrorText, etsyMoney, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from './etsy-listing';
 
 const API = 'https://api.etsy.com/v3';
 const AUTH_URL = 'https://www.etsy.com/oauth/connect';
@@ -156,11 +156,11 @@ export async function saveEtsyConnection(userEmail: string, token: EtsyTokenResp
   if (!creds) throw new Error('Etsy is not configured on the server');
   const etsyUserId = userIdFromToken(token.access_token);
   if (!etsyUserId) throw new Error('Etsy did not include a user id on the access token');
-  const shops = await readJson<{ results?: { shop_id?: number; shop_name?: string }[] }>(
+  const shops = await readJson<unknown>(
     await etsyFetch(creds, token.access_token, `/application/users/${etsyUserId}/shops`)
   );
-  const shop = shops.results?.[0];
-  if (!shop?.shop_id) throw new Error('This Etsy account does not have a shop yet');
+  const shop = shopFromEtsyPayload(shops);
+  if (!shop) throw new Error('This Etsy account does not have a shop yet');
   await prisma.etsyConnection.upsert({
     where: { userEmail },
     create: {
@@ -169,19 +169,19 @@ export async function saveEtsyConnection(userEmail: string, token: EtsyTokenResp
       refreshToken: token.refresh_token,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
       etsyUserId,
-      shopId: String(shop.shop_id),
-      shopName: shop.shop_name ?? null,
+      shopId: shop.shopId,
+      shopName: shop.shopName,
     },
     update: {
       accessToken: token.access_token,
       refreshToken: token.refresh_token,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
       etsyUserId,
-      shopId: String(shop.shop_id),
-      shopName: shop.shop_name ?? null,
+      shopId: shop.shopId,
+      shopName: shop.shopName,
     },
   });
-  return { shopId: String(shop.shop_id), shopName: shop.shop_name ?? 'Etsy shop' };
+  return shop;
 }
 
 export interface EtsyOption {
