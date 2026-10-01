@@ -102,7 +102,8 @@ export async function POST(request: NextRequest) {
   const back = new URL(redirectUri);
   back.searchParams.set('code', code);
   back.searchParams.set('state', state);
-  const response = NextResponse.redirect(back);
+  // 303 forces the browser to GET ChatGPT's callback. 307 would replay this POST and ChatGPT returns Bad Request.
+  const response = NextResponse.redirect(back, 303);
   response.cookies.set(CONSENT_COOKIE, '', { path: '/', maxAge: 0 });
   return response;
 }
