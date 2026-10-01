@@ -66,7 +66,7 @@ export interface ListingsData {
   scheduled: number;
 }
 
-export type DashboardChannel = 'all' | 'ebay' | 'shopify';
+export type DashboardChannel = 'all' | 'ebay' | 'shopify' | 'etsy';
 
 export interface PeriodChange {
   pct: number;
@@ -130,6 +130,26 @@ export interface ShopifyData {
   recent: ShopifyRecentOrder[];
 }
 
+export interface EtsyRecentSale {
+  id: string;
+  title: string;
+  total: number;
+  soldAt: string;
+  href: string;
+}
+
+export interface EtsyData {
+  state: 'ok' | 'not_connected';
+  shop: string | null;
+  revenue: number;
+  orders: number;
+  units: number;
+  unshipped: number;
+  daily: number[];
+  prior?: { revenue: number; orders: number; units: number };
+  recent: EtsyRecentSale[];
+}
+
 export interface DashboardData {
   state: 'ok' | 'not_configured' | 'not_connected';
   account: string | null;
@@ -138,4 +158,5 @@ export interface DashboardData {
   shipping: DashboardSection<ShippingData>;
   listings: DashboardSection<ListingsData>;
   shopify?: DashboardSection<ShopifyData>;
+  etsy?: DashboardSection<EtsyData>;
 }

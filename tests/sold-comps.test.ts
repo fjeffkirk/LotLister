@@ -33,6 +33,8 @@ function card(overrides: Partial<CardItem> = {}): CardItem & { images: CardImage
     psaImport: true,
     ebayItemId: null,
     ebayListedAt: null,
+    etsyListingId: null,
+    etsyListedAt: null,
     sortOrder: 0,
     createdAt: new Date(),
     updatedAt: new Date(),

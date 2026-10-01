@@ -3,6 +3,7 @@ import { fromZonedTime } from 'date-fns-tz';
 import { getUserEmail } from '../../../lib/auth';
 import { DateRangeKey, rangeToDates } from '../../../lib/dates';
 import { getDashboardData } from '../../../lib/ebay-dashboard';
+import { getEtsyDashboard } from '../../../lib/etsy';
 import { getShopifyDashboard } from '../../../lib/shopify-dashboard';
 
 export const dynamic = 'force-dynamic';
@@ -40,12 +41,13 @@ export async function GET(request: NextRequest) {
   const window = dashboardWindow(request);
 
   try {
-    const [ebay, shopify] = await Promise.all([
+    const [ebay, shopify, etsy] = await Promise.all([
       getDashboardData(userEmail, tzOffsetMinutes, window),
       getShopifyDashboard(window),
+      getEtsyDashboard(userEmail, window),
     ]);
     return NextResponse.json(
-      { success: true, data: { ...ebay, shopify } },
+      { success: true, data: { ...ebay, shopify, etsy } },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {

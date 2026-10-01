@@ -69,7 +69,9 @@ export async function GET(request: NextRequest) {
       create: { email: identity.userId },
     });
 
-    const response = redirectTo(base, '/lots');
+    const returnTo = request.cookies.get('lotlister_oauth_return')?.value ?? '';
+    const safeReturn = /^\/oauth\/authorize\?[A-Za-z0-9_&=%+.\-~]{1,800}$/.test(returnTo) ? returnTo : '';
+    const response = redirectTo(base, safeReturn || '/lots');
     response.cookies.set(SESSION_COOKIE, createSessionToken(identity.userId, identity.username, secret), {
       httpOnly: true,
       sameSite: 'lax',
@@ -77,6 +79,7 @@ export async function GET(request: NextRequest) {
       path: '/',
       maxAge: SESSION_MAX_AGE_SECONDS,
     });
+    if (safeReturn) response.cookies.set('lotlister_oauth_return', '', { path: '/', maxAge: 0 });
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'eBay sign-in failed';

@@ -92,6 +92,7 @@ export default function LotPage() {
   const [exporting, setExporting] = useState(false);
   const [listing, setListing] = useState(false);
   const [ebayReady, setEbayReady] = useState<boolean | null>(null);
+  const [etsyReady, setEtsyReady] = useState<boolean | null>(null);
   const [listRun, setListRun] = useState<ListRun | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -143,6 +144,11 @@ export default function LotPage() {
     return lot.cardItems.filter((card) => isCardReadyForExport(card) && !card.ebayItemId).length;
   }, [lot]);
 
+  const etsyListableCount = useMemo(() => {
+    if (!lot) return 0;
+    return lot.cardItems.filter((card) => isCardReadyForExport(card) && !card.etsyListingId).length;
+  }, [lot]);
+
   const listThumbs = useMemo(() => {
     const thumbs: Record<string, string> = {};
     for (const card of lot?.cardItems ?? []) {
@@ -169,6 +175,12 @@ export default function LotPage() {
         }
       })
       .catch(() => setEbayReady(false));
+    fetch('/api/etsy/settings')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setEtsyReady(Boolean(data.data.configured && data.data.connected));
+      })
+      .catch(() => setEtsyReady(false));
   }, [lotId]);
 
   async function fetchLot() {
@@ -421,6 +433,14 @@ export default function LotPage() {
     setShowExportSettings(true);
   }
 
+  function handleEtsyList() {
+    if (!etsyReady) {
+      router.push('/settings#etsy');
+      return;
+    }
+    void performList('Etsy');
+  }
+
   function handleExportClick(type: 'raw' | 'ebay') {
 
     if (type === 'ebay') {
@@ -505,9 +525,9 @@ export default function LotPage() {
     }
   }
 
-  function previewListRun(): ListRun {
+  function previewListRun(channel: 'eBay' | 'Etsy'): ListRun {
     const cards = (lot?.cardItems ?? [])
-      .filter((card) => isCardReadyForExport(card) && !card.ebayItemId)
+      .filter((card) => isCardReadyForExport(card) && (channel === 'Etsy' ? !card.etsyListingId : !card.ebayItemId))
       .sort((a, b) => a.sortOrder - b.sortOrder);
     return {
       phase: 'saving',
@@ -516,10 +536,11 @@ export default function LotPage() {
       skippedNotReady: 0,
       skippedAlreadyListed: 0,
       remainingReady: 0,
+      channel,
       items: cards.map((card) => ({
         cardId: card.id,
         title: card.title?.trim() || 'Untitled card',
-        format: cardListingType(card, { listingType: lot?.exportProfile?.listingType }) === 'BuyItNow' ? 'Buy Now' : 'Auction',
+        format: channel === 'Etsy' ? 'Buy Now' : cardListingType(card, { listingType: lot?.exportProfile?.listingType }) === 'BuyItNow' ? 'Buy Now' : 'Auction',
         price: card.salePrice === null || card.salePrice === undefined ? null : Number(card.salePrice),
         category: card.category?.trim() || '',
         status: 'waiting',
@@ -527,17 +548,17 @@ export default function LotPage() {
     };
   }
 
-  async function performList() {
+  async function performList(channel: 'eBay' | 'Etsy' = 'eBay') {
     setListing(true);
     setError(null);
     setShowExportSettings(false);
     setExportModeSettings(false);
-    setListRun(previewListRun());
+    setListRun(previewListRun(channel));
     try {
       await saveAll();
-      setListRun((run) => (run ? { ...run, phase: 'running', detail: 'Connecting to eBay' } : run));
+      setListRun((run) => (run ? { ...run, phase: 'running', detail: `Connecting to ${channel}` } : run));
       const timezoneOffset = new Date().getTimezoneOffset();
-      const res = await fetch(`/api/lots/${lotId}/list-ebay`, {
+      const res = await fetch(channel === 'Etsy' ? `/api/lots/${lotId}/list-etsy` : `/api/lots/${lotId}/list-ebay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tzOffset: timezoneOffset }),
@@ -556,7 +577,7 @@ export default function LotPage() {
       if (!sawDone) {
         setListRun((run) =>
           run && run.phase !== 'error' && run.phase !== 'done'
-            ? { ...run, phase: 'error', detail: 'Listing stopped before eBay finished' }
+            ? { ...run, phase: 'error', detail: `Listing stopped before ${channel} finished` }
             : run
         );
       }
@@ -594,6 +615,7 @@ export default function LotPage() {
     const group = lot.name;
     return [
       { id: 'lot-list', label: listableCount > 0 ? `List ${listableCount} ready cards on eBay` : 'List on eBay', group, icon: <TagIcon />, disabled: ebayReady === true && listableCount === 0, run: handleListClick },
+      { id: 'lot-etsy', label: etsyListableCount > 0 ? `List ${etsyListableCount} ready cards on Etsy` : 'List on Etsy', group, icon: <TagIcon />, disabled: etsyReady === true && etsyListableCount === 0, run: handleEtsyList },
       { id: 'lot-import', label: 'Import photos', group, icon: <UploadIcon />, keywords: 'upload add cards', run: () => router.push(`/lots/${lotId}/import`) },
       { id: 'lot-psa', label: 'Import from PSA cert numbers', group, icon: <ShieldIcon />, keywords: 'add cards graded', run: () => setShowPSAImport(true) },
       { id: 'lot-defaults', label: 'Lot defaults', group, icon: <SlidersIcon />, keywords: 'template', run: () => setShowDefaults(true) },
@@ -602,7 +624,7 @@ export default function LotPage() {
       { id: 'lot-settings', label: 'Listing & export settings', group, icon: <GearIcon />, keywords: 'shipping returns', run: () => setShowExportSettings(true) },
       { id: 'lot-complete', label: lot.completed ? 'Mark lot in progress' : 'Mark lot completed', group, icon: <CheckCircleIcon />, run: toggleLotComplete },
     ];
-  }, [lot?.name, lot?.completed, listableCount, ebayReady, exportReadiness.ready, lotId]);
+  }, [lot?.name, lot?.completed, listableCount, etsyListableCount, ebayReady, etsyReady, exportReadiness.ready, lotId]);
   useRegisterCommands('lot', commands);
 
   useEffect(() => {
@@ -799,6 +821,28 @@ export default function LotPage() {
                 </>
               )}
             </Dropdown>
+
+            <button
+              type="button"
+              onClick={handleEtsyList}
+              disabled={exporting || listing || lot.cardItems.length === 0 || (etsyReady === true && etsyListableCount === 0)}
+              className="btn btn-secondary px-3 sm:px-4"
+              title={
+                etsyReady === false
+                  ? 'Connect Etsy in Settings first'
+                  : etsyListableCount === 0
+                    ? 'No ready cards left to list on Etsy'
+                    : `Publish ${etsyListableCount} ready ${etsyListableCount === 1 ? 'card' : 'cards'} on Etsy`
+              }
+            >
+              <span className="hidden sm:inline">List on Etsy</span>
+              <span className="sm:hidden">Etsy</span>
+              {etsyReady && etsyListableCount > 0 && (
+                <span className="ml-0.5 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-white/10 text-[11px] font-semibold flex items-center justify-center tabular-nums">
+                  {etsyListableCount}
+                </span>
+              )}
+            </button>
 
             <button
               onClick={handleListClick}

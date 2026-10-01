@@ -137,7 +137,7 @@ export function EbayOverview() {
       setCustomTo(savedTo);
     }
     const savedChannel = window.localStorage.getItem(CHANNEL_STORAGE_KEY);
-    if (savedChannel === 'all' || savedChannel === 'ebay' || savedChannel === 'shopify') setChannel(savedChannel);
+    if (savedChannel === 'all' || savedChannel === 'ebay' || savedChannel === 'shopify' || savedChannel === 'etsy') setChannel(savedChannel);
     setPrefsReady(true);
   }, []);
 
@@ -188,6 +188,8 @@ export function EbayOverview() {
   const listings = sectionData(data?.listings);
   const shopify = sectionData(data?.shopify);
   const shopifyReady = shopify?.state === 'ok';
+  const etsy = data?.etsy?.status === 'ok' ? data.etsy.data : null;
+  const etsyReady = etsy?.state === 'ok';
   const stats: RangeStats | null = sales?.focus ?? (sales ? sales.ranges['30'] : null);
   const periodLabel = range === 'custom' && customFrom && customTo ? `${customFrom} – ${customTo}` : range === 'custom' ? 'Today' : PRESET_LABELS[range];
   const comparedWith = compareWith(range);
@@ -202,24 +204,32 @@ export function EbayOverview() {
   const ebayNetChange = stats && ebayPrior ? periodChange(stats.summary.net, ebayPrior.net) : undefined;
   const needsReconnect = [data?.sales, data?.shipping, data?.listings].some((s) => s?.status === 'reconnect');
   const busy = loading;
-  const showEbayConnect = Boolean(data && data.state !== 'ok' && !shopifyReady && channel !== 'shopify');
+  const showEbayConnect = Boolean(data && data.state !== 'ok' && !shopifyReady && (channel === 'ebay' || channel === 'all'));
 
-  const combinedSales = (stats?.summary.gross ?? 0) + (shopRange?.revenue ?? 0);
+  const combinedSales = (stats?.summary.gross ?? 0) + (shopRange?.revenue ?? 0) + (etsyReady ? etsy?.revenue ?? 0 : 0);
   const combinedNet = (stats?.summary.net ?? 0) + (shopRange?.net ?? 0);
-  const allSalesChange = periodChange(combinedSales, (ebayPrior?.gross ?? 0) + (shopRange?.prior?.revenue ?? 0));
+  const allSalesChange = periodChange(
+    combinedSales,
+    (ebayPrior?.gross ?? 0) + (shopRange?.prior?.revenue ?? 0) + (etsy?.prior?.revenue ?? 0)
+  );
   const allNetChange = periodChange(combinedNet, (ebayPrior?.net ?? 0) + (shopRange?.prior?.net ?? 0));
-  const combinedOrders = (stats?.summary.orders ?? 0) + (shopRange?.orders ?? 0);
-  const combinedUnits = (stats?.summary.units ?? 0) + (shopRange?.units ?? 0);
-  const combinedDaily = mergeDaily(stats?.summary.daily, shopRange?.daily);
-  const toShip = (shipping?.orders ?? 0) + (shopify?.unfulfilled ?? 0);
+  const combinedOrders = (stats?.summary.orders ?? 0) + (shopRange?.orders ?? 0) + (etsyReady ? etsy?.orders ?? 0 : 0);
+  const combinedUnits = (stats?.summary.units ?? 0) + (shopRange?.units ?? 0) + (etsyReady ? etsy?.units ?? 0 : 0);
+  const combinedDaily = mergeDaily(mergeDaily(stats?.summary.daily, shopRange?.daily), etsyReady ? etsy?.daily : undefined);
+  const toShip = (shipping?.orders ?? 0) + (shopify?.unfulfilled ?? 0) + (etsyReady ? etsy?.unshipped ?? 0 : 0);
   const overdue = (shipping?.overdue ?? 0) + (shopify?.overdue ?? 0);
+  const etsySalesChange = etsy?.prior ? periodChange(etsy.revenue, etsy.prior.revenue) : undefined;
+  const etsyOrdersChange = etsy?.prior ? periodChange(etsy.orders, etsy.prior.orders) : undefined;
+  const etsyUnitsChange = etsy?.prior ? periodChange(etsy.units, etsy.prior.units) : undefined;
 
   const liveLabel =
     channel === 'shopify'
       ? `Live from Shopify${shopify?.shop ? ` · ${shopify.shop}` : ''}`
       : channel === 'ebay'
         ? `Live from eBay${data?.account ? ` · ${data.account}` : ''}`
-        : `eBay + Shopify${data?.account || shopify?.shop ? ` · ${[data?.account, shopify?.shop].filter(Boolean).join(' · ')}` : ''}`;
+        : channel === 'etsy'
+          ? `Live from Etsy${etsy?.shop ? ` · ${etsy.shop}` : ''}`
+          : `eBay + Shopify + Etsy${[data?.account, shopify?.shop, etsy?.shop].filter(Boolean).length ? ` · ${[data?.account, shopify?.shop, etsy?.shop].filter(Boolean).join(' · ')}` : ''}`;
 
   return (
     <section className="space-y-4">
@@ -268,13 +278,17 @@ export function EbayOverview() {
         </div>
       )}
 
-      {needsReconnect && channel !== 'shopify' && <ReconnectBanner />}
+      {needsReconnect && (channel === 'ebay' || channel === 'all') && <ReconnectBanner />}
       {showEbayConnect && data && (data.state === 'not_configured' || data.state === 'not_connected') && (
         <ConnectBanner state={data.state} />
       )}
-      {channel !== 'ebay' && data?.shopify?.status === 'ok' && shopify?.state === 'not_configured' && <ShopifyConnectBanner />}
-      {channel !== 'ebay' && data?.shopify?.status === 'error' && (
+      {(channel === 'shopify' || channel === 'all') && data?.shopify?.status === 'ok' && shopify?.state === 'not_configured' && <ShopifyConnectBanner />}
+      {(channel === 'shopify' || channel === 'all') && data?.shopify?.status === 'error' && (
         <div className="panel px-4 py-3 text-sm text-surface-400">{data.shopify.message}</div>
+      )}
+      {(channel === 'etsy' || channel === 'all') && etsy?.state === 'not_connected' && <EtsyConnectBanner />}
+      {channel === 'etsy' && data?.etsy?.status === 'error' && (
+        <div className="panel px-4 py-3 text-sm text-surface-400">{data.etsy.message}</div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -359,6 +373,69 @@ export function EbayOverview() {
               sub={listings ? `${money(listings.value)} listed · ${plural(listings.watchers, 'watcher')}` : null}
               href={SELLER_HUB.active}
               footer={listings && listings.scheduled > 0 ? <FootNote>{listings.scheduled.toLocaleString()} scheduled to start</FootNote> : null}
+            />
+          </>
+        ) : channel === 'etsy' ? (
+          <>
+            <MetricTile
+              icon={<TrendIcon size={16} />}
+              tone="primary"
+              label="Sales"
+              suffix={periodLabel}
+              loading={busy}
+              section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
+              value={etsy ? money(etsy.revenue) : null}
+              sub={etsy ? `${plural(etsy.orders, 'order')} · ${plural(etsy.units, 'item')}` : null}
+              href="https://www.etsy.com/your/orders/sold"
+              title="Item price plus shipping the buyer paid, before tax."
+              delta={etsySalesChange}
+              deltaLabel={comparedWith}
+              footer={
+                etsy ? (
+                  <div className="space-y-2">
+                    {etsy.revenue > 0 && <Sparkline values={etsy.daily} />}
+                    <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(etsy.revenue, rangeDays))}</FootNote>
+                  </div>
+                ) : null
+              }
+            />
+            <MetricTile
+              icon={<WalletIcon size={16} />}
+              tone="emerald"
+              label="Orders"
+              suffix={periodLabel}
+              loading={busy}
+              section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
+              value={etsy ? etsy.orders.toLocaleString() : null}
+              sub={etsy ? `${plural(etsy.orders, 'order')}` : null}
+              delta={etsyOrdersChange}
+              deltaLabel={comparedWith}
+              footer={etsy ? <FootNote title="This range stretched across 365 days.">Over 365 days {Math.round(annualized(etsy.orders, rangeDays)).toLocaleString()}</FootNote> : null}
+            />
+            <MetricTile
+              icon={<TagIcon size={16} />}
+              tone="violet"
+              label="Items sold"
+              shortLabel="Items"
+              suffix={periodLabel}
+              loading={busy}
+              section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
+              value={etsy ? etsy.units.toLocaleString() : null}
+              sub={etsy ? `${plural(etsy.units, 'item')}` : null}
+              delta={etsyUnitsChange}
+              deltaLabel={comparedWith}
+              footer={etsy ? <FootNote title="This range stretched across 365 days.">Over 365 days {Math.round(annualized(etsy.units, rangeDays)).toLocaleString()}</FootNote> : null}
+            />
+            <MetricTile
+              icon={<TruckIcon size={16} />}
+              tone={etsy && etsy.unshipped > 0 ? 'amber' : 'emerald'}
+              label="Awaiting shipment"
+              shortLabel="To ship"
+              loading={busy}
+              section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
+              value={etsy ? etsy.unshipped.toLocaleString() : null}
+              sub="Open paid orders"
+              href="https://www.etsy.com/your/orders/sold"
             />
           </>
         ) : channel === 'shopify' ? (
@@ -455,7 +532,7 @@ export function EbayOverview() {
               section={data?.sales?.status === 'ok' || shopifyReady ? { status: 'ok', data: true } : data?.sales}
               value={!busy ? money(combinedSales) : null}
               sub={`${plural(combinedOrders, 'order')} · ${plural(combinedUnits, 'item')}`}
-              title="eBay sales (item + shipping) plus Shopify order totals."
+              title="eBay sales (item + shipping), Shopify order totals, and Etsy item plus shipping."
               delta={!busy ? allSalesChange : undefined}
               deltaLabel={comparedWith}
               footer={
@@ -539,6 +616,22 @@ export function EbayOverview() {
           />
           <RecentSales className="lg:col-span-2" loading={busy} section={data?.sales} />
         </div>
+      ) : channel === 'etsy' ? (
+        <div className="panel p-4 sm:p-5">
+          <h3 className="text-sm font-medium text-white">Recent Etsy orders</h3>
+          {etsy && etsy.recent.length > 0 ? (
+            <ul className="mt-3 divide-y divide-white/[0.06]">
+              {etsy.recent.map((sale) => (
+                <li key={sale.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="min-w-0 truncate text-surface-200">{sale.title}</span>
+                  <span className="shrink-0 tabular-nums text-surface-400">{money(sale.total)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-surface-500">No Etsy orders in this range.</p>
+          )}
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
           <TopShopifyProducts className="lg:col-span-3" label={periodLabel} loading={busy} shopify={shopify} section={data?.shopify} />
@@ -564,6 +657,7 @@ function ChannelToggle({ value, onChange }: { value: DashboardChannel; onChange:
   const options: { id: DashboardChannel; label: string }[] = [
     { id: 'shopify', label: 'Shopify' },
     { id: 'ebay', label: 'eBay' },
+    { id: 'etsy', label: 'Etsy' },
     { id: 'all', label: 'All' },
   ];
   return (
@@ -1173,6 +1267,18 @@ function AdSpendBar({
           )}
         </form>
       )}
+    </div>
+  );
+}
+
+function EtsyConnectBanner() {
+  return (
+    <div className="panel flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 border-primary-500/30 bg-primary-500/[0.07]">
+      <div className="text-sm">
+        <div className="font-medium text-white">Connect Etsy to include shop sales here</div>
+        <div className="text-xs text-surface-400 mt-0.5">Listing cards on Etsy uses the same lots. Pick a shipping profile in Settings after you connect.</div>
+      </div>
+      <a href="/settings#etsy" className="btn btn-secondary btn-sm flex-shrink-0">Etsy settings</a>
     </div>
   );
 }

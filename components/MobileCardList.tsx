@@ -74,6 +74,8 @@ export default function MobileCardList({ cards, lotListingType, searchText, onCa
                   <span className="mt-1 flex items-center gap-2">
                     {card.ebayItemId ? (
                       <span className="chip chip-info">Listed</span>
+                    ) : card.etsyListingId ? (
+                      <span className="chip chip-info">Etsy</span>
                     ) : missing.length === 0 ? (
                       <span className="chip chip-ready"><BoltIcon size={11} /> Ready</span>
                     ) : (

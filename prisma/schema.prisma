@@ -68,6 +68,8 @@ model CardItem {
   psaImport      Boolean   @default(false) // Created via PSA cert import (subset/parallel optional for completion)
   ebayItemId     String? // Set after a successful Trading API AddItem
   ebayListedAt   DateTime?
+  etsyListingId  String? // Set after a listing is published on Etsy
+  etsyListedAt   DateTime?
 
   @@index([lotId])
 }
@@ -159,6 +161,56 @@ model EbayConnection {
 
   @@index([ebayUserId])
   @@index([ebayUsername])
+}
+
+// Each LotLister user can connect one Etsy shop and list the same cards there.
+model EtsyConnection {
+  userEmail          String   @id
+  accessToken        String
+  refreshToken       String
+  accessExpiresAt    DateTime
+  etsyUserId         String?
+  shopId             String?
+  shopName           String?
+  shippingProfileId  String?
+  readinessStateId   String?
+  returnPolicyId     String?
+  taxonomyId         Int?
+  updatedAt          DateTime @updatedAt
+}
+
+// OAuth clients ChatGPT registers against the single LotLister MCP endpoint.
+model McpClient {
+  id           String   @id
+  name         String?
+  redirectUris String
+  createdAt    DateTime @default(now())
+}
+
+model McpAuthCode {
+  codeHash      String   @id
+  clientId      String
+  userEmail     String
+  redirectUri   String
+  codeChallenge String
+  scopes        String
+  expiresAt     DateTime
+
+  @@index([expiresAt])
+}
+
+model McpToken {
+  tokenHash String   @id
+  kind      String
+  clientId  String
+  userEmail String
+  scopes    String
+  familyId  String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([familyId])
+  @@index([expiresAt])
 }
 
 // Player/character name read from a listing's item specifics (Trading GetItem), so the

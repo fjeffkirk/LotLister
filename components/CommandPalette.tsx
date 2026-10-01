@@ -94,7 +94,7 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
       { id: 'nav-lots', label: 'Go to dashboard', group: 'General', icon: <LayersIcon />, keywords: 'home lots sales ebay shopify', run: () => router.push('/lots') },
       { id: 'nav-orders', label: 'Shopify orders to ship', group: 'General', icon: <LayersIcon />, keywords: 'fulfillment packing', run: () => router.push('/ops/orders') },
       { id: 'nav-inventory', label: 'Shopify low stock', group: 'General', icon: <LayersIcon />, keywords: 'inventory reorder', run: () => router.push('/ops/inventory') },
-      { id: 'nav-settings', label: 'Settings', group: 'General', icon: <GearIcon />, keywords: 'account ebay shopify margin store resync preferences ads', run: () => router.push('/settings') },
+      { id: 'nav-settings', label: 'Settings', group: 'General', icon: <GearIcon />, keywords: 'account ebay etsy shopify margin store resync preferences ads', run: () => router.push('/settings') },
       { id: 'nav-signout', label: 'Sign out', group: 'General', icon: <LogOutIcon />, keywords: 'logout', run: () => void signOut() },
     ];
     const lotCommands: Command[] = lots.map((lot) => ({

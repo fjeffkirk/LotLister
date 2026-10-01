@@ -203,6 +203,7 @@ function StatusCell(props: ICellRendererParams<CardItemWithImages>) {
   const card = props.data;
   if (!card) return null;
   if (card.ebayItemId) return <span className="chip chip-info">Listed</span>;
+  if (card.etsyListingId) return <span className="chip chip-info">Etsy</span>;
   const missing = missingFieldLabels(card);
   if (missing.length === 0) {
     return (
@@ -564,9 +565,9 @@ export default function CardGrid({
         pinned: 'left',
         cellDataType: false,
         cellRenderer: StatusCell,
-        valueGetter: (params) => (params.data ? (params.data.ebayItemId ? -1 : missingFieldLabels(params.data).length) : 0),
+        valueGetter: (params) => (params.data ? (params.data.ebayItemId || params.data.etsyListingId ? -1 : missingFieldLabels(params.data).length) : 0),
         tooltipValueGetter: (params) => {
-          if (!params.data || params.data.ebayItemId) return undefined;
+          if (!params.data || params.data.ebayItemId || params.data.etsyListingId) return undefined;
           const missing = missingFieldLabels(params.data);
           return missing.length > 0 ? `Still needs: ${missing.join(', ')}` : 'Ready to list';
         },

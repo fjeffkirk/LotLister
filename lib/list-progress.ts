@@ -31,6 +31,7 @@ export type EbayListEvent =
       skippedAlreadyListed: number;
       remainingReady: number;
       cards: EbayListQueueCard[];
+      channel?: string;
     }
   | { type: 'sending'; cardId: string; index: number; total: number }
   | { type: 'result'; index: number; total: number; result: ListEventResult }
@@ -56,6 +57,7 @@ export interface ListRun {
   skippedAlreadyListed: number;
   remainingReady: number;
   items: ListProgressItem[];
+  channel?: string;
 }
 
 export function applyListEvent(run: ListRun, event: EbayListEvent): ListRun {
@@ -65,10 +67,12 @@ export function applyListEvent(run: ListRun, event: EbayListEvent): ListRun {
 
   if (event.type === 'start') {
     const total = event.total;
+    const channel = event.channel || 'eBay';
     return {
       ...run,
+      channel,
       phase: 'running',
-      detail: total === 1 ? 'Sending 1 card to eBay' : `Sending ${total} cards to eBay`,
+      detail: total === 1 ? `Sending 1 card to ${channel}` : `Sending ${total} cards to ${channel}`,
       total,
       skippedNotReady: event.skippedNotReady,
       skippedAlreadyListed: event.skippedAlreadyListed,
@@ -127,12 +131,13 @@ export function applyListEvent(run: ListRun, event: EbayListEvent): ListRun {
 
   const listed = event.summary.listedCount;
   const failed = event.summary.failedCount;
+  const channel = run.channel || 'eBay';
   return {
     ...run,
     phase: 'done',
     detail:
       failed === 0
-        ? `${listed} ${listed === 1 ? 'card is' : 'cards are'} on eBay`
+        ? `${listed} ${listed === 1 ? 'card is' : 'cards are'} on ${channel}`
         : `Listed ${listed} · ${failed} failed`,
     total: event.summary.results.length,
     skippedNotReady: event.summary.skippedNotReady,

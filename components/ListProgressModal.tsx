@@ -37,7 +37,7 @@ export default function ListProgressModal({ run, thumbs, onClose }: ListProgress
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-white">
-                {run.phase === 'done' ? 'Listing finished' : run.phase === 'error' ? 'Listing stopped' : 'Listing on eBay'}
+                {run.phase === 'done' ? 'Listing finished' : run.phase === 'error' ? 'Listing stopped' : `Listing on ${run.channel || 'eBay'}`}
               </h2>
               <p className="text-sm text-surface-300 mt-1">{run.detail}</p>
             </div>
@@ -100,7 +100,7 @@ export default function ListProgressModal({ run, thumbs, onClose }: ListProgress
                         item.format,
                         money(item.price),
                         item.category,
-                        item.status === 'sending' ? 'Sending to eBay' : item.status === 'waiting' ? 'Waiting' : '',
+                        item.status === 'sending' ? `Sending to ${run.channel || 'eBay'}` : item.status === 'waiting' ? 'Waiting' : '',
                       ]
                         .filter(Boolean)
                         .join(' · ')}

@@ -232,6 +232,55 @@ async function fetchListings(creds: EbayCredentials, accessToken: string): Promi
   return result;
 }
 
+export async function getEbayActiveListings(userEmail: string, limit = 25): Promise<{
+  account: string | null;
+  count: number;
+  scheduled: number;
+  listings: { itemId: string; title: string; price: number; quantity: number; watchers: number; url: string }[];
+}> {
+  const creds = await getEbayCredentials();
+  if (!creds) throw new Error('eBay is not configured on the server');
+  const connection = await prisma.ebayConnection.findUnique({ where: { userEmail } });
+  if (!connection) throw new Error('Sign in with eBay in LotLister before reading listings');
+  const accessToken = await getValidEbayAccessToken(userEmail);
+  const pageSize = Math.min(Math.max(limit, 1), 50);
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <ErrorLanguage>en_US</ErrorLanguage>
+  <ActiveList>
+    <Include>true</Include>
+    <IncludeWatchCount>true</IncludeWatchCount>
+    <Pagination><EntriesPerPage>${pageSize}</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
+  </ActiveList>
+  <ScheduledList><Include>true</Include><Pagination><EntriesPerPage>1</EntriesPerPage><PageNumber>1</PageNumber></Pagination></ScheduledList>
+  <SoldList><Include>false</Include></SoldList>
+  <UnsoldList><Include>false</Include></UnsoldList>
+</GetMyeBaySellingRequest>`;
+  const { text } = await tradingCall(creds, accessToken, 'GetMyeBaySelling', xml);
+  if (!tradingOk(text)) throw tradingFailure(text, 'eBay did not return your listings');
+  const active = text.match(/<ActiveList>([\s\S]*?)<\/ActiveList>/)?.[1] ?? '';
+  const scheduledBlock = text.match(/<ScheduledList>([\s\S]*?)<\/ScheduledList>/)?.[1] ?? '';
+  const listings = [...active.matchAll(/<Item>([\s\S]*?)<\/Item>/g)].slice(0, pageSize).map((match) => {
+    const item = match[1];
+    const itemId = item.match(/<ItemID>([^<]+)<\/ItemID>/)?.[1]?.trim() ?? '';
+    const title = decodeXml(item.match(/<Title>([\s\S]*?)<\/Title>/)?.[1]?.trim() ?? '');
+    return {
+      itemId,
+      title,
+      price: xmlNumber(item, 'CurrentPrice'),
+      quantity: xmlNumber(item, 'QuantityAvailable') || 1,
+      watchers: xmlNumber(item, 'WatchCount'),
+      url: itemId ? `https://www.ebay.com/itm/${itemId}` : '',
+    };
+  });
+  return {
+    account: connection.ebayUsername ?? connection.ebayUserId,
+    count: xmlNumber(active, 'TotalNumberOfEntries'),
+    scheduled: xmlNumber(scheduledBlock, 'TotalNumberOfEntries'),
+    listings,
+  };
+}
+
 const PLAYER_SPECIFICS = ['player/athlete', 'player', 'athlete', 'character', 'card name'];
 
 function playerFromItemSpecifics(xml: string): string | null {
