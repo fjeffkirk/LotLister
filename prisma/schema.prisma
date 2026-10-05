@@ -213,6 +213,27 @@ model McpToken {
   @@index([expiresAt])
 }
 
+model EbayPricePreviewLine {
+  id             String   @id @default(cuid())
+  previewId      String
+  userEmail      String
+  itemId         String
+  variationSku   String   @default("")
+  listingSku     String?
+  title          String
+  currency       String
+  originalCents  Int
+  proposedCents  Int
+  status         String
+  reason         String?
+  verifiedCents  Int?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@unique([previewId, itemId, variationSku])
+  @@index([previewId, userEmail])
+}
+
 // Player/character name read from a listing's item specifics (Trading GetItem), so the
 // dashboard's best-sellers list only looks each sold listing up once.
 model EbayItemPlayer {

@@ -106,6 +106,8 @@ async function issueTokenPair(clientId: string, userEmail: string, scopes: strin
 export async function sessionFromAccessToken(token: string): Promise<McpSession | null> {
   const row = await prisma.mcpToken.findUnique({ where: { tokenHash: hashSecret(token) } });
   if (!row || row.kind !== 'access' || row.expiresAt.getTime() < Date.now()) return null;
-  const scopes = row.scopes.split(/\s+/).filter((scope): scope is McpScope => scope === 'lotlister.read' || scope === 'lotlister.drafts');
+  const scopes = row.scopes.split(/\s+/).filter((scope): scope is McpScope =>
+    scope === 'lotlister.read' || scope === 'lotlister.drafts' || scope === 'lotlister.prices'
+  );
   return { accountId: row.userEmail, scopes, clientId: row.clientId };
 }

@@ -6,7 +6,7 @@ import { dispatchMcp } from '../lib/mcp/protocol';
 describe('LotLister MCP policy', () => {
   it('grants read and draft access, and ignores a publish scope', () => {
     expect(grantedScopes('lotlister.read lotlister.publish')).toEqual(['lotlister.read']);
-    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts']);
+    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices']);
   });
 
   it('only accepts ChatGPT redirect addresses', () => {
@@ -35,7 +35,7 @@ describe('LotLister MCP policy', () => {
     expect(names).toEqual(expect.arrayContaining(['lots_list', 'ebay_listings_get', 'etsy_receipts_get', 'shopify_summary_get']));
     expect(names).not.toContain('etsy_drafts_create');
     expect(names).not.toContain('etsy_drafts_create_product');
-    expect(names).toContain('etsy_listing_requirements_get');
+    expect(names).not.toContain('ebay_prices_apply');
 
     const denied = await dispatchMcp({
       jsonrpc: '2.0',

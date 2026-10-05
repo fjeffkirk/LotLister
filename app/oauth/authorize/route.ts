@@ -62,7 +62,8 @@ export async function GET(request: NextRequest) {
   <p>Signed in as ${escapeHtml(user.username)}. ChatGPT can:</p>
   <ul>
     <li>View lots, eBay listings, Etsy orders, and Shopify totals</li>
-    <li>Create an unpublished Etsy draft from a card</li>
+    <li>Create an unpublished Etsy draft</li>
+    <li>Change the price of an active eBay listing after a preview, when price access is included</li>
   </ul>
   <p>It cannot publish listings or delete anything.</p>
   <form method="post">${hidden}<button type="submit">Allow</button></form>

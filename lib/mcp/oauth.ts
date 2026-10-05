@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'crypto';
 
 /** Scopes this server will ever grant. Publishing is intentionally absent. */
-export const MCP_SCOPES = ['lotlister.read', 'lotlister.drafts'] as const;
+export const MCP_SCOPES = ['lotlister.read', 'lotlister.drafts', 'lotlister.prices'] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
 
 const REDIRECT_HOSTS = new Set(['chatgpt.com', 'chat.openai.com']);

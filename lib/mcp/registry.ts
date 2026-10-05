@@ -1,6 +1,6 @@
 import type { McpScope } from './oauth';
 
-export type McpEffect = 'read' | 'draft';
+export type McpEffect = 'read' | 'draft' | 'price';
 
 export interface McpContext {
   accountId: string;
@@ -10,7 +10,7 @@ export interface McpContext {
 export interface LotlisterTool {
   name: string;
   description: string;
-  /** read tools need lotlister.read. draft tools need lotlister.drafts. Nothing else can be registered. */
+  /** read tools need lotlister.read. draft tools need lotlister.drafts. price tools need lotlister.prices. */
   effect: McpEffect;
   inputSchema: Record<string, unknown>;
   handler: (ctx: McpContext, args: Record<string, unknown>) => Promise<unknown>;
@@ -27,7 +27,7 @@ const BLOCKED_NAME = /delete|destroy|remove|publish|activate|unlist|drop/i;
  * Publishing and destructive tools are rejected here until a future change allows them.
  */
 export function registerTool(tool: LotlisterTool): void {
-  if (tool.effect !== 'read' && tool.effect !== 'draft') {
+  if (tool.effect !== 'read' && tool.effect !== 'draft' && tool.effect !== 'price') {
     throw new Error(`Tool ${tool.name} uses an effect this server does not allow`);
   }
   if (BLOCKED_NAME.test(tool.name)) {
@@ -48,5 +48,7 @@ export function findTool(name: string): LotlisterTool | undefined {
 }
 
 export function scopeFor(effect: McpEffect): McpScope {
-  return effect === 'draft' ? 'lotlister.drafts' : 'lotlister.read';
+  if (effect === 'draft') return 'lotlister.drafts';
+  if (effect === 'price') return 'lotlister.prices';
+  return 'lotlister.read';
 }

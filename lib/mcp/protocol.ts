@@ -45,7 +45,7 @@ export async function dispatchMcp(message: JsonRpc, session: McpSession | null):
       protocolVersion,
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: 'lotlister', version: '1.0.0' },
-      instructions: 'Read store details and create unpublished Etsy drafts for cards or other physical products. Publishing and deleting are not available.',
+      instructions: 'Read store details, create unpublished Etsy drafts, and preview or apply eBay price changes. Publishing and deleting are not available. Apply a price preview only after the seller has reviewed it.',
     });
   }
 
@@ -77,7 +77,7 @@ export async function dispatchMcp(message: JsonRpc, session: McpSession | null):
       });
     } catch (error) {
       const messageText = error instanceof ZodError
-        ? 'Missing or invalid arguments'
+        ? `Missing or invalid arguments: ${error.issues.map((issue) => `${issue.path.join('.') || 'input'} ${issue.message}`).join('; ')}`
         : error instanceof Error
           ? error.message
           : 'Tool failed';
