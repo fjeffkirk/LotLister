@@ -30,6 +30,11 @@ export function grantedScopes(requested: string | null | undefined): McpScope[] 
   return picked.length > 0 ? picked : [...MCP_SCOPES];
 }
 
+/** The Allow button approves every capability shown on the consent screen. */
+export function consentScopes(): McpScope[] {
+  return [...MCP_SCOPES];
+}
+
 /** ChatGPT's connector redirect hosts only. Prevents an open redirect after sign-in. */
 export function assertChatGptRedirect(uri: string): string {
   let url: URL;

@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '../../../lib/auth';
-import { grantedScopes } from '../../../lib/mcp/oauth';
+import { consentScopes } from '../../../lib/mcp/oauth';
 import { getMcpClient, issueAuthCode } from '../../../lib/mcp/store';
 
 export const dynamic = 'force-dynamic';
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
   <ul>
     <li>View lots, eBay listings, Etsy orders, and Shopify totals</li>
     <li>Create an unpublished Etsy draft</li>
-    <li>Change the price of an active eBay listing after a preview, when price access is included</li>
+    <li>Change the price of an active eBay listing after you preview it</li>
   </ul>
   <p>It cannot publish listings or delete anything.</p>
   <form method="post">${hidden}<button type="submit">Allow</button></form>
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse('This ChatGPT connector is not registered', { status: 400 });
   }
 
-  const scopes = grantedScopes(String(form.get('scope') ?? ''));
+  const scopes = consentScopes();
   const code = await issueAuthCode({ clientId, userEmail: user.accountId, redirectUri, codeChallenge, scopes });
   const back = new URL(redirectUri);
   back.searchParams.set('code', code);

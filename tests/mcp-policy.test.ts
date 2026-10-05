@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertChatGptRedirect, grantedScopes, pkceChallenge } from '../lib/mcp/oauth';
+import { assertChatGptRedirect, consentScopes, grantedScopes, pkceChallenge } from '../lib/mcp/oauth';
 import { registerTool } from '../lib/mcp/registry';
 import { dispatchMcp } from '../lib/mcp/protocol';
 
@@ -7,6 +7,7 @@ describe('LotLister MCP policy', () => {
   it('grants read and draft access, and ignores a publish scope', () => {
     expect(grantedScopes('lotlister.read lotlister.publish')).toEqual(['lotlister.read']);
     expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices']);
+    expect(consentScopes()).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices']);
   });
 
   it('only accepts ChatGPT redirect addresses', () => {
