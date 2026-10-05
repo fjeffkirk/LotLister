@@ -301,6 +301,33 @@ export function reviseInventoryStatusXml(updates: { itemId: string; sku?: string
 </ReviseInventoryStatusRequest>`;
 }
 
+export interface InventoryOffer {
+  offerId?: string;
+  status?: string;
+  listing?: { listingId?: string };
+}
+
+/** Prefer the offer for this eBay item. Otherwise the published offer. */
+export function selectInventoryOffer(offers: InventoryOffer[], itemId: string): string | null {
+  const usable = offers.filter((offer) => offer.offerId);
+  const matched = usable.find((offer) => offer.listing?.listingId === itemId);
+  if (matched?.offerId) return matched.offerId;
+  const published = usable.find((offer) => offer.status === 'PUBLISHED');
+  return published?.offerId ?? usable[0]?.offerId ?? null;
+}
+
+export function inventoryUpdateError(status: number, body: unknown): string | null {
+  if (status === 403) return 'Sign in with eBay again in LotLister to change prices on Inventory API listings.';
+  const responses = body && typeof body === 'object' && 'responses' in body
+    ? (body as { responses?: { statusCode?: number; errors?: { message?: string; longMessage?: string }[] }[] }).responses
+    : undefined;
+  const failed = responses?.find((row) => (row.statusCode ?? 200) >= 400 || (row.errors?.length ?? 0) > 0);
+  const message = failed?.errors?.[0]?.longMessage || failed?.errors?.[0]?.message;
+  if (failed) return message || `eBay Inventory API rejected the price (${failed.statusCode ?? status})`;
+  if (status >= 400) return `eBay Inventory API rejected the price (${status})`;
+  return null;
+}
+
 export function inventoryPriceBody(sku: string, offerId: string, priceCents: number): string {
   return JSON.stringify({
     requests: [{

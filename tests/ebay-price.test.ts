@@ -10,8 +10,12 @@ import {
   proposePriceChanges,
   reducedCents,
   reviseInventoryStatusXml,
+  inventoryPriceBody,
+  inventoryUpdateError,
+  selectInventoryOffer,
   type ActiveListing,
 } from '../lib/ebay-price';
+import { EBAY_OAUTH_SCOPES } from '../lib/ebay';
 import { applyStoredPrices, type PriceGateway, type PriceLineStore, type StoredPriceLine } from '../lib/ebay-price-apply';
 
 const LISTING_XML = `<?xml version="1.0"?>
@@ -283,5 +287,38 @@ describe('eBay price changes', () => {
     expect(result.updated).toBe(0);
     expect(JSON.stringify(logs)).not.toMatch(/token|Bearer|secret/i);
     expect(logs[0]).toMatchObject({ listingId: '111', oldPrice: 30, newPrice: 27, outcome: 'verified' });
+  });
+});
+
+describe('Inventory API price updates', () => {
+  it('includes Inventory API access on the eBay sign-in screen', () => {
+    expect(EBAY_OAUTH_SCOPES).toContain('https://api.ebay.com/oauth/api_scope/sell.inventory');
+  });
+
+  it('updates only the offer price for the matching listing', () => {
+    const offerId = selectInventoryOffer([
+      { offerId: 'draft', status: 'UNPUBLISHED', listing: { listingId: '999' } },
+      { offerId: 'live', status: 'PUBLISHED', listing: { listingId: '111' } },
+    ], '111');
+    expect(offerId).toBe('live');
+    expect(selectInventoryOffer([
+      { offerId: 'old', status: 'UNPUBLISHED' },
+      { offerId: 'current', status: 'PUBLISHED' },
+    ], '111')).toBe('current');
+    const body = JSON.parse(inventoryPriceBody('CARD-1', offerId!, 2700)) as {
+      requests: { sku: string; shipToLocationAvailability?: unknown; offers: { offerId: string; availableQuantity?: number; price: { value: string; currency: string } }[] }[];
+    };
+    expect(body.requests[0]).toEqual({
+      sku: 'CARD-1',
+      offers: [{ offerId: 'live', price: { value: '27.00', currency: 'USD' } }],
+    });
+    expect(body.requests[0].shipToLocationAvailability).toBeUndefined();
+    expect(body.requests[0].offers[0].availableQuantity).toBeUndefined();
+  });
+
+  it('reports an Inventory API failure hidden inside a successful HTTP response', () => {
+    expect(inventoryUpdateError(200, { responses: [{ statusCode: 400, errors: [{ message: 'Offer not available' }] }] })).toMatch(/Offer not available/);
+    expect(inventoryUpdateError(403, null)).toMatch(/Sign in with eBay again/);
+    expect(inventoryUpdateError(200, { responses: [{ statusCode: 200 }] })).toBeNull();
   });
 });

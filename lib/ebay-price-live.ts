@@ -2,12 +2,15 @@ import prisma from './prisma';
 import { getEbayCredentials, getValidEbayAccessToken, tradingCall } from './ebay';
 import {
   inventoryPriceBody,
+  inventoryUpdateError,
   pageFromCursor,
   parseActiveListingsXml,
   parseItemPriceXml,
   reviseInventoryStatusXml,
+  selectInventoryOffer,
   nextPageCursor,
   type ActiveListing,
+  type InventoryOffer,
 } from './ebay-price';
 import type { ListedPrice, PriceGateway, ReviseResult } from './ebay-price-apply';
 
@@ -26,6 +29,16 @@ function tradingFailure(text: string): { message: string; inventoryManaged: bool
 function ackOk(text: string): boolean {
   const ack = text.match(/<Ack>([^<]+)<\/Ack>/)?.[1] ?? '';
   return ack === 'Success' || ack === 'Warning';
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 async function session(userEmail: string): Promise<{ token: string; appId: string; devId: string; certId: string }> {
@@ -132,39 +145,38 @@ export function priceGateway(userEmail: string): PriceGateway {
       const failure = tradingFailure(text);
       return { ok: false, error: failure.message, inventoryManaged: failure.inventoryManaged };
     },
-    async reviseInventory(_itemId, sku, priceCents): Promise<ReviseResult> {
+    async reviseInventory(itemId, sku, priceCents): Promise<ReviseResult> {
       const creds = await session(userEmail);
+      const headers = {
+        Authorization: `Bearer ${creds.token}`,
+        Accept: 'application/json',
+        'Content-Language': 'en-US',
+      };
       const offers = await fetch(`${INVENTORY_API}/offer?sku=${encodeURIComponent(sku)}`, {
-        headers: { Authorization: `Bearer ${creds.token}`, Accept: 'application/json' },
+        headers,
         cache: 'no-store',
       });
-      if (offers.status === 403) {
-        return {
-          ok: false,
-          error: 'This listing is managed by the Inventory API. Reconnect eBay after LotLister asks for sell.inventory permission.',
-        };
+      const offerJson = await readJson(offers);
+      if (!offers.ok) {
+        return { ok: false, error: inventoryUpdateError(offers.status, offerJson) ?? `eBay Inventory API did not return offers (${offers.status})` };
       }
-      if (!offers.ok) return { ok: false, error: `eBay Inventory API did not return offers (${offers.status})` };
-      const body = await offers.json() as { offers?: { offerId?: string }[] };
-      const offerId = body.offers?.find((offer) => offer.offerId)?.offerId;
+      const offerId = selectInventoryOffer((offerJson as { offers?: InventoryOffer[] } | null)?.offers ?? [], itemId);
       if (!offerId) return { ok: false, error: 'eBay did not return an Inventory API offer for this SKU' };
+      const body = inventoryPriceBody(sku, offerId, priceCents);
+      const parsed = JSON.parse(body) as { requests?: { shipToLocationAvailability?: unknown; offers?: { availableQuantity?: unknown }[] }[] };
+      const request = parsed.requests?.[0];
+      if (request?.shipToLocationAvailability || request?.offers?.some((offer) => offer.availableQuantity != null)) {
+        return { ok: false, error: 'Refusing to send a price update that changes more than price' };
+      }
       const updated = await fetch(`${INVENTORY_API}/bulk_update_price_quantity`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${creds.token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: inventoryPriceBody(sku, offerId, priceCents),
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body,
         cache: 'no-store',
       });
-      if (updated.status === 403) {
-        return {
-          ok: false,
-          error: 'This listing is managed by the Inventory API. Reconnect eBay after LotLister asks for sell.inventory permission.',
-        };
-      }
-      if (!updated.ok) return { ok: false, error: `eBay Inventory API rejected the price (${updated.status})` };
+      const updatedJson = await readJson(updated);
+      const updateError = inventoryUpdateError(updated.status, updatedJson);
+      if (updateError) return { ok: false, error: updateError };
       return { ok: true };
     },
   };

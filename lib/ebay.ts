@@ -31,11 +31,13 @@ const TRADING_COMPAT_LEVEL = '1193';
 
 export const EBAY_FULFILLMENT_READ_SCOPE = 'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly';
 
-/** Trading API user token, identity so we can show which account is connected, and read-only orders for the dashboard. */
+/** Trading API user token, identity, read-only orders, and Inventory API price updates.
+ * Asked for only on the sign-in screen. Token refresh must not send this list. */
 export const EBAY_OAUTH_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
   'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly',
   EBAY_FULFILLMENT_READ_SCOPE,
+  'https://api.ebay.com/oauth/api_scope/sell.inventory',
 ];
 
 export const EBAY_OAUTH_STATE_COOKIE = 'ebay_oauth_state';
