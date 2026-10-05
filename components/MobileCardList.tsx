@@ -17,6 +17,7 @@ import {
 } from '../lib/card-fields';
 import { imagePathToBrowserSrc } from '../lib/imageUrls';
 import { sortCardImages } from './grid/PhotoPanel';
+import ZoomPhoto from './grid/ZoomPhoto';
 import SearchableSelect from './SearchableSelect';
 import { BoltIcon, ChevronLeftIcon, ChevronRightIcon, CopyIcon, ImageIcon, TrashIcon } from './ui/icons';
 
@@ -201,17 +202,17 @@ function CardSheet({
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="relative aspect-[4/3] bg-black flex items-center justify-center">
+        <div className="relative aspect-[4/3] bg-black group">
           {images.length > 0 ? (
-            <img src={imagePathToBrowserSrc(images[photo]?.originalPath)} alt="" className="max-w-full max-h-full object-contain" />
+            <ZoomPhoto src={imagePathToBrowserSrc(images[photo]?.originalPath)} alt="" hint="top" />
           ) : (
-            <div className="flex flex-col items-center gap-2 text-surface-500">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-surface-500">
               <ImageIcon size={28} />
               <span className="text-xs">No photos</span>
             </div>
           )}
           {images.length > 1 && (
-            <div className="absolute bottom-3 inset-x-0 flex justify-center gap-1.5">
+            <div className="absolute bottom-3 inset-x-0 z-10 flex justify-center gap-1.5">
               {images.map((img, i) => (
                 <button
                   key={img.id}

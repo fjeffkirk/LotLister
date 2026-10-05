@@ -5,6 +5,7 @@ import { isReadyForSoldComps } from '../../lib/card-completeness';
 import type { CardImage, CardItemWithImages } from '../../lib/types';
 import { imagePathToBrowserSrc } from '../../lib/imageUrls';
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, ImageIcon, PhotosIcon } from '../ui/icons';
+import ZoomPhoto from './ZoomPhoto';
 
 export function sortCardImages(images: CardImage[]): CardImage[] {
   return [...images].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -14,6 +15,7 @@ export function sortCardImages(images: CardImage[]): CardImage[] {
 export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages | null; onClose: () => void }) {
   const images = useMemo(() => sortCardImages(card?.images ?? []), [card?.images]);
   const [index, setIndex] = useState(0);
+  const [photoZoomed, setPhotoZoomed] = useState(false);
 
   useEffect(() => setIndex(0), [card?.id]);
 
@@ -72,14 +74,14 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
         </div>
       ) : (
         <>
-          <div className="relative flex-1 min-h-0 bg-[radial-gradient(circle_at_50%_40%,#1d212b,#0a0c10)] flex items-center justify-center p-3 group">
-            <img
+          <div className="relative flex-1 min-h-0 bg-[radial-gradient(circle_at_50%_40%,#1d212b,#0a0c10)] p-3 group">
+            <ZoomPhoto
               key={current.id}
               src={imagePathToBrowserSrc(current.originalPath)}
               alt={`${label} photo ${index + 1}`}
-              className="max-w-full max-h-full object-contain rounded-md shadow-pop animate-fade-in"
+              onZoomChange={setPhotoZoomed}
             />
-            {images.length > 1 && (
+            {images.length > 1 && !photoZoomed && (
               <>
                 <button
                   onClick={() => setIndex((i) => (i - 1 + images.length) % images.length)}
