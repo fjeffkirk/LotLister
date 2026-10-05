@@ -53,13 +53,11 @@ export default function ZoomPhoto({
   }, [zoomed, onZoomChange]);
 
   useEffect(() => {
-    setZoomed(false);
-  }, [src]);
-
-  useEffect(() => {
     if (!zoomed) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setZoomed(false);
+      if (event.key !== 'Escape') return;
+      if (event.target instanceof Element && event.target.closest('.ag-cell, .ag-popup, .ag-popup-editor')) return;
+      setZoomed(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -112,11 +110,6 @@ export default function ZoomPhoto({
         if (panned) return;
         track(event.clientX, event.clientY);
         setZoomed((value) => !value);
-      }}
-      onPointerLeave={(event) => {
-        downRef.current = null;
-        if (event.pointerType === 'touch') return;
-        setZoomed(false);
       }}
       onPointerCancel={() => {
         downRef.current = null;

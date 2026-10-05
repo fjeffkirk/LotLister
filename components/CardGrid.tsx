@@ -946,12 +946,17 @@ export default function CardGrid({
 
   useEffect(() => {
     if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    document.addEventListener('click', close);
-    document.addEventListener('scroll', close, true);
+    const closeOnMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      if ((event.target as HTMLElement | null)?.closest('[data-row-menu]')) return;
+      setContextMenu(null);
+    };
+    const closeOnScroll = () => setContextMenu(null);
+    document.addEventListener('mousedown', closeOnMouseDown);
+    document.addEventListener('scroll', closeOnScroll, true);
     return () => {
-      document.removeEventListener('click', close);
-      document.removeEventListener('scroll', close, true);
+      document.removeEventListener('mousedown', closeOnMouseDown);
+      document.removeEventListener('scroll', closeOnScroll, true);
     };
   }, [contextMenu]);
 
@@ -963,13 +968,28 @@ export default function CardGrid({
     }, 50);
   }, []);
 
-  const onHeaderContextMenu = useCallback(
+  const onGridContextMenu = useCallback(
     (event: React.MouseEvent) => {
-      const header = (event.target as HTMLElement).closest('.ag-header-cell');
-      if (!header) return;
+      const target = event.target as HTMLElement;
+      const header = target.closest('.ag-header-cell');
+      if (header) {
+        event.preventDefault();
+        const colId = header.getAttribute('col-id');
+        if (colId && bulkFields.some((f) => f.field === colId)) openBulkEdit(colId);
+        return;
+      }
+      const row = target.closest('.ag-row');
+      if (!row) return;
       event.preventDefault();
-      const colId = header.getAttribute('col-id');
-      if (colId && bulkFields.some((f) => f.field === colId)) openBulkEdit(colId);
+      const cardId = row.getAttribute('row-id');
+      const card = cardId ? gridRef.current?.api.getRowNode(cardId)?.data : undefined;
+      if (!card) return;
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        cardId: card.id,
+        label: card.title || card.name || `Card #${card.cardNumber || card.id.slice(0, 8)}`,
+      });
     },
     [bulkFields, openBulkEdit]
   );
@@ -1101,7 +1121,7 @@ export default function CardGrid({
       </div>
 
       <div className="flex flex-1 min-h-0">
-        <div className="ag-theme-alpine-dark flex-1 min-w-0 h-full" onContextMenu={onHeaderContextMenu}
+        <div className="ag-theme-alpine-dark flex-1 min-w-0 h-full" onContextMenu={onGridContextMenu}
           onPaste={handlePaste}
           onKeyDownCapture={captureTypedAhead}
         >
@@ -1159,6 +1179,7 @@ export default function CardGrid({
 
       {contextMenu && (
         <div
+          data-row-menu
           className="fixed z-50 rounded-xl border border-white/10 bg-surface-850/95 backdrop-blur-xl p-1.5 shadow-pop animate-scale-in"
           style={{ left: contextMenu.x, top: contextMenu.y, minWidth: '190px' }}
           onClick={(e) => e.stopPropagation()}

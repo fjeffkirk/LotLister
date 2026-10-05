@@ -39,7 +39,12 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
   }
 
   return (
-    <aside className="w-80 flex-shrink-0 border-l border-white/[0.06] bg-surface-900 flex flex-col min-h-0 animate-fade-in">
+    <aside
+      className="ag-custom-component-popup w-[26rem] flex-shrink-0 border-l border-white/[0.06] bg-surface-900 flex flex-col min-h-0 animate-fade-in"
+      onMouseDown={(event) => {
+        if (event.button === 0) event.preventDefault();
+      }}
+    >
       <div className="flex items-center justify-between gap-2 px-3 h-11 border-b border-white/[0.06]">
         <span className="text-sm font-medium text-surface-100 truncate" title={label}>
           {label}
@@ -76,7 +81,7 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
         <>
           <div className="relative flex-1 min-h-0 bg-[radial-gradient(circle_at_50%_40%,#1d212b,#0a0c10)] p-3 group">
             <ZoomPhoto
-              key={current.id}
+              key={card.id}
               src={imagePathToBrowserSrc(current.originalPath)}
               alt={`${label} photo ${index + 1}`}
               onZoomChange={setPhotoZoomed}
@@ -84,6 +89,8 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
             {images.length > 1 && !photoZoomed && (
               <>
                 <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => setIndex((i) => (i - 1 + images.length) % images.length)}
                   className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 backdrop-blur text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   aria-label="Previous photo"
@@ -91,6 +98,8 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
                   <ChevronLeftIcon />
                 </button>
                 <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => setIndex((i) => (i + 1) % images.length)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 backdrop-blur text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   aria-label="Next photo"
@@ -108,6 +117,8 @@ export default function PhotoPanel({ card, onClose }: { card: CardItemWithImages
               {images.map((img, i) => (
                 <button
                   key={img.id}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => setIndex(i)}
                   className={`w-12 h-12 flex-shrink-0 rounded-lg overflow-hidden ring-2 transition-all ${
                     i === index ? 'ring-primary-400' : 'ring-transparent opacity-60 hover:opacity-100'
