@@ -22,8 +22,8 @@ export const listingArgsSchema = z.object({
 const listingInputSchema = {
   type: 'object',
   properties: {
-    limit: { type: 'integer', minimum: 1, maximum: 200, description: 'How many active listings to return. Default 100. Maximum 200.' },
-    cursor: { type: 'string', description: 'Cursor from the previous page. Omit to start at the first page.' },
+    limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Page size. Optional. Defaults to 100. Maximum 200. Use 100 or 200 when walking every active listing.' },
+    cursor: { type: 'string', description: 'Pass the cursor string returned by the previous call. Omit this argument on the first call. Keep calling while hasMore is true.' },
   },
   additionalProperties: false,
 };
@@ -38,10 +38,10 @@ const previewSchema = z.object({
 const previewInputSchema = {
   type: 'object',
   properties: {
-    listingIds: { type: 'array', items: { type: 'string' }, description: 'eBay item ids. Omit to scan active listings with the filters.' },
-    percentOff: { type: 'number', exclusiveMinimum: 0, exclusiveMaximum: 100, description: 'Percent to subtract. 10 reduces a price by 10%.' },
-    minimumCurrentPrice: { type: 'number', minimum: 0, description: 'Include listings whose current price is this amount or higher. 30 includes $30.00.' },
-    tradingCardsOnly: { type: 'boolean', description: 'When true, only categories identified as trading cards are included. Uncertain categories are excluded and reported.' },
+    listingIds: { type: 'array', items: { type: 'string' }, description: 'Optional eBay item ids. Leave this out to scan every active listing. Do not collect ids yourself with ebay_listings_get first.' },
+    percentOff: { type: 'number', exclusiveMinimum: 0, exclusiveMaximum: 100, description: 'Percent to subtract from the current price. 10 means 10% off. Example: $30.00 becomes $27.00. Rounded to the nearest cent.' },
+    minimumCurrentPrice: { type: 'number', minimum: 0, description: 'Only listings whose current price is this amount or higher are included. Compared before the discount. 30 includes $30.00 and excludes $29.99.' },
+    tradingCardsOnly: { type: 'boolean', description: 'True limits the preview to trading-card categories from eBay category data. Uncertain categories, auctions, and non-card listings are returned in exclusions and are not changed.' },
   },
   required: ['percentOff', 'minimumCurrentPrice'],
   additionalProperties: false,
@@ -69,7 +69,7 @@ function listingPayload(listing: Awaited<ReturnType<typeof listActiveListingPage
 
 registerTool({
   name: 'ebay_listings_get',
-  description: 'Read active eBay listings for the connected seller, one page at a time. Returns listing id, title, price, currency, format, category, SKU, variations, and URL. Pass the returned cursor to get the next page. Does not change listings.',
+  description: 'Read one page of the connected seller\'s active eBay listings. Does not change prices. Arguments are limit and cursor. Call the first page with {"limit":100} and no cursor. Each response includes cursor and hasMore. If hasMore is true, call again with that cursor string, for example {"limit":100,"cursor":"2"}. Repeat until hasMore is false. Each listing includes listingId, title, price, currency, format, categoryId, categoryName, sku, variations, and url. For a price reduction, do not page through listings and do not calculate new prices. Call ebay_prices_preview instead.',
   effect: 'read',
   inputSchema: listingInputSchema,
   async handler(ctx, args) {
@@ -87,7 +87,7 @@ registerTool({
 
 registerTool({
   name: 'ebay_prices_preview',
-  description: 'Preview eBay price reductions for the connected seller. Does not change any listing. Minimum price is applied before the discount, so a $30 minimum includes listings priced exactly $30. Returns a previewId that apply can use once.',
+  description: 'Build a price-change preview for the connected seller. Does not change any live price. To reduce every active fixed-price trading card priced $30 or more by 10%, call this once with {"percentOff":10,"minimumCurrentPrice":30,"tradingCardsOnly":true} and no listingIds. A $30.00 listing is included. Anything under $30 is excluded. Auctions and uncertain categories come back in exclusions. The response has previewId, changes (listingId, title, originalPrice, proposedPrice), and exclusions with reasons. Show that summary to the seller. Do not apply anything until they agree. Then pass that same previewId to ebay_prices_apply. If truncated is true, say the shop was too large to scan in one preview.',
   effect: 'read',
   inputSchema: previewInputSchema,
   async handler(ctx, args) {
@@ -128,11 +128,11 @@ registerTool({
 
 registerTool({
   name: 'ebay_prices_apply',
-  description: 'Apply one eBay price preview for the connected seller. Uses Trading API ReviseInventoryStatus, which changes only price, because LotLister creates listings with Trading API AddItem. Inventory API listings are revised through that API when eBay says the listing is inventory-managed. The same preview is not discounted twice. Does not publish, end, or otherwise edit listings.',
+  description: 'Apply one preview created by ebay_prices_preview. Changes only the item price on the connected seller\'s listings. Shipping, quantity, offers, promotions, and descriptions stay as they are. Call it with {"previewId":"<the previewId from ebay_prices_preview>"} after the seller has agreed to that preview. Do not invent prices and do not call ebay_listings_get to decide the new price. A repeated call with the same previewId does not discount twice. The response counts updated, verified, skipped, and failed listings and gives a reason for each skip or failure. Read those reasons to the seller. Verified means eBay returned the new price after the update.',
   effect: 'price',
   inputSchema: {
     type: 'object',
-    properties: { previewId: { type: 'string', description: 'previewId returned by ebay_prices_preview.' } },
+    properties: { previewId: { type: 'string', description: 'The previewId string returned by ebay_prices_preview. Example: price_ followed by hex. Do not pass listing ids or prices here.' } },
     required: ['previewId'],
     additionalProperties: false,
   },

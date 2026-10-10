@@ -45,7 +45,7 @@ export async function dispatchMcp(message: JsonRpc, session: McpSession | null):
       protocolVersion,
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: 'lotlister', version: '1.0.0' },
-      instructions: 'Read store details, create unpublished Etsy drafts, and preview or apply eBay price changes. Publishing and deleting are not available. Apply a price preview only after the seller has reviewed it.',
+      instructions: 'For an eBay price reduction, call ebay_prices_preview once with percentOff, minimumCurrentPrice, and tradingCardsOnly. Do not page listings or calculate prices yourself. After the seller agrees, call ebay_prices_apply with that previewId. ebay_listings_get is only for reading pages: pass cursor from the previous response while hasMore is true. Publishing and deleting are not available.',
     });
   }
 
