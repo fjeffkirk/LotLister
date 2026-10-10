@@ -76,21 +76,25 @@ export function shopFromEtsyPayload(body: unknown): { shopId: string; shopName: 
   return { shopId: String(shop.shop_id), shopName: shop.shop_name?.trim() || 'Etsy shop' };
 }
 
-const BANK_LEDGER = /disburse|recoup/i;
+const ETSY_AD = /offsite_ads|prolist|advertis/i;
 
-/** Sum of Etsy payment-ledger amounts in minor units, excluding bank deposits. */
-export function etsyLedgerProfit(entries: { amount?: number; ledger_type?: string }[]): { profit: number; fees: number } {
-  let profit = 0;
-  let fees = 0;
+/** Etsy Ads and Offsite Ads charged in this window, in dollars. Listing fees are not included. */
+export function etsyAdCost(entries: { amount?: number; ledger_type?: string }[]): number {
+  let cost = 0;
   for (const entry of entries) {
-    if (BANK_LEDGER.test(entry.ledger_type ?? '')) continue;
+    if (!ETSY_AD.test(entry.ledger_type ?? '')) continue;
     const minor = Number(entry.amount);
     if (!Number.isFinite(minor)) continue;
-    const dollars = minor / 100;
-    profit += dollars;
-    if (dollars < 0) fees += -dollars;
+    cost -= minor / 100;
   }
-  return { profit: Math.round(profit * 100) / 100, fees: Math.round(fees * 100) / 100 };
+  return Math.round(cost * 100) / 100;
+}
+
+/** Sales minus shipping, minus item cost from the margin, minus Etsy ad cost. */
+export function etsySalesProfit(merchandise: number, marginRate: number, adCost: number): { profit: number; itemCost: number } {
+  const itemCost = Math.round(Math.max(0, merchandise) * (1 - marginRate) * 100) / 100;
+  const profit = Math.round((merchandise - itemCost - adCost) * 100) / 100;
+  return { profit, itemCost };
 }
 
 export function etsyMoney(value: { amount?: number; divisor?: number } | null | undefined): number {

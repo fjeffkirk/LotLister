@@ -2,14 +2,14 @@ import { unstable_cache } from "next/cache";
 import { safeQuery } from "@/lib/db";
 import { getAppSettings } from "@/lib/queries/app-settings";
 import { fillDaySeries } from "@/lib/dates";
-import { blendedMarginRate, estimatedNetProfit, freeShippingCostTotal, FREE_SHIPPING_THRESHOLD_USD, DEFAULT_AVERAGE_FREE_SHIPPING_COST_USD } from "@/lib/profit";
+import { blendedMarginRate, estimatedNetProfit, freeShippingCostTotal, itemCostFromMargins, salesProfit, FREE_SHIPPING_THRESHOLD_USD, DEFAULT_AVERAGE_FREE_SHIPPING_COST_USD } from "@/lib/profit";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 /** 1 for each $0-shipping order whose merchandise hit the free-shipping threshold. */
 const freeShippingOrderSql = Prisma.sql`(
   CASE
     WHEN COALESCE("shippingCollected", 0) < 0.01
-     AND (total - COALESCE("shippingCollected", 0)) >= ${FREE_SHIPPING_THRESHOLD_USD}
+     AND (total - COALESCE("shippingCollected", 0) - COALESCE(tax, 0)) >= ${FREE_SHIPPING_THRESHOLD_USD}
     THEN 1 ELSE 0
   END
 )`;
@@ -24,10 +24,12 @@ export type DashboardKpis = {
   orderCount: number;
   itemCount: number;
   revenue: number;
-  estProfit: number;   // product-line profit − ads − free-shipping costs
-  grossProfit: number; // product-line profit − free-shipping costs
+  estProfit: number;   // merchandise − item cost − ads − postage we pay
+  grossProfit: number; // merchandise − item cost − postage we pay
   adSpend: number;     // total ad spend for the period
   shipping: number;
+  itemCost: number;
+  postage: number;
   aov: number;
   unfulfilledOrders: number;
   fulfilledOrders: number;
@@ -55,7 +57,7 @@ function calcTrend(current: number, prev: number): KpiTrend {
 }
 function emptyKpis(marginPercent: number): DashboardKpis {
   const t = flatTrend();
-  return { orderCount: 0, itemCount: 0, revenue: 0, estProfit: 0, grossProfit: 0, adSpend: 0, shipping: 0, aov: 0, unfulfilledOrders: 0, fulfilledOrders: 0, marginPercent, avgMargin: marginPercent, prior: { revenue: 0, estProfit: 0, orderCount: 0, itemCount: 0 }, trends: { revenue: t, estProfit: t, orderCount: t, aov: t, itemCount: t, shipping: t } };
+  return { orderCount: 0, itemCount: 0, revenue: 0, estProfit: 0, grossProfit: 0, adSpend: 0, shipping: 0, itemCost: 0, postage: 0, aov: 0, unfulfilledOrders: 0, fulfilledOrders: 0, marginPercent, avgMargin: marginPercent, prior: { revenue: 0, estProfit: 0, orderCount: 0, itemCount: 0 }, trends: { revenue: t, estProfit: t, orderCount: t, aov: t, itemCount: t, shipping: t } };
 }
 
 
@@ -79,8 +81,8 @@ export async function getDashboardKpis(
     // Each CTE query combines two former separate queries into one DB round-trip,
     // reducing parallel connection usage from 6 to 3.
     type CombinedAgg = {
-      order_count: bigint; revenue: string; shipping: string; free_ship_orders: bigint;
-      total_profit: string; total_revenue: string; total_items: bigint;
+      order_count: bigint; revenue: string; shipping: string; merchandise: string; free_ship_orders: bigint;
+      weighted_cost: string; line_rev: string; total_items: bigint;
     };
     type FulfillAgg = { unfulfilled: bigint; fulfilled: bigint };
 
@@ -89,48 +91,56 @@ export async function getDashboardKpis(
       db.$queryRaw<CombinedAgg[]>`
         WITH order_agg AS (
           SELECT COUNT(*)::bigint                          AS order_count,
-                 COALESCE(SUM(total), 0)::text            AS revenue,
+                 COALESCE(SUM(total - COALESCE(tax, 0)), 0)::text AS revenue,
                  COALESCE(SUM("shippingCollected"), 0)::text AS shipping,
+                 COALESCE(SUM(total - COALESCE(tax, 0) - COALESCE("shippingCollected", 0)), 0)::text AS merchandise,
                  COALESCE(SUM(${freeShippingOrderSql}), 0)::bigint AS free_ship_orders
           FROM "Order"
           WHERE "orderDate" >= ${from} AND "orderDate" <= ${to}
             AND ("sourceChannel" IS DISTINCT FROM 'draft_orders')
         ),
         line_agg AS (
-          SELECT COALESCE(SUM(COALESCE(l."estimatedLineProfit", l."lineRevenue" * ${margin})), 0)::text AS total_profit,
-                 COALESCE(SUM(l."lineRevenue"), 0)::text   AS total_revenue,
+          SELECT COALESCE(SUM(
+                   l."lineRevenue" * (1 - COALESCE(c."marginPercentOverride" / 100.0, ${margin}))
+                 ), 0)::text AS weighted_cost,
+                 COALESCE(SUM(l."lineRevenue"), 0)::text AS line_rev,
                  COALESCE(SUM(l.quantity), 0)::bigint      AS total_items
           FROM "OrderLineItem" l
           JOIN "Order" o ON o.id = l."orderId"
+          LEFT JOIN "CatalogItem" c ON c.id = l."catalogItemId"
           WHERE o."orderDate" >= ${from} AND o."orderDate" <= ${to}
             AND (o."sourceChannel" IS DISTINCT FROM 'draft_orders')
         )
-        SELECT o.order_count, o.revenue, o.shipping, o.free_ship_orders,
-               l.total_profit, l.total_revenue, l.total_items
+        SELECT o.order_count, o.revenue, o.shipping, o.merchandise, o.free_ship_orders,
+               l.weighted_cost, l.line_rev, l.total_items
         FROM order_agg o, line_agg l`,
 
       // Previous period: same structure
       db.$queryRaw<CombinedAgg[]>`
         WITH order_agg AS (
           SELECT COUNT(*)::bigint                          AS order_count,
-                 COALESCE(SUM(total), 0)::text            AS revenue,
+                 COALESCE(SUM(total - COALESCE(tax, 0)), 0)::text AS revenue,
                  COALESCE(SUM("shippingCollected"), 0)::text AS shipping,
+                 COALESCE(SUM(total - COALESCE(tax, 0) - COALESCE("shippingCollected", 0)), 0)::text AS merchandise,
                  COALESCE(SUM(${freeShippingOrderSql}), 0)::bigint AS free_ship_orders
           FROM "Order"
           WHERE "orderDate" >= ${prevFrom} AND "orderDate" <= ${prevTo}
             AND ("sourceChannel" IS DISTINCT FROM 'draft_orders')
         ),
         line_agg AS (
-          SELECT COALESCE(SUM(COALESCE(l."estimatedLineProfit", l."lineRevenue" * ${margin})), 0)::text AS total_profit,
-                 COALESCE(SUM(l."lineRevenue"), 0)::text   AS total_revenue,
+          SELECT COALESCE(SUM(
+                   l."lineRevenue" * (1 - COALESCE(c."marginPercentOverride" / 100.0, ${margin}))
+                 ), 0)::text AS weighted_cost,
+                 COALESCE(SUM(l."lineRevenue"), 0)::text AS line_rev,
                  COALESCE(SUM(l.quantity), 0)::bigint      AS total_items
           FROM "OrderLineItem" l
           JOIN "Order" o ON o.id = l."orderId"
+          LEFT JOIN "CatalogItem" c ON c.id = l."catalogItemId"
           WHERE o."orderDate" >= ${prevFrom} AND o."orderDate" <= ${prevTo}
             AND (o."sourceChannel" IS DISTINCT FROM 'draft_orders')
         )
-        SELECT o.order_count, o.revenue, o.shipping, o.free_ship_orders,
-               l.total_profit, l.total_revenue, l.total_items
+        SELECT o.order_count, o.revenue, o.shipping, o.merchandise, o.free_ship_orders,
+               l.weighted_cost, l.line_rev, l.total_items
         FROM order_agg o, line_agg l`,
 
       // Unfulfilled + fulfilled counts combined (no date filter — all-time queue)
@@ -151,38 +161,42 @@ export async function getDashboardKpis(
     const orderCount    = Number(c.order_count);
     const revenue       = parseFloat(c.revenue);
     const shipping      = parseFloat(c.shipping);
-    const lineProfit    = parseFloat(c.total_profit);
-    const totalLineRev  = parseFloat(c.total_revenue);
+    const merchandise   = parseFloat(c.merchandise);
+    const itemCost      = itemCostFromMargins(merchandise, parseFloat(c.line_rev), parseFloat(c.weighted_cost), margin);
     const itemCount     = Number(c.total_items);
     const freeShipCost  = freeShippingCostTotal(Number(c.free_ship_orders), freeShipEach);
 
     const prevOrderCount = Number(p.order_count);
     const prevRevenue    = parseFloat(p.revenue);
     const prevShipping   = parseFloat(p.shipping);
-    const prevLineProfit = parseFloat(p.total_profit);
+    const prevMerchandise = parseFloat(p.merchandise);
+    const prevItemCost  = itemCostFromMargins(prevMerchandise, parseFloat(p.line_rev), parseFloat(p.weighted_cost), margin);
     const prevItemCount  = Number(p.total_items);
     const prevFreeShipCost = freeShippingCostTotal(Number(p.free_ship_orders), freeShipEach);
 
     const unfulfilled = Number(f.unfulfilled);
     const fulfilled   = Number(f.fulfilled);
 
-    const rate     = blendedMarginRate(lineProfit, totalLineRev, margin);
+    const rate     = blendedMarginRate(merchandise - itemCost, merchandise, margin);
     const avgMargin = Math.round(rate * 1000) / 10;
     const aov     = orderCount     ? (revenue     - shipping)     / orderCount     : 0;
     const prevAov = prevOrderCount ? (prevRevenue - prevShipping) / prevOrderCount : 0;
 
     const adSpend      = adSpendAmounts?.current ?? 0;
     const prevAdSpend  = adSpendAmounts?.prev    ?? 0;
-    const grossProfit  = estimatedNetProfit(lineProfit, 0, freeShipCost);
-    const netProfit    = estimatedNetProfit(lineProfit, adSpend, freeShipCost);
-    const prevNetProfit = estimatedNetProfit(prevLineProfit, prevAdSpend, prevFreeShipCost);
+    const grossProfit  = salesProfit(merchandise, itemCost, 0, freeShipCost);
+    const netProfit    = salesProfit(merchandise, itemCost, adSpend, freeShipCost);
+    const prevNetProfit = salesProfit(prevMerchandise, prevItemCost, prevAdSpend, prevFreeShipCost);
 
     return {
       orderCount, itemCount, revenue,
       grossProfit,
       estProfit: netProfit,
       adSpend,
-      shipping, aov,
+      shipping,
+      itemCost,
+      postage: freeShipCost,
+      aov,
       unfulfilledOrders: unfulfilled,
       fulfilledOrders: fulfilled,
       marginPercent: margin * 100,
@@ -259,7 +273,7 @@ export async function getRevenueByDay(from: Date, to: Date): Promise<DaySeries> 
   return safeQuery([], async (db) => {
     const rows = await db.$queryRaw<{ d: string; v: string }[]>`
     SELECT to_char("orderDate" at time zone 'America/New_York', 'YYYY-MM-DD') as d,
-           SUM("total")::text as v
+           SUM(total - COALESCE(tax, 0))::text as v
     FROM "Order"
     WHERE "orderDate" >= ${from} AND "orderDate" <= ${to}
       AND ("sourceChannel" IS DISTINCT FROM 'draft_orders')
@@ -303,13 +317,18 @@ export async function getItemsSoldByDay(from: Date, to: Date): Promise<DaySeries
 
 export async function getProfitByDay(from: Date, to: Date): Promise<DaySeries> {
   return safeQuery([], async (db) => {
-    // Use estimatedLineProfit so the chart source matches the KPI card calculation.
-    // COALESCE per line item handles the rare null (falls back to 0 for that item).
     const rows = await db.$queryRaw<{ d: string; v: string }[]>`
     SELECT to_char(o."orderDate" at time zone 'America/New_York', 'YYYY-MM-DD') as d,
-           COALESCE(SUM(COALESCE(l."estimatedLineProfit", 0)), 0)::text as v
+           COALESCE(SUM(
+             l."lineRevenue" * COALESCE(
+               c."marginPercentOverride" / 100.0,
+               (SELECT "defaultMarginPercent" / 100.0 FROM "AppSetting" LIMIT 1),
+               0.35
+             )
+           ), 0)::text as v
     FROM "Order" o
     LEFT JOIN "OrderLineItem" l ON l."orderId" = o.id
+    LEFT JOIN "CatalogItem" c ON c.id = l."catalogItemId"
     WHERE o."orderDate" >= ${from} AND o."orderDate" <= ${to}
       AND (o."sourceChannel" IS DISTINCT FROM 'draft_orders')
     GROUP BY 1
@@ -350,7 +369,7 @@ export async function getTopProducts(
         ? Prisma.sql`SUM(l.quantity)`
         : by === "revenue"
           ? Prisma.sql`SUM(l."lineRevenue")`
-          : Prisma.sql`SUM(COALESCE(l."estimatedLineProfit", l."lineRevenue" * ${margin}))`;
+          : Prisma.sql`SUM(l."lineRevenue" * COALESCE(c."marginPercentOverride" / 100.0, ${margin}))`;
 
     const rows = await db.$queryRaw<{
       title: string;
@@ -375,7 +394,7 @@ export async function getTopProducts(
         MIN(l.sku)                                                                      AS sku,
         SUM(l.quantity)::bigint                                                         AS units,
         SUM(l."lineRevenue")::text                                                      AS revenue,
-        SUM(COALESCE(l."estimatedLineProfit", l."lineRevenue" * ${margin}))::text       AS profit
+        SUM(l."lineRevenue" * COALESCE(c."marginPercentOverride" / 100.0, ${margin}))::text AS profit
       FROM "OrderLineItem" l
       JOIN "Order" o ON o.id = l."orderId"
       LEFT JOIN "CatalogItem" c ON c.id = l."catalogItemId"
@@ -472,10 +491,11 @@ export async function getChartData(
         db.$queryRaw<{ d: string; items: string; profit: string; line_rev: string }[]>`
           SELECT to_char((o."orderDate" AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS d,
                  COALESCE(SUM(l.quantity), 0)::text                       AS items,
-                 COALESCE(SUM(COALESCE(l."estimatedLineProfit", l."lineRevenue" * ${margin})), 0)::text AS profit,
+                 COALESCE(SUM(l."lineRevenue" * COALESCE(c."marginPercentOverride" / 100.0, ${margin})), 0)::text AS profit,
                  COALESCE(SUM(l."lineRevenue"), 0)::text                  AS line_rev
           FROM   "OrderLineItem" l
           JOIN   "Order" o ON o.id = l."orderId"
+          LEFT JOIN "CatalogItem" c ON c.id = l."catalogItemId"
           WHERE  o."orderDate" >= ${from} AND o."orderDate" <= ${to}
             AND  (o."sourceChannel" IS DISTINCT FROM 'draft_orders')
           GROUP BY 1 ORDER BY 1`,
@@ -533,7 +553,7 @@ export async function getAllTopProducts(
           MIN(l.sku)                                                            AS sku,
           SUM(l.quantity)::bigint                                               AS units,
           SUM(l."lineRevenue")::text                                            AS revenue,
-          SUM(COALESCE(l."estimatedLineProfit", l."lineRevenue" * ${margin}))::text AS profit
+          SUM(l."lineRevenue" * COALESCE(c."marginPercentOverride" / 100.0, ${margin}))::text AS profit
         FROM "OrderLineItem" l
         JOIN "Order" o ON o.id = l."orderId"
         LEFT JOIN "CatalogItem" c ON c.id = l."catalogItemId"
@@ -598,7 +618,7 @@ const _cachedDashboard = unstable_cache(
     ]);
     return { kpis, tops, returning };
   },
-  ["dashboard-v4"],
+  ["dashboard-v5"],
   // Tag-invalidated on sync. lastSyncMs is also part of the cache key so a
   // router.refresh() after lastSuccessfulSyncAt changes never serves stale KPIs
   // even if revalidateTag is a no-op. 30s TTL is a fallback only.

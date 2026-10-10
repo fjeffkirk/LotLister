@@ -27,6 +27,8 @@ const emptyRange = (): ShopifyRangeStats => ({
   units: 0,
   aov: 0,
   shipping: 0,
+  itemCost: 0,
+  postage: 0,
   daily: [],
   change: { revenue: flatChange, net: flatChange, orders: flatChange, units: flatChange },
 });
@@ -78,6 +80,8 @@ async function statsFor(
     units: kpis.itemCount,
     aov: kpis.aov,
     shipping: kpis.shipping,
+    itemCost: kpis.itemCost,
+    postage: kpis.postage,
     daily: daily.map((point) => point.value),
     prior: {
       revenue: kpis.prior.revenue,
@@ -117,7 +121,7 @@ export async function getShopifyDashboard(window?: {
       getAllTopProducts(selected.from, selected.to, margin),
       getRecentOrders(8),
       getEffectiveDailyBudget(),
-      getRecentAdBudgets(8),
+      getRecentAdBudgets(14),
       tryPrisma(async (db) => {
         const [lowStock, overdue, unfulfilled] = await Promise.all([
           countLowStockItems(db, settings?.lowStockDefaultThreshold),

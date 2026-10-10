@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { etsyErrorText, etsyLedgerProfit, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from '../lib/etsy-listing';
+import { etsyAdCost, etsyErrorText, etsySalesProfit, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from '../lib/etsy-listing';
 
 describe('etsy listing fields', () => {
   it('maps a card year onto an Etsy era', () => {
@@ -27,13 +27,24 @@ describe('etsy listing fields', () => {
     expect(shopFromEtsyPayload({})).toBeNull();
   });
 
-  it('turns Etsy ledger credits and fee debits into profit, and ignores bank deposits', () => {
-    expect(etsyLedgerProfit([
+  it('counts Etsy ads only, and ignores listing fees and bank deposits', () => {
+    expect(etsyAdCost([
       { amount: 18212, ledger_type: 'transaction' },
-      { amount: -1200, ledger_type: 'offsite_ads_fee' },
+      { amount: -3244, ledger_type: 'offsite_ads_fee' },
       { amount: -800, ledger_type: 'transaction_fee' },
+      { amount: -200, ledger_type: 'renew_sold' },
+      { amount: 500, ledger_type: 'prolist_refund' },
       { amount: -15000, ledger_type: 'DISBURSE2' },
-    ])).toEqual({ profit: 162.12, fees: 20 });
+    ])).toBe(27.44);
+  });
+
+  it('keeps a day with no sales at zero unless Etsy charged ads', () => {
+    expect(etsySalesProfit(0, 0.35, 0)).toEqual({ profit: 0, itemCost: 0 });
+    expect(etsySalesProfit(0, 0.35, 32.44)).toEqual({ profit: -32.44, itemCost: 0 });
+  });
+
+  it('subtracts shipping already removed from merchandise, ads, and item cost', () => {
+    expect(etsySalesProfit(100, 0.35, 10)).toEqual({ profit: 25, itemCost: 65 });
   });
 
   it('turns a description template into plain text and keeps the Etsy error', () => {

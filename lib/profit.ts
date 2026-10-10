@@ -31,3 +31,32 @@ export function estimatedNetProfit(
 ): number {
   return productProfit - adSpend - freeShippingCosts;
 }
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Profit = merchandise − item cost − ad spend − postage we pay.
+ * Merchandise is total sales with buyer-paid shipping and sales tax already removed.
+ */
+export function salesProfit(merchandise: number, itemCost: number, adSpend: number, postage = 0): number {
+  return round2(merchandise - itemCost - adSpend - postage);
+}
+
+/**
+ * Item cost from LotLister margins, applied to merchandise.
+ * marginWeightedCost is the sum of each line's price times (1 − that product's margin).
+ * When a product has its own margin, that rate is used. Otherwise the account default is used.
+ */
+export function itemCostFromMargins(
+  merchandise: number,
+  lineRevenue: number,
+  marginWeightedCost: number,
+  fallbackMarginRate: number,
+): number {
+  const raw = lineRevenue > 0
+    ? merchandise * (marginWeightedCost / lineRevenue)
+    : merchandise * (1 - fallbackMarginRate);
+  return round2(raw);
+}

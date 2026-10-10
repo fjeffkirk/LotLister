@@ -527,7 +527,7 @@ async function syncOrders(db: PrismaClient, runId: string, full: boolean): Promi
 
   const allCatalog = await db.catalogItem.findMany({
     where: { type: CatalogType.product },
-    select: { id: true, shopifyVariantId: true, sku: true, costBasis: true, marginPercentOverride: true },
+    select: { id: true, shopifyVariantId: true, sku: true, marginPercentOverride: true },
   });
   const byVariantId = new Map(allCatalog.filter((c) => c.shopifyVariantId).map((c) => [c.shopifyVariantId!, c]));
   const bySku = new Map(allCatalog.filter((c) => c.sku).map((c) => [c.sku!, c]));
@@ -593,7 +593,6 @@ async function syncOrders(db: PrismaClient, runId: string, full: boolean): Promi
         });
         n++;
         let orderProfit = toDecimal(0);
-        let allExact = true;
         for (const li of o.lineItems.nodes) {
           const rev = lineRevenue(li);
           const match =
@@ -604,20 +603,12 @@ async function syncOrders(db: PrismaClient, runId: string, full: boolean): Promi
           const unitPrice = li.originalUnitPriceSet?.shopMoney
             ? toDecimal(li.originalUnitPriceSet.shopMoney.amount)
             : rev.div(q);
-          let estUnit: ReturnType<typeof toDecimal>;
-          let exact = false;
-          if (match?.costBasis != null) {
-            estUnit = toDecimal(String(match.costBasis));
-            exact = true;
-          } else {
-            const m =
-              match?.marginPercentOverride != null
-                ? match.marginPercentOverride / 100
-                : defaultMargin;
-            estUnit = unitPrice.mul(1 - m);
-          }
+          const m =
+            match?.marginPercentOverride != null
+              ? match.marginPercentOverride / 100
+              : defaultMargin;
+          const estUnit = unitPrice.mul(1 - m);
           const lineProfit = rev.minus(estUnit.mul(q));
-          if (!exact) allExact = false;
           orderProfit = orderProfit.add(lineProfit);
           await db.orderLineItem.upsert({
             where: { shopifyLineItemId: li.id },
@@ -634,7 +625,7 @@ async function syncOrders(db: PrismaClient, runId: string, full: boolean): Promi
               lineRevenue: rev,
               estimatedUnitCost: estUnit,
               estimatedLineProfit: lineProfit,
-              profitIsExact: exact,
+              profitIsExact: false,
               fulfillmentStatus: li.fulfillmentStatus,
               catalogItemId: match?.id ?? null,
             },
@@ -649,7 +640,7 @@ async function syncOrders(db: PrismaClient, runId: string, full: boolean): Promi
               lineRevenue: rev,
               estimatedUnitCost: estUnit,
               estimatedLineProfit: lineProfit,
-              profitIsExact: exact,
+              profitIsExact: false,
               fulfillmentStatus: li.fulfillmentStatus,
               catalogItemId: match?.id ?? null,
             },
@@ -657,7 +648,7 @@ async function syncOrders(db: PrismaClient, runId: string, full: boolean): Promi
         }
         await db.order.update({
           where: { id: order.id },
-          data: { estimatedProfit: orderProfit, profitIsEstimated: !allExact },
+          data: { estimatedProfit: orderProfit, profitIsEstimated: true },
         });
 
         // Heartbeat every 5 orders so the UI doesn't look frozen mid-page

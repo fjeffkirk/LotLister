@@ -50,11 +50,12 @@ export async function POST(request: Request) {
       await prisma.$executeRaw`
         UPDATE "OrderLineItem"
         SET "estimatedLineProfit" = "lineRevenue" * ${rate},
+            "profitIsExact" = false,
             "estimatedUnitCost" = CASE
               WHEN quantity > 0 THEN ("lineRevenue" / quantity) * ${costRate}
               ELSE "lineRevenue" * ${costRate}
             END
-        WHERE "catalogItemId" = ${id} AND "profitIsExact" = false
+        WHERE "catalogItemId" = ${id}
       `;
     }
     revalidateDashboardFigures();

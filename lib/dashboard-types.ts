@@ -82,6 +82,10 @@ export interface ShopifyRangeStats {
   units: number;
   aov: number;
   shipping: number;
+  /** Item cost from the LotLister margin on each product. */
+  itemCost: number;
+  /** Postage we pay on qualifying free-shipping orders. */
+  postage: number;
   daily: number[];
   /** The matching stretch immediately before this range. */
   prior?: { revenue: number; net: number; orders: number; units: number };
@@ -141,9 +145,13 @@ export interface EtsyRecentSale {
 export interface EtsyData {
   state: 'ok' | 'not_connected';
   shop: string | null;
+  /** Item price plus shipping the buyer paid, before tax. */
   revenue: number;
-  /** Payment-ledger net after Etsy fees, ads, and refunds. Null when Etsy did not return the ledger. */
+  shipping: number;
+  itemCost: number;
+  /** Merchandise minus item cost minus Etsy ads. Null only when the shop is not connected. */
   profit: number | null;
+  /** Etsy Ads and Offsite Ads in this range. Null when the ledger did not load. */
   fees: number | null;
   orders: number;
   units: number;

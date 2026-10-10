@@ -1,14 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AdBudgetEntry,
   DashboardChannel,
   DashboardData,
   DashboardSection,
+  EtsyData,
   PeriodChange,
   RangeStats,
   ShopifyData,
+  ShopifyRangeStats,
 } from '../../lib/dashboard-types';
 import {
   AlertIcon,
@@ -50,6 +52,17 @@ const compactCurrency = new Intl.NumberFormat('en-US', {
 
 function money(n: number): string {
   return Math.abs(n) >= 100_000 ? compactCurrency.format(n) : currency.format(n);
+}
+
+function etsyProfitNote(etsy: EtsyData | null): string | null {
+  if (!etsy) return null;
+  if (etsy.fees == null) return 'Etsy ads were not included';
+  return `after ${money(etsy.shipping)} shipping, ${money(etsy.fees)} ads, and ${money(etsy.itemCost)} item cost`;
+}
+
+function shopifyProfitNote(range: ShopifyRangeStats): string {
+  const postage = range.postage > 0 ? `, ${money(range.postage)} postage` : '';
+  return `after ${money(range.shipping)} shipping, ${money(range.adSpend)} ads, ${money(range.itemCost)} item cost${postage}`;
 }
 
 const YEAR_DAYS = 365;
@@ -411,8 +424,8 @@ export function EbayOverview() {
               loading={busy}
               section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
               value={etsy ? (etsy.profit != null ? money(etsy.profit) : '—') : null}
-              sub={etsy?.fees != null ? `after ${money(etsy.fees)} Etsy fees and ads` : 'Etsy did not return the fee ledger'}
-              title="What Etsy left in the payment account for this range after its fees, Offsite Ads, and refunds. Money Etsy sent to the bank is not subtracted again."
+              sub={etsyProfitNote(etsy)}
+              title="Sales minus the shipping the buyer paid, minus Etsy ads, minus item cost from your product margin. A day with no sales is $0 unless Etsy charged ads that day."
               delta={etsyProfitChange}
               deltaLabel={comparedWith}
               footer={
@@ -471,7 +484,7 @@ export function EbayOverview() {
               section={data?.shopify}
               value={shopRange ? money(shopRange.revenue) : null}
               sub={shopRange ? `${plural(shopRange.orders, 'order')} · ${plural(shopRange.units, 'item')}` : null}
-              title="Shopify order totals for the range, excluding draft orders."
+              title="Item price plus shipping the buyer paid, before tax. Draft orders are excluded."
               delta={shopRange?.change?.revenue}
               deltaLabel={comparedWith}
               footer={
@@ -494,8 +507,8 @@ export function EbayOverview() {
               loading={busy}
               section={data?.shopify}
               value={shopRange ? money(shopRange.net) : null}
-              sub={shopRange ? `after ${money(shopRange.adSpend)} ads` : null}
-              title="Line profit minus ads and estimated free-shipping cost."
+              sub={shopRange ? shopifyProfitNote(shopRange) : null}
+              title="Sales minus shipping, minus Shopify ad spend, minus item cost from the margin set in LotLister, minus postage on free-shipping orders."
               delta={shopRange?.change?.net}
               deltaLabel={comparedWith}
               footer={
@@ -554,7 +567,7 @@ export function EbayOverview() {
               section={data?.sales?.status === 'ok' || shopifyReady ? { status: 'ok', data: true } : data?.sales}
               value={!busy ? money(combinedSales) : null}
               sub={`${plural(combinedOrders, 'order')} · ${plural(combinedUnits, 'item')}`}
-              title="eBay sales (item + shipping), Shopify order totals, and Etsy item plus shipping."
+              title="eBay, Shopify, and Etsy sales: item price plus shipping, before tax."
               delta={!busy ? allSalesChange : undefined}
               deltaLabel={comparedWith}
               footer={
@@ -575,8 +588,8 @@ export function EbayOverview() {
               loading={busy}
               section={data?.sales?.status === 'ok' || shopifyReady ? { status: 'ok', data: true } : data?.sales}
               value={!busy ? money(combinedNet) : null}
-              sub="eBay after fees + Shopify after ads + Etsy after its fees"
-              title="eBay net, Shopify estimated profit after ads, and the Etsy payment-ledger profit."
+              sub="eBay after its fees, plus Shopify and Etsy after shipping, ads, and item cost"
+              title="eBay after the fees eBay charged. Shopify and Etsy use sales minus shipping, ads, and item cost."
               delta={!busy ? allNetChange : undefined}
               deltaLabel={comparedWith}
               footer={
@@ -1215,12 +1228,34 @@ function AdSpendBar({
   const [amount, setAmount] = useState(dailyBudget != null ? String(dailyBudget) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lookup = useRef(0);
+  const today = new Date().toLocaleDateString('en-CA');
 
   function openEditor() {
-    setDate(new Date().toLocaleDateString('en-CA'));
+    setDate(today);
     setAmount(dailyBudget != null ? String(dailyBudget) : '');
     setError(null);
     setOpen(true);
+  }
+
+  async function chooseDate(next: string) {
+    setDate(next);
+    setError(null);
+    const saved = entries.find((entry) => entry.date === next);
+    if (saved) {
+      setAmount(String(saved.amount));
+      return;
+    }
+    const requestId = lookup.current + 1;
+    lookup.current = requestId;
+    try {
+      const res = await fetch(`/api/ad-budget?date=${next}`);
+      const body = await res.json().catch(() => null);
+      if (lookup.current !== requestId) return;
+      if (res.ok && typeof body?.amount === 'number') setAmount(String(body.amount));
+    } catch {
+      // Leave the amount the seller already sees.
+    }
   }
 
   async function save(event: React.FormEvent) {
@@ -1265,11 +1300,11 @@ function AdSpendBar({
       {open && (
         <form onSubmit={save} className="mt-3 grid gap-2 sm:grid-cols-[auto_auto_auto] sm:items-end">
           <label className="text-xs text-surface-400">
-            Effective date
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 block" />
+            Day
+            <input type="date" value={date} max={today} onChange={(event) => chooseDate(event.target.value)} className="mt-1 block" />
           </label>
           <label className="text-xs text-surface-400">
-            Daily amount
+            Ad spend
             <input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 block" />
           </label>
           <div className="flex gap-2">
@@ -1277,13 +1312,17 @@ function AdSpendBar({
             <button type="button" onClick={() => setOpen(false)} className="btn btn-ghost btn-sm">Cancel</button>
           </div>
           <p className="sm:col-span-3 text-[11px] text-surface-500">
-            This amount carries forward from the date you pick until you change it. To fill a 7D or 30D view, set a date at the start of that period.
+            Today’s amount is used again tomorrow until you change it. Pick an earlier day to correct that day only. That spend is subtracted from that day’s profit.
           </p>
           {error && <p className="sm:col-span-3 text-xs text-red-300">{error}</p>}
           {entries.length > 0 && (
             <ul className="sm:col-span-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-surface-500">
-              {entries.slice(0, 6).map((entry) => (
-                <li key={entry.date} className="tabular-nums">{entry.date} · {money(entry.amount)}</li>
+              {entries.slice(0, 14).map((entry) => (
+                <li key={entry.date}>
+                  <button type="button" onClick={() => chooseDate(entry.date)} className="tabular-nums underline-offset-2 hover:underline">
+                    {entry.date} · {money(entry.amount)}
+                  </button>
+                </li>
               ))}
             </ul>
           )}

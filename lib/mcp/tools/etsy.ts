@@ -30,7 +30,7 @@ registerTool({
 
 registerTool({
   name: 'etsy_receipts_get',
-  description: 'Read paid Etsy orders for a recent range: sales, profit after the fees and ads Etsy recorded, order count, and the latest receipts. Does not refund or ship anything.',
+  description: 'Read paid Etsy orders for a recent range: sales, profit after shipping, Etsy ads, and item cost, order count, and the latest receipts. Does not refund or ship anything.',
   effect: 'read',
   inputSchema: {
     type: 'object',

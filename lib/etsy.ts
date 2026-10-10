@@ -19,7 +19,8 @@ import { resolveImagePath } from './storage';
 import { getComparisonDates, type DateRangeKey } from './dates';
 import type { DashboardSection, EtsyData } from './dashboard-types';
 import type { EbayListEvent } from './list-progress';
-import { etsyErrorText, etsyLedgerProfit, etsyMoney, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from './etsy-listing';
+import { etsyAdCost, etsyErrorText, etsyMoney, etsySalesProfit, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from './etsy-listing';
+import { getAppSettings } from './queries/app-settings';
 
 const API = 'https://api.etsy.com/v3';
 const AUTH_URL = 'https://www.etsy.com/oauth/connect';
@@ -553,11 +554,16 @@ interface EtsyReceipt {
   transactions?: { title?: string; quantity?: number }[];
 }
 
-function receiptRevenue(receipt: EtsyReceipt): number {
+function receiptParts(receipt: EtsyReceipt): { merchandise: number; shipping: number } {
   const items = etsyMoney(receipt.subtotal);
   const shipping = etsyMoney(receipt.total_shipping_cost);
-  if (items || shipping) return items + shipping;
-  return etsyMoney(receipt.grandtotal);
+  if (items || shipping) return { merchandise: items, shipping };
+  return { merchandise: etsyMoney(receipt.grandtotal), shipping: 0 };
+}
+
+function receiptRevenue(receipt: EtsyReceipt): number {
+  const parts = receiptParts(receipt);
+  return parts.merchandise + parts.shipping;
 }
 
 function receiptUnits(receipt: EtsyReceipt): number {
@@ -609,12 +615,15 @@ function dailyRevenue(from: Date, to: Date, receipts: EtsyReceipt[]): number[] {
 function summarize(receipts: EtsyReceipt[]) {
   return receipts.reduce(
     (totals, receipt) => {
-      totals.revenue += receiptRevenue(receipt);
+      const parts = receiptParts(receipt);
+      totals.revenue += parts.merchandise + parts.shipping;
+      totals.shipping += parts.shipping;
+      totals.merchandise += parts.merchandise;
       totals.orders += 1;
       totals.units += receiptUnits(receipt);
       return totals;
     },
-    { revenue: 0, orders: 0, units: 0 }
+    { revenue: 0, shipping: 0, merchandise: 0, orders: 0, units: 0 }
   );
 }
 
@@ -644,7 +653,20 @@ async function fetchLedger(creds: EtsyCreds, accessToken: string, shopId: string
 }
 
 function emptyEtsy(state: EtsyData['state'], shop: string | null = null): EtsyData {
-  return { state, shop, revenue: 0, profit: null, fees: null, orders: 0, units: 0, unshipped: 0, daily: [], recent: [] };
+  return {
+    state,
+    shop,
+    revenue: 0,
+    shipping: 0,
+    itemCost: 0,
+    profit: null,
+    fees: null,
+    orders: 0,
+    units: 0,
+    unshipped: 0,
+    daily: [],
+    recent: [],
+  };
 }
 
 export async function getEtsyDashboard(
@@ -655,6 +677,8 @@ export async function getEtsyDashboard(
     const connection = await prisma.etsyConnection.findUnique({ where: { userEmail } });
     if (!connection?.shopId) return { status: 'ok', data: emptyEtsy('not_connected') };
     const { creds, accessToken, shopId } = await getValidEtsyAccessToken(userEmail);
+    const settings = await getAppSettings();
+    const marginRate = (settings?.defaultMarginPercent ?? 35) / 100;
     const { prevFrom, prevTo } = getComparisonDates(window.key, window.from, window.to);
     const [current, prior, open, currentLedger, priorLedger] = await Promise.all([
       fetchReceipts(creds, accessToken, shopId, window.from, window.to),
@@ -667,23 +691,27 @@ export async function getEtsyDashboard(
     ]);
     const totals = summarize(current);
     const previous = summarize(prior);
-    const profit = currentLedger ? etsyLedgerProfit(currentLedger) : null;
-    const priorProfit = priorLedger ? etsyLedgerProfit(priorLedger) : null;
+    const ads = currentLedger ? etsyAdCost(currentLedger) : null;
+    const priorAds = priorLedger ? etsyAdCost(priorLedger) : null;
+    const profit = etsySalesProfit(totals.merchandise, marginRate, ads ?? 0);
+    const priorProfit = etsySalesProfit(previous.merchandise, marginRate, priorAds ?? 0);
     return {
       status: 'ok',
       data: {
         state: 'ok',
         shop: connection.shopName,
         revenue: Math.round(totals.revenue * 100) / 100,
-        profit: profit?.profit ?? null,
-        fees: profit?.fees ?? null,
+        shipping: Math.round(totals.shipping * 100) / 100,
+        itemCost: profit.itemCost,
+        profit: profit.profit,
+        fees: ads,
         orders: totals.orders,
         units: totals.units,
         unshipped: open.results?.length ?? open.count ?? 0,
         daily: dailyRevenue(window.from, window.to, current),
         prior: {
           revenue: Math.round(previous.revenue * 100) / 100,
-          profit: priorProfit?.profit ?? null,
+          profit: priorProfit.profit,
           orders: previous.orders,
           units: previous.units,
         },

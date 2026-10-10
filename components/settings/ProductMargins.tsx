@@ -38,7 +38,7 @@ export function ProductMargins({ defaultMargin }: { defaultMargin: number }) {
       <div>
         <h3 className="text-sm font-medium text-white">Product margins</h3>
         <p className="mt-1 text-xs text-surface-500">
-          Leave a product blank to use the {defaultMargin}% default. A number here replaces that default for that product only. Products with a saved cost keep that cost instead of a margin.
+          Leave a product blank to use the {defaultMargin}% default. A number here replaces that default for that product only. Profit uses these margins. Shopify’s cost is not used.
         </p>
       </div>
       <div className="flex items-center justify-between gap-3">

@@ -4,6 +4,8 @@ import { toZonedTime } from "date-fns-tz";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { revalidateAppData } from "@/lib/sync/revalidate";
+import { adBudgetWrites, effectiveAdAmount, type AdBudgetPoint } from "@/lib/ad-budget";
+import { toNumber } from "@/lib/money";
 
 const TZ = "America/New_York";
 
@@ -40,60 +42,55 @@ export async function POST(request: Request) {
   }
 
   const { date, amount } = parsed.data;
-  // Store as UTC midnight so the DATE column is unambiguous
-  const day = new Date(date + "T00:00:00.000Z");
-  const todayUtc = new Date(todayLocalStr() + "T00:00:00.000Z");
+  const today = todayLocalStr();
+  if (date > today) {
+    return NextResponse.json({ error: "Pick today or an earlier day." }, { status: 400 });
+  }
 
   try {
-    // ── Retroactive-edit fence ──────────────────────────────────────────────
-    // If the user is editing a PAST date, the carry-forward would bleed into
-    // today (and beyond) unless we pin today's value first.
-    // Rule: only editing TODAY or a future date should affect future carry-forward.
-    if (day < todayUtc) {
-      // Is there already an explicit entry anywhere between this date and today?
-      // If yes, that entry already acts as a natural fence — no action needed.
-      const existingFence = await prisma.dailyAdBudget.findFirst({
-        where: { date: { gt: day, lte: todayUtc } },
-        orderBy: { date: "asc" },
-      });
-
-      if (!existingFence) {
-        // No fence exists. Find what today's effective budget currently is
-        // (the carry-forward from BEFORE this retroactive edit, i.e. the most
-        // recent entry strictly before the date being edited).
-        const prevEntry = await prisma.dailyAdBudget.findFirst({
-          where: { date: { lt: day } },
-          orderBy: { date: "desc" },
-          select: { amount: true },
-        });
-
-        // Pin today at whatever the carry-forward was. If no prior entry existed,
-        // today had no budget ($0) — keep it that way.
-        await prisma.dailyAdBudget.upsert({
-          where: { date: todayUtc },
-          // If today was somehow already set between our check and now, don't overwrite it.
-          update: {},
-          create: { date: todayUtc, amount: prevEntry?.amount ?? 0 },
-        });
-      }
-    }
-    // ────────────────────────────────────────────────────────────────────────
-
-    const entry = await prisma.dailyAdBudget.upsert({
-      where: { date: day },
-      update: { amount, updatedAt: new Date() },
-      create: { date: day, amount },
+    const existing = await prisma.dailyAdBudget.findMany({
+      where: { date: { lte: new Date(today + "T00:00:00.000Z") } },
+      orderBy: { date: "asc" },
+      select: { date: true, amount: true },
     });
+    const points: AdBudgetPoint[] = existing.map((entry) => ({
+      date: entry.date.toISOString().slice(0, 10),
+      amount: toNumber(entry.amount),
+    }));
+    const writes = adBudgetWrites(points, date, amount, today);
+    let saved = null;
+    for (const write of writes) {
+      const day = new Date(write.date + "T00:00:00.000Z");
+      const entry = await prisma.dailyAdBudget.upsert({
+        where: { date: day },
+        update: { amount: write.amount, updatedAt: new Date() },
+        create: { date: day, amount: write.amount },
+      });
+      if (write.date === date) saved = entry;
+    }
     revalidateAppData();
-    return NextResponse.json({ ok: true, entry });
+    return NextResponse.json({ ok: true, entry: saved });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
 
-/** GET /api/ad-budget — return the 30 most recent entries */
-export async function GET() {
+/** GET /api/ad-budget — recent entries, or the amount counted on ?date=YYYY-MM-DD */
+export async function GET(request: Request) {
   if (!prisma) return NextResponse.json({ entries: [] });
+  const date = new URL(request.url).searchParams.get("date");
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const rows = await prisma.dailyAdBudget.findMany({
+      where: { date: { lte: new Date(date + "T00:00:00.000Z") } },
+      orderBy: { date: "asc" },
+      select: { date: true, amount: true },
+    });
+    const points: AdBudgetPoint[] = rows.map((entry) => ({
+      date: entry.date.toISOString().slice(0, 10),
+      amount: toNumber(entry.amount),
+    }));
+    return NextResponse.json({ date, amount: effectiveAdAmount(points, date) });
+  }
   const entries = await prisma.dailyAdBudget.findMany({
     orderBy: { date: "desc" },
     take: 30,
