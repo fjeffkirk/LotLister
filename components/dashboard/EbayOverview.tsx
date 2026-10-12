@@ -56,8 +56,13 @@ function money(n: number): string {
 
 function etsyProfitNote(etsy: EtsyData | null): string | null {
   if (!etsy) return null;
-  if (etsy.fees == null) return 'Etsy ads were not included';
-  return `after ${money(etsy.shipping)} shipping, ${money(etsy.fees)} ads, and ${money(etsy.itemCost)} item cost`;
+  if (etsy.fees == null) return 'Etsy ad cost was not available';
+  return `Ad cost ${money(etsy.fees)}`;
+}
+
+function ebayAdNote(adFees: number | null | undefined): string {
+  if (adFees == null) return 'Ad cost needs an eBay sign-in';
+  return `Ad cost ${money(adFees)}`;
 }
 
 function shopifyProfitNote(range: ShopifyRangeStats): string {
@@ -342,17 +347,17 @@ export function EbayOverview() {
               loading={busy}
               section={data?.sales}
               value={stats ? money(stats.summary.net) : null}
-              sub={
-                stats
-                  ? `after ${money(stats.summary.fees)} eBay fees${stats.summary.refunds > 0 ? ` · ${money(stats.summary.refunds)} refunded` : ''}`
-                  : null
-              }
-              title="Sales minus the marketplace fees and refunds eBay deducts on the order. eBay takes promoted listing charges out of the payout."
+              sub={stats ? ebayAdNote(stats.summary.adFees) : null}
+              title="Sales minus eBay fees, refunds, and promoted listing ad cost. The ad cost on this card is the promoted listing charge for the range."
               delta={ebayNetChange}
               deltaLabel={comparedWith}
               footer={
                 stats ? (
                   <div className="space-y-1">
+                    <FootNote>
+                      after {money(stats.summary.fees)} eBay fees
+                      {stats.summary.refunds > 0 ? ` · ${money(stats.summary.refunds)} refunded` : ''}
+                    </FootNote>
                     {stats.summary.units > 0 && <FootNote>{money(stats.summary.avgItemPrice)} avg per card</FootNote>}
                     <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(stats.summary.net, rangeDays))}</FootNote>
                   </div>
@@ -425,7 +430,7 @@ export function EbayOverview() {
               section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
               value={etsy ? (etsy.profit != null ? money(etsy.profit) : '—') : null}
               sub={etsyProfitNote(etsy)}
-              title="Sales minus the shipping the buyer paid, minus Etsy ads, minus item cost from your product margin. A day with no sales is $0 unless Etsy charged ads that day."
+              title="Sales minus the shipping the buyer paid, minus the Etsy ad cost shown here, minus item cost from your product margin. A day with no sales can be negative when Etsy charged ads."
               delta={etsyProfitChange}
               deltaLabel={comparedWith}
               footer={

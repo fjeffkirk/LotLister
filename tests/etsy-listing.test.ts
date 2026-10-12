@@ -31,11 +31,12 @@ describe('etsy listing fields', () => {
     expect(etsyAdCost([
       { amount: 18212, ledger_type: 'transaction' },
       { amount: -3244, ledger_type: 'offsite_ads_fee' },
+      { amount: -100, ledger_type: 'googleads' },
       { amount: -800, ledger_type: 'transaction_fee' },
       { amount: -200, ledger_type: 'renew_sold' },
       { amount: 500, ledger_type: 'prolist_refund' },
       { amount: -15000, ledger_type: 'DISBURSE2' },
-    ])).toBe(27.44);
+    ])).toBe(28.44);
   });
 
   it('keeps a day with no sales at zero unless Etsy charged ads', () => {

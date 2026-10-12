@@ -9,9 +9,11 @@ export type DashboardSection<T> =
 export interface SalesSummary {
   /** Item + shipping, before tax — the amount eBay charges final value fees on. */
   gross: number;
-  /** gross minus eBay marketplace fees and refunds. */
+  /** gross minus eBay marketplace fees, promoted-listing ad cost, and refunds. */
   net: number;
   fees: number;
+  /** Promoted listing charges in this range. Null when eBay did not return the finances ledger. */
+  adFees: number | null;
   refunds: number;
   orders: number;
   units: number;

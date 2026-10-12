@@ -18,7 +18,7 @@ vi.mock('../lib/ebay', () => ({
   decodeXml: (value: string) => value.replace(/&amp;/g, '&'),
 }));
 
-const { getDashboardData } = await import('../lib/ebay-dashboard');
+const { getDashboardData, sumPromotedAdFees } = await import('../lib/ebay-dashboard');
 
 function iso(daysAgo: number): string {
   return new Date(NOW - daysAgo * DAY).toISOString();
@@ -187,5 +187,15 @@ describe('getDashboardData', () => {
     expect(data.state).toBe('not_connected');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(tradingCall).not.toHaveBeenCalled();
+  });
+});
+
+describe('promoted listing ad cost', () => {
+  it('adds debits and subtracts credits', () => {
+    expect(sumPromotedAdFees([
+      { feeType: 'AD_FEE', bookingEntry: 'DEBIT', amount: { value: '8.87', currency: 'USD' } },
+      { feeType: 'AD_FEE', bookingEntry: 'CREDIT', amount: { value: '1.00', currency: 'USD' } },
+      { feeType: 'FINAL_VALUE_FEE', bookingEntry: 'DEBIT', amount: { value: '4.00', currency: 'USD' } },
+    ])).toBe(7.87);
   });
 });

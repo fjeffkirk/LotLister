@@ -76,7 +76,7 @@ export function shopFromEtsyPayload(body: unknown): { shopId: string; shopName: 
   return { shopId: String(shop.shop_id), shopName: shop.shop_name?.trim() || 'Etsy shop' };
 }
 
-const ETSY_AD = /offsite_ads|prolist|advertis/i;
+const ETSY_AD = /offsite_ads|prolist|googleads|search_ads|advertis/i;
 
 /** Etsy Ads and Offsite Ads charged in this window, in dollars. Listing fees are not included. */
 export function etsyAdCost(entries: { amount?: number; ledger_type?: string }[]): number {

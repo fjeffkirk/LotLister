@@ -25,10 +25,12 @@ import {
   RangeStats,
   RecentSale,
   SalesData,
+  SalesSummary,
   ShippingData,
 } from './dashboard-types';
 
 const FULFILLMENT_URL = 'https://api.ebay.com/sell/fulfillment/v1/order';
+const FINANCES_URL = 'https://apiz.ebay.com/sell/finances/v1/transaction';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ORDER_PAGE_SIZE = 200;
 const MAX_ORDER_PAGES = 25;
@@ -78,6 +80,30 @@ function amount(value: Amount | undefined): number {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+interface FinanceTransaction {
+  feeType?: string;
+  bookingEntry?: string;
+  amount?: { value?: string; currency?: string };
+}
+
+/** Promoted-listing charges. Credits reduce the cost. Non-USD rows are skipped. */
+export function sumPromotedAdFees(transactions: FinanceTransaction[]): number {
+  let total = 0;
+  for (const entry of transactions) {
+    if ((entry.feeType ?? '').toUpperCase() !== 'AD_FEE') continue;
+    if ((entry.amount?.currency ?? 'USD').toUpperCase() !== 'USD') continue;
+    const value = Number.parseFloat(entry.amount?.value ?? '');
+    if (!Number.isFinite(value)) continue;
+    total += (entry.bookingEntry ?? 'DEBIT').toUpperCase() === 'CREDIT' ? -value : value;
+  }
+  return round2(total);
+}
+
+function applyAdFees(summary: SalesSummary, adFees: number | null) {
+  summary.adFees = adFees;
+  if (adFees != null) summary.net = round2(summary.net - adFees);
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -430,6 +456,7 @@ function buildRangeStats(
       gross: round2(gross),
       net: round2(gross - fees - refunds),
       fees: round2(fees),
+      adFees: null,
       refunds: round2(refunds),
       orders: orderCount,
       units,
@@ -510,6 +537,7 @@ function buildWindowStats(
       gross: round2(gross),
       net: round2(gross - fees - refunds),
       fees: round2(fees),
+      adFees: null,
       refunds: round2(refunds),
       orders: orderCount,
       units,
@@ -519,6 +547,35 @@ function buildWindowStats(
     players: topPlayers,
     unidentifiedUnits,
   };
+}
+
+/** Promoted listing charges in the window. Null when this sign-in cannot read the finances ledger. */
+async function fetchPromotedAdFees(accessToken: string, from: Date, to: Date): Promise<number | null> {
+  const transactions: FinanceTransaction[] = [];
+  for (let page = 0; page < 10; page += 1) {
+    const offset = page * 200;
+    const filter = `transactionDate:[${from.toISOString()}..${to.toISOString()}],feeType:{AD_FEE}`;
+    const url = new URL(FINANCES_URL);
+    url.searchParams.set('filter', filter);
+    url.searchParams.set('limit', '200');
+    url.searchParams.set('offset', String(offset));
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+      },
+      cache: 'no-store',
+    });
+    if (response.status === 401 || response.status === 403) return null;
+    const body = (await response.json().catch(() => null)) as { transactions?: FinanceTransaction[]; total?: number } | null;
+    if (!response.ok) return null;
+    const batch = body?.transactions ?? [];
+    transactions.push(...batch);
+    const total = body?.total ?? batch.length;
+    if (batch.length < 200 || offset + batch.length >= total) break;
+  }
+  return sumPromotedAdFees(transactions);
 }
 
 async function fetchSales(
@@ -546,6 +603,14 @@ async function fetchSales(
 
   const focus = window ? buildWindowStats(orders, window.from, window.to, players) : ranges['30'];
   const priorStats = comparison ? buildWindowStats(orders, comparison.prevFrom, comparison.prevTo, players) : null;
+  if (window) {
+    const [currentAds, priorAds] = await Promise.all([
+      fetchPromotedAdFees(accessToken, window.from, window.to),
+      comparison ? fetchPromotedAdFees(accessToken, comparison.prevFrom, comparison.prevTo) : Promise.resolve(0),
+    ]);
+    applyAdFees(focus.summary, currentAds);
+    if (priorStats && priorAds != null) applyAdFees(priorStats.summary, priorAds);
+  }
   const prior = priorStats
     ? {
         gross: priorStats.summary.gross,
