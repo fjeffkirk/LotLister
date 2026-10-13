@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto';
 import prisma from '../prisma';
-import { hashSecret, pkceChallenge, secretsMatch, type McpScope } from './oauth';
+import { hashSecret, MCP_SCOPES, pkceChallenge, secretsMatch, type McpScope } from './oauth';
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TTL_MS = 60 * 60 * 1000;
@@ -107,7 +107,7 @@ export async function sessionFromAccessToken(token: string): Promise<McpSession 
   const row = await prisma.mcpToken.findUnique({ where: { tokenHash: hashSecret(token) } });
   if (!row || row.kind !== 'access' || row.expiresAt.getTime() < Date.now()) return null;
   const scopes = row.scopes.split(/\s+/).filter((scope): scope is McpScope =>
-    scope === 'lotlister.read' || scope === 'lotlister.drafts' || scope === 'lotlister.prices'
+    (MCP_SCOPES as readonly string[]).includes(scope)
   );
   return { accountId: row.userEmail, scopes, clientId: row.clientId };
 }
