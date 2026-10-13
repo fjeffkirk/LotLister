@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { assertChatGptRedirect, consentScopes, grantedScopes, pkceChallenge } from '../lib/mcp/oauth';
-import { registerTool } from '../lib/mcp/registry';
+import { findTool, registerTool } from '../lib/mcp/registry';
 import { dispatchMcp } from '../lib/mcp/protocol';
 
 describe('LotLister MCP policy', () => {
   it('grants read and draft access, and ignores a publish scope', () => {
     expect(grantedScopes('lotlister.read lotlister.publish')).toEqual(['lotlister.read']);
-    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices']);
-    expect(consentScopes()).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices']);
+    expect(grantedScopes('lotlister.read lotlister.youtube')).toEqual(['lotlister.read', 'lotlister.youtube']);
+    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube']);
+    expect(consentScopes()).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube']);
   });
 
   it('only accepts ChatGPT redirect addresses', () => {
@@ -37,6 +38,8 @@ describe('LotLister MCP policy', () => {
     expect(names).not.toContain('etsy_drafts_create');
     expect(names).not.toContain('etsy_drafts_create_product');
     expect(names).not.toContain('ebay_prices_apply');
+    expect(names).not.toContain('youtube_upload_video');
+    expect(names).not.toContain('youtube_video_publish');
 
     const denied = await dispatchMcp({
       jsonrpc: '2.0',
@@ -45,5 +48,27 @@ describe('LotLister MCP policy', () => {
       params: { name: 'etsy_drafts_create', arguments: { cardId: '00000000-0000-4000-8000-000000000000' } },
     }, { ...session, scopes: ['lotlister.read'] });
     expect((denied.body?.result as { isError: boolean }).isError).toBe(true);
+  });
+
+  it('lists YouTube upload tools only for the youtube scope and still blocks deletes', async () => {
+    expect(findTool('youtube_video_publish')?.readOnly).toBe(false);
+    expect(findTool('youtube_connections_list')?.readOnly).toBe(true);
+    expect(() => registerTool({
+      name: 'youtube_video_delete',
+      description: 'no',
+      effect: 'youtube',
+      inputSchema: {},
+      handler: async () => ({}),
+    })).toThrow(/not available/);
+
+    const session = { accountId: 'seller', scopes: ['lotlister.youtube'] as const, clientId: 'chatgpt' };
+    const listed = await dispatchMcp({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { ...session, scopes: ['lotlister.youtube'] });
+    const names = ((listed.body?.result as { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] }).tools).map((tool) => tool.name);
+    expect(names).toContain('youtube_upload_video');
+    expect(names).toContain('youtube_video_publish');
+    expect(names).not.toContain('lots_list');
+    const publish = ((listed.body?.result as { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] }).tools)
+      .find((tool) => tool.name === 'youtube_video_publish');
+    expect(publish?.annotations?.readOnlyHint).toBe(false);
   });
 });

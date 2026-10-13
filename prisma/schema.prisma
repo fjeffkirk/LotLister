@@ -471,3 +471,81 @@ model SyncRun {
 
   @@index([startedAt])
 }
+
+// A LotLister account can connect more than one YouTube channel. Uploads name the row id
+// so a video cannot be sent to the wrong channel. Tokens are ciphertext, never returned by MCP.
+model YoutubeConnection {
+  id                    String    @id @default(cuid())
+  userEmail             String
+  channelId             String
+  channelTitle          String
+  channelHandle         String?
+  refreshTokenEncrypted String    @db.Text
+  accessTokenEncrypted  String?   @db.Text
+  accessExpiresAt       DateTime?
+  scopes                String
+  status                String    @default("connected")
+  statusDetail          String?
+  connectedAt           DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([userEmail, channelId])
+  @@index([userEmail])
+}
+
+model YoutubeMediaAsset {
+  id           String    @id @default(cuid())
+  userEmail    String
+  kind         String
+  status       String
+  filename     String
+  contentType  String
+  byteSize     Int?
+  storagePath  String
+  sourceUrl    String?   @db.Text
+  expiresAt    DateTime?
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+
+  @@index([userEmail])
+}
+
+model YoutubeUploadJob {
+  id                  String    @id @default(cuid())
+  userEmail           String
+  connectionId        String
+  channelId           String
+  channelTitle        String
+  idempotencyKey      String
+  requestHash         String
+  mediaAssetId        String
+  thumbnailAssetId    String?
+  status              String
+  progressBytes       Int       @default(0)
+  byteSize            Int       @default(0)
+  bytesAcked          Int       @default(0)
+  attemptCount        Int       @default(0)
+  completionUncertain Boolean   @default(false)
+  nextAttemptAt       DateTime?
+  lockedAt            DateTime?
+  lockToken           String?
+  resumableSessionEnc String?   @db.Text
+  youtubeVideoId      String?
+  requestedVisibility String
+  publicationIntent   Boolean   @default(false)
+  publishAt           DateTime?
+  metadataJson        String    @db.Text
+  actualVisibility    String?
+  restriction         String?
+  errorCode           String?
+  errorMessage        String?
+  thumbnailError      String?
+  thumbnailStatus     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([userEmail, idempotencyKey])
+  @@index([status, nextAttemptAt])
+  @@index([userEmail])
+  @@index([youtubeVideoId])
+}

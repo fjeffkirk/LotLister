@@ -64,8 +64,9 @@ export async function GET(request: NextRequest) {
     <li>View lots, eBay listings, Etsy orders, and Shopify totals</li>
     <li>Create an unpublished Etsy draft</li>
     <li>Change the price of an active eBay listing after you preview it</li>
+    <li>Upload videos to a YouTube channel you connect in LotLister. Those uploads stay private unless a tool call explicitly publishes or schedules them</li>
   </ul>
-  <p>It cannot publish listings or delete anything.</p>
+  <p>It cannot publish or delete eBay or Etsy listings, and it cannot delete YouTube videos.</p>
   <form method="post">${hidden}<button type="submit">Allow</button></form>
 </main></body></html>`;
 

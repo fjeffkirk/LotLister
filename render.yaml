@@ -59,6 +59,19 @@ services:
         sync: false
       - key: CRON_SECRET
         sync: false
+      # Google OAuth web client for YouTube Data API v3. Redirect URI is
+      # ${NEXT_PUBLIC_APP_URL}/api/youtube/callback
+      # Production: https://lotlister.onrender.com/api/youtube/callback
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      # 32-byte key, openssl rand -base64 32. Encrypts YouTube refresh tokens. Not a Google secret.
+      - key: YOUTUBE_TOKEN_ENCRYPTION_KEY
+        sync: false
+      # Optional. Defaults to 400MB so a video fits on the existing 1GB disk. Raising it needs a larger disk, which changes the Render bill.
+      - key: YOUTUBE_MAX_UPLOAD_BYTES
+        sync: false
     disk:
       name: lotlister-data
       mountPath: /data

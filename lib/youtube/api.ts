@@ -1,0 +1,155 @@
+import { CHUNK_BYTES } from './config';
+import { assertGoogleUploadUrl, buildInsertBody, parseGoogleError, redactSecrets } from './policy';
+import { type NormalizedUpload, type SessionQuery, type YoutubeVideo, YoutubeUserError } from './types';
+
+const DATA_API = 'https://www.googleapis.com/youtube/v3';
+const UPLOAD_API = 'https://www.googleapis.com/upload/youtube/v3';
+
+async function authed(url: string, token: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(url, { ...init, headers, redirect: 'manual' });
+  if (response.status >= 300 && response.status < 400) {
+    throw new YoutubeUserError('upstream_redirect', 'YouTube returned a redirect. The access token was not forwarded.');
+  }
+  return response;
+}
+
+async function readError(response: Response): Promise<never> {
+  const text = await response.text();
+  const parsed = parseGoogleError(response.status, text);
+  const code = parsed.kind === 'reconnect_required' ? 'reconnect_required'
+    : parsed.kind === 'transient' ? 'transient'
+      : parsed.kind === 'configuration' ? 'not_configured'
+        : parsed.reason || 'youtube_error';
+  throw new YoutubeUserError(code, parsed.message);
+}
+
+export async function listMyChannel(token: string): Promise<{ channelId: string; channelTitle: string; channelHandle: string | null }> {
+  const url = `${DATA_API}/channels?part=snippet&mine=true`;
+  const response = await authed(url, token);
+  if (!response.ok) await readError(response);
+  const body = await response.json() as { items?: Array<{ id?: string; snippet?: { title?: string; customUrl?: string } }> };
+  const channel = body.items?.[0];
+  if (!channel?.id || !channel.snippet?.title) {
+    throw new YoutubeUserError(
+      'no_channel',
+      'Google did not return a YouTube channel for this login. On the consent screen, choose the Google account that owns the channel you want, and pick that channel if YouTube asks.',
+    );
+  }
+  return {
+    channelId: channel.id,
+    channelTitle: channel.snippet.title,
+    channelHandle: channel.snippet.customUrl ?? null,
+  };
+}
+
+export async function getVideo(token: string, videoId: string): Promise<YoutubeVideo> {
+  const url = `${DATA_API}/videos?part=snippet,status,processingDetails,contentDetails&id=${encodeURIComponent(videoId)}`;
+  const response = await authed(url, token);
+  if (response.status === 401) throw new YoutubeUserError('reconnect_required', 'YouTube refused the access token. Reconnect the channel.');
+  if (!response.ok) await readError(response);
+  const body = await response.json() as { items?: YoutubeVideo[] };
+  const video = body.items?.[0];
+  if (!video?.id) {
+    throw new YoutubeUserError('not_found', 'YouTube did not return that video for this channel. Check the video id and connectionId.');
+  }
+  return video;
+}
+
+export async function updateVideo(token: string, part: string, body: Record<string, unknown>): Promise<YoutubeVideo> {
+  const response = await authed(`${DATA_API}/videos?part=${encodeURIComponent(part)}`, token, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) await readError(response);
+  return response.json() as Promise<YoutubeVideo>;
+}
+
+export async function startResumableSession(token: string, upload: NormalizedUpload, byteSize: number, contentType: string): Promise<string> {
+  const insert = buildInsertBody(upload);
+  const response = await authed(
+    `${UPLOAD_API}/videos?uploadType=resumable&part=${encodeURIComponent(insert.part)}`,
+    token,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Length': String(byteSize),
+        'X-Upload-Content-Type': contentType || 'video/mp4',
+      },
+      body: JSON.stringify(insert.body),
+    },
+  );
+  if (!response.ok) await readError(response);
+  const location = response.headers.get('location');
+  if (!location) throw new YoutubeUserError('youtube_error', 'YouTube did not return a resumable upload session.');
+  assertGoogleUploadUrl(location);
+  return location;
+}
+
+export async function probeOrUpload(input: {
+  token: string;
+  sessionUri: string;
+  total: number;
+  start?: number;
+  chunk?: Buffer;
+  contentType?: string;
+}): Promise<SessionQuery> {
+  assertGoogleUploadUrl(input.sessionUri);
+  const probing = !input.chunk;
+  const start = input.start ?? 0;
+  const chunk = input.chunk;
+  const headers: Record<string, string> = probing
+    ? { 'Content-Length': '0', 'Content-Range': `bytes */${input.total}` }
+    : {
+        'Content-Length': String(chunk!.length),
+        'Content-Type': input.contentType || 'video/mp4',
+        'Content-Range': `bytes ${start}-${start + chunk!.length - 1}/${input.total}`,
+      };
+  let response: Response;
+  try {
+    response = await authed(input.sessionUri, input.token, {
+      method: 'PUT',
+      headers,
+      body: probing ? undefined : new Uint8Array(chunk!),
+    });
+  } catch (error) {
+    if (error instanceof YoutubeUserError) throw error;
+    const message = error instanceof Error ? redactSecrets(error.message) : 'network error';
+    return { type: 'retry', message };
+  }
+  if (response.status === 308) {
+    const match = /bytes=(\d+)-(\d+)/.exec(response.headers.get('range') ?? '');
+    return { type: 'incomplete', acked: match ? Number(match[2]) + 1 : start };
+  }
+  if (response.status === 200 || response.status === 201) {
+    const video = await response.json() as YoutubeVideo;
+    if (!video.id) return { type: 'retry', message: 'YouTube accepted the upload but did not return a video id.' };
+    return { type: 'complete', videoId: video.id, video };
+  }
+  if (response.status === 404) return { type: 'expired' };
+  if (response.status === 429 || response.status >= 500) {
+    return { type: 'retry', message: `YouTube returned HTTP ${response.status} for the resumable upload.` };
+  }
+  const text = await response.text();
+  const parsed = parseGoogleError(response.status, text);
+  if (parsed.kind === 'reconnect_required') throw new YoutubeUserError('reconnect_required', parsed.message);
+  return { type: 'fatal', code: parsed.reason || 'youtube_error', message: parsed.message };
+}
+
+export async function setThumbnail(token: string, videoId: string, bytes: Buffer, contentType: string): Promise<void> {
+  const response = await authed(
+    `${UPLOAD_API}/thumbnails/set?videoId=${encodeURIComponent(videoId)}&uploadType=media`,
+    token,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body: new Uint8Array(bytes),
+    },
+  );
+  if (!response.ok) await readError(response);
+}
+
+export { CHUNK_BYTES };

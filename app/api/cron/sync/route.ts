@@ -6,6 +6,7 @@ import { beginSyncRun, executeSyncRun } from "@/lib/sync/shopify-sync";
 import { isScheduledIndexerEnabled } from "@/lib/sync/background-indexer";
 import { log } from "@/lib/logger";
 import { isShopifyApiReady } from "@/lib/shopify/config";
+import { processPendingYoutubeJobs } from "@/lib/youtube/jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -26,6 +27,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!prisma) return NextResponse.json({ error: "No database" }, { status: 503 });
+  after(() =>
+    processPendingYoutubeJobs({ budgetMs: 20_000, maxJobs: 1 }).catch((e) => {
+      log.warn("youtube drain", { message: e instanceof Error ? e.message.slice(0, 200) : "failed" });
+    }),
+  );
   startBackgroundIndexer();
   if (!(await isShopifyApiReady())) return NextResponse.json({ skipped: true, reason: "no_shopify" });
 
