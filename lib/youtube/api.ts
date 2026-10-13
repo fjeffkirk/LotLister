@@ -5,11 +5,15 @@ import { type NormalizedUpload, type SessionQuery, type YoutubeVideo, YoutubeUse
 const DATA_API = 'https://www.googleapis.com/youtube/v3';
 const UPLOAD_API = 'https://www.googleapis.com/upload/youtube/v3';
 
-async function authed(url: string, token: string, init: RequestInit = {}): Promise<Response> {
+async function authed(url: string, token: string, init: RequestInit = {}, resumablePut = false): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${token}`);
   const response = await fetch(url, { ...init, headers, redirect: 'manual' });
-  if (response.status >= 300 && response.status < 400) {
+  // YouTube uses 308 without Location as "Resume Incomplete" for resumable
+  // PUTs. It is a progress acknowledgement, not a request to forward a token.
+  const resumeIncomplete = resumablePut && init.method === 'PUT'
+    && response.status === 308 && !response.headers.has('location');
+  if (response.status >= 300 && response.status < 400 && !resumeIncomplete) {
     throw new YoutubeUserError('upstream_redirect', 'YouTube returned a redirect. The access token was not forwarded.');
   }
   return response;
@@ -114,7 +118,7 @@ export async function probeOrUpload(input: {
       method: 'PUT',
       headers,
       body: probing ? undefined : new Uint8Array(chunk!),
-    });
+    }, true);
   } catch (error) {
     if (error instanceof YoutubeUserError) throw error;
     const message = error instanceof Error ? redactSecrets(error.message) : 'network error';
