@@ -13,13 +13,27 @@ import { YoutubeUserError } from './types';
  * - youtube.readonly is "View your YouTube account" and is what channels.list?mine=true and videos.list use
  *   to read the channel id and the verified upload/processing/privacy state.
  *   https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps
+ * - reports.query requires youtube.readonly plus yt-analytics.readonly for view, watch-time, and subscriber reports.
+ *   The monetary scope is not requested, so estimated revenue is not shown.
+ *   https://developers.google.com/youtube/analytics/reference/reports/query (checked 2026-10-13)
  * youtubepartner and the full youtube manage-account scope are not requested.
  */
-export const YOUTUBE_SCOPES = [
+export const YOUTUBE_CORE_SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.force-ssl',
   'https://www.googleapis.com/auth/youtube.readonly',
 ] as const;
+
+export const YOUTUBE_ANALYTICS_SCOPE = 'https://www.googleapis.com/auth/yt-analytics.readonly';
+
+export const YOUTUBE_SCOPES = [
+  ...YOUTUBE_CORE_SCOPES,
+  YOUTUBE_ANALYTICS_SCOPE,
+] as const;
+
+export function hasAnalyticsScope(scope: string): boolean {
+  return scope.split(/\s+/).includes(YOUTUBE_ANALYTICS_SCOPE);
+}
 
 export const YOUTUBE_CALLBACK_PATH = '/api/youtube/callback';
 

@@ -8,13 +8,20 @@ import { AccountMenu } from './AccountMenu';
 import { useCommandPalette } from '../CommandPalette';
 import { SearchIcon } from './icons';
 
+const NAV = [
+  { href: '/lots', label: 'Dashboard' },
+  { href: '/ops/orders', label: 'Orders' },
+  { href: '/ops/inventory', label: 'Inventory' },
+  { href: '/youtube', label: 'YouTube' },
+] as const;
+
 function NavLink({ href, children }: { href: string; children: ReactNode }) {
   const path = usePathname();
   const active = href === '/lots' ? path === '/lots' : path.startsWith(href);
   return (
     <Link
       href={href}
-      className={`px-2.5 py-1.5 rounded-lg text-sm transition-colors ${
+      className={`px-2.5 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
         active ? 'text-white bg-white/[0.06]' : 'text-surface-400 hover:text-surface-100'
       }`}
     >
@@ -32,9 +39,7 @@ export function AppHeader({ actions, maxWidth = 'max-w-7xl' }: { actions?: React
         <div className="flex items-center gap-4 min-w-0">
           <Logo />
           <nav className="hidden sm:flex items-center gap-0.5">
-            <NavLink href="/lots">Dashboard</NavLink>
-            <NavLink href="/ops/orders">Orders</NavLink>
-            <NavLink href="/ops/inventory">Inventory</NavLink>
+            {NAV.map((item) => <NavLink key={item.href} href={item.href}>{item.label}</NavLink>)}
           </nav>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -53,6 +58,9 @@ export function AppHeader({ actions, maxWidth = 'max-w-7xl' }: { actions?: React
           {actions}
         </div>
       </div>
+      <nav className="sm:hidden flex items-center gap-0.5 overflow-x-auto px-4 pb-3">
+        {NAV.map((item) => <NavLink key={item.href} href={item.href}>{item.label}</NavLink>)}
+      </nav>
     </header>
   );
 }

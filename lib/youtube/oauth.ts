@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
-import { YOUTUBE_SCOPES, googleCredentials } from './config';
+import { YOUTUBE_CORE_SCOPES, YOUTUBE_SCOPES, googleCredentials } from './config';
 import { redactSecrets } from './policy';
 import { YoutubeUserError } from './types';
 
@@ -227,7 +227,7 @@ export async function revokeToken(token: string): Promise<boolean> {
 export function assertGrantedScopes(scope: string): void {
   if (!scope.trim()) return;
   const granted = new Set(scope.split(/\s+/));
-  const missing = YOUTUBE_SCOPES.filter((item) => !granted.has(item));
+  const missing = YOUTUBE_CORE_SCOPES.filter((item) => !granted.has(item));
   if (missing.length > 0) {
     throw new YoutubeUserError(
       'reconnect_required',
