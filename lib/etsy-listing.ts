@@ -90,11 +90,94 @@ export function etsyAdCost(entries: { amount?: number; ledger_type?: string }[])
   return Math.round(cost * 100) / 100;
 }
 
-/** Sales minus shipping, minus item cost from the margin, minus Etsy ad cost. */
+/** Item sales times the margin, minus Etsy ad cost. Shipping is not part of item sales. */
 export function etsySalesProfit(merchandise: number, marginRate: number, adCost: number): { profit: number; itemCost: number } {
   const itemCost = Math.round(Math.max(0, merchandise) * (1 - marginRate) * 100) / 100;
   const profit = Math.round((merchandise - itemCost - adCost) * 100) / 100;
   return { profit, itemCost };
+}
+
+export interface EtsyMarginLine {
+  amount: number;
+  sku?: string | null;
+  title?: string | null;
+}
+
+export interface MarginCatalog {
+  bySku: Map<string, number>;
+  titles: { key: string; rate: number }[];
+}
+
+export function normalizeMatchKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Product margin overrides, as rates from 0 to 1. Products left blank are not in the catalog. */
+export function buildMarginCatalog(
+  products: { sku?: string | null; title?: string | null; marginPercent?: number | null }[],
+): MarginCatalog {
+  const bySku = new Map<string, number>();
+  const titles: { key: string; rate: number }[] = [];
+  for (const product of products) {
+    if (product.marginPercent == null || !Number.isFinite(product.marginPercent)) continue;
+    const rate = product.marginPercent / 100;
+    if (product.sku?.trim()) bySku.set(normalizeMatchKey(product.sku), rate);
+    const title = product.title ? normalizeMatchKey(product.title) : '';
+    if (title) titles.push({ key: title, rate });
+  }
+  titles.sort((a, b) => b.key.length - a.key.length);
+  return { bySku, titles };
+}
+
+export function marginRateForLine(
+  line: { sku?: string | null; title?: string | null },
+  catalog: MarginCatalog,
+  fallbackRate: number,
+): { rate: number; matched: boolean } {
+  const sku = line.sku ? normalizeMatchKey(line.sku) : '';
+  if (sku && catalog.bySku.has(sku)) return { rate: catalog.bySku.get(sku) ?? fallbackRate, matched: true };
+  const title = line.title ? normalizeMatchKey(line.title) : '';
+  if (!title) return { rate: fallbackRate, matched: false };
+  const exact = catalog.titles.find((item) => item.key === title);
+  if (exact) return { rate: exact.rate, matched: true };
+  const contained = catalog.titles.find((item) => item.key.length >= 12 && title.includes(item.key));
+  if (contained) return { rate: contained.rate, matched: true };
+  return { rate: fallbackRate, matched: false };
+}
+
+/**
+ * Item sales times each line's product margin, otherwise the default margin, then minus ads.
+ * A 60% product margin on a $39.55 item minus $8.24 ads is $15.49, not the default-margin result.
+ */
+export function etsyRangeProfit(
+  receipts: { merchandise: number; lines: EtsyMarginLine[] }[],
+  catalog: MarginCatalog,
+  fallbackRate: number,
+  adCost: number,
+): { profit: number; itemCost: number; marginPercent: number; marginSource: 'product' | 'default' | 'mixed' } {
+  let merchandise = 0;
+  let gross = 0;
+  let matched = false;
+  let unmatched = false;
+  for (const receipt of receipts) {
+    const base = Math.max(0, receipt.merchandise);
+    if (base === 0) continue;
+    merchandise += base;
+    const priced = receipt.lines.filter((line) => line.amount > 0);
+    const source = priced.length > 0 ? priced : [{ amount: base, sku: receipt.lines[0]?.sku, title: receipt.lines[0]?.title }];
+    const sum = source.reduce((total, line) => total + line.amount, 0) || base;
+    for (const line of source) {
+      const found = marginRateForLine(line, catalog, fallbackRate);
+      gross += base * (line.amount / sum) * found.rate;
+      if (found.matched) matched = true;
+      else unmatched = true;
+    }
+  }
+  const itemCost = Math.round((merchandise - gross) * 100) / 100;
+  const profit = Math.round((gross - adCost) * 100) / 100;
+  const marginPercent = merchandise > 0 ? Math.round((gross / merchandise) * 1000) / 10 : Math.round(fallbackRate * 1000) / 10;
+  const marginSource = matched && unmatched ? 'mixed' : matched ? 'product' : 'default';
+  return { profit, itemCost, marginPercent, marginSource };
 }
 
 export function etsyMoney(value: { amount?: number; divisor?: number } | null | undefined): number {

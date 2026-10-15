@@ -147,10 +147,14 @@ export interface EtsyRecentSale {
 export interface EtsyData {
   state: 'ok' | 'not_connected';
   shop: string | null;
-  /** Item price plus shipping the buyer paid, before tax. */
+  /** Item sales, before shipping and tax. */
   revenue: number;
   shipping: number;
   itemCost: number;
+  /** Margin actually used on these item sales. Null when the shop is not connected. */
+  marginPercent: number | null;
+  /** Product overrides, the settings default, or a mix of both. */
+  marginSource: 'product' | 'default' | 'mixed' | null;
   /** Merchandise minus item cost minus Etsy ads. Null only when the shop is not connected. */
   profit: number | null;
   /** Etsy Ads and Offsite Ads in this range. Null when the ledger did not load. */

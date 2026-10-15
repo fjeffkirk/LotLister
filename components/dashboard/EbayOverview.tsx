@@ -56,8 +56,11 @@ function money(n: number): string {
 
 function etsyProfitNote(etsy: EtsyData | null): string | null {
   if (!etsy) return null;
-  if (etsy.fees == null) return 'Etsy ad cost was not available';
-  return `Ad cost ${money(etsy.fees)}`;
+  const margin = etsy.marginPercent == null
+    ? ''
+    : `${Number.isInteger(etsy.marginPercent) ? etsy.marginPercent : etsy.marginPercent.toFixed(1)}% ${etsy.marginSource === 'product' ? 'product margin' : etsy.marginSource === 'mixed' ? 'mixed margin' : 'default margin'} · `;
+  const ads = etsy.fees == null ? 'ad cost unavailable' : `${money(etsy.fees)} ads`;
+  return `${margin}after ${money(etsy.itemCost)} item cost · ${ads}`;
 }
 
 function ebayAdNote(adFees: number | null | undefined): string {
@@ -409,17 +412,10 @@ export function EbayOverview() {
               value={etsy ? money(etsy.revenue) : null}
               sub={etsy ? `${plural(etsy.orders, 'order')} · ${plural(etsy.units, 'item')}` : null}
               href="https://www.etsy.com/your/orders/sold"
-              title="Item price plus shipping the buyer paid, before tax."
+              title="Item sales only, before shipping and tax."
               delta={etsySalesChange}
               deltaLabel={comparedWith}
-              footer={
-                etsy ? (
-                  <div className="space-y-2">
-                    {etsy.revenue > 0 && <Sparkline values={etsy.daily} />}
-                    <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(etsy.revenue, rangeDays))}</FootNote>
-                  </div>
-                ) : null
-              }
+              footer={etsy && etsy.revenue > 0 ? <Sparkline values={etsy.daily} /> : null}
             />
             <MetricTile
               icon={<WalletIcon size={16} />}
@@ -430,14 +426,9 @@ export function EbayOverview() {
               section={data?.etsy?.status === 'error' ? data.etsy : { status: 'ok', data: true }}
               value={etsy ? (etsy.profit != null ? money(etsy.profit) : '—') : null}
               sub={etsyProfitNote(etsy)}
-              title="Sales minus the shipping the buyer paid, minus the Etsy ad cost shown here, minus item cost from your product margin. A day with no sales can be negative when Etsy charged ads."
+              title="Item sales times the product margin, or the default margin in settings when that product has no override, minus Etsy ads. Shipping is not included. Etsy transaction and payment-processing fees are not included."
               delta={etsyProfitChange}
               deltaLabel={comparedWith}
-              footer={
-                etsy?.profit != null ? (
-                  <FootNote title="This range stretched across 365 days.">Over 365 days {money(annualized(etsy.profit, rangeDays))}</FootNote>
-                ) : null
-              }
             />
             <MetricTile
               icon={<LayersIcon size={16} />}
@@ -450,7 +441,6 @@ export function EbayOverview() {
               sub={etsy ? `${plural(etsy.orders, 'order')}` : null}
               delta={etsyOrdersChange}
               deltaLabel={comparedWith}
-              footer={etsy ? <FootNote title="This range stretched across 365 days.">Over 365 days {Math.round(annualized(etsy.orders, rangeDays)).toLocaleString()}</FootNote> : null}
             />
             <MetricTile
               icon={<TagIcon size={16} />}
@@ -464,7 +454,6 @@ export function EbayOverview() {
               sub={etsy ? `${plural(etsy.units, 'item')}` : null}
               delta={etsyUnitsChange}
               deltaLabel={comparedWith}
-              footer={etsy ? <FootNote title="This range stretched across 365 days.">Over 365 days {Math.round(annualized(etsy.units, rangeDays)).toLocaleString()}</FootNote> : null}
             />
             <MetricTile
               icon={<TruckIcon size={16} />}
@@ -663,7 +652,12 @@ export function EbayOverview() {
             <ul className="mt-3 divide-y divide-white/[0.06]">
               {etsy.recent.map((sale) => (
                 <li key={sale.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span className="min-w-0 truncate text-surface-200">{sale.title}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-surface-200">{sale.title}</span>
+                    <span className="block text-xs text-surface-500">
+                      {new Date(sale.soldAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  </span>
                   <span className="shrink-0 tabular-nums text-surface-400">{money(sale.total)}</span>
                 </li>
               ))}

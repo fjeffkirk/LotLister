@@ -19,7 +19,7 @@ import { resolveImagePath } from './storage';
 import { getComparisonDates, type DateRangeKey } from './dates';
 import type { DashboardSection, EtsyData } from './dashboard-types';
 import type { EbayListEvent } from './list-progress';
-import { etsyAdCost, etsyErrorText, etsyMoney, etsySalesProfit, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear } from './etsy-listing';
+import { buildMarginCatalog, etsyAdCost, etsyErrorText, etsyMoney, etsyRangeProfit, etsyTags, etsyTitle, plainDescription, shopFromEtsyPayload, whenMadeFromYear, type EtsyMarginLine } from './etsy-listing';
 import { getAppSettings } from './queries/app-settings';
 
 const API = 'https://api.etsy.com/v3';
@@ -551,7 +551,12 @@ interface EtsyReceipt {
   subtotal?: { amount?: number; divisor?: number };
   total_shipping_cost?: { amount?: number; divisor?: number };
   grandtotal?: { amount?: number; divisor?: number };
-  transactions?: { title?: string; quantity?: number }[];
+  transactions?: {
+    title?: string;
+    quantity?: number;
+    sku?: string;
+    price?: { amount?: number; divisor?: number };
+  }[];
 }
 
 function receiptParts(receipt: EtsyReceipt): { merchandise: number; shipping: number } {
@@ -562,8 +567,15 @@ function receiptParts(receipt: EtsyReceipt): { merchandise: number; shipping: nu
 }
 
 function receiptRevenue(receipt: EtsyReceipt): number {
-  const parts = receiptParts(receipt);
-  return parts.merchandise + parts.shipping;
+  return receiptParts(receipt).merchandise;
+}
+
+function receiptLines(receipt: EtsyReceipt): EtsyMarginLine[] {
+  return (receipt.transactions ?? []).map((line) => ({
+    amount: etsyMoney(line.price) * (line.quantity || 1),
+    sku: line.sku,
+    title: line.title,
+  }));
 }
 
 function receiptUnits(receipt: EtsyReceipt): number {
@@ -607,7 +619,7 @@ function dailyRevenue(from: Date, to: Date, receipts: EtsyReceipt[]): number[] {
     if (!receipt.created_timestamp) continue;
     const key = format.format(new Date(receipt.created_timestamp * 1000));
     if (!totals.has(key)) continue;
-    totals.set(key, (totals.get(key) ?? 0) + receiptRevenue(receipt));
+    totals.set(key, (totals.get(key) ?? 0) + receiptParts(receipt).merchandise);
   }
   return days.map((day) => Math.round((totals.get(day) ?? 0) * 100) / 100);
 }
@@ -616,7 +628,7 @@ function summarize(receipts: EtsyReceipt[]) {
   return receipts.reduce(
     (totals, receipt) => {
       const parts = receiptParts(receipt);
-      totals.revenue += parts.merchandise + parts.shipping;
+      totals.revenue += parts.merchandise;
       totals.shipping += parts.shipping;
       totals.merchandise += parts.merchandise;
       totals.orders += 1;
@@ -659,6 +671,8 @@ function emptyEtsy(state: EtsyData['state'], shop: string | null = null): EtsyDa
     revenue: 0,
     shipping: 0,
     itemCost: 0,
+    marginPercent: null,
+    marginSource: null,
     profit: null,
     fees: null,
     orders: 0,
@@ -693,8 +707,27 @@ export async function getEtsyDashboard(
     const previous = summarize(prior);
     const ads = currentLedger ? etsyAdCost(currentLedger) : null;
     const priorAds = priorLedger ? etsyAdCost(priorLedger) : null;
-    const profit = etsySalesProfit(totals.merchandise, marginRate, ads ?? 0);
-    const priorProfit = etsySalesProfit(previous.merchandise, marginRate, priorAds ?? 0);
+    const products = await prisma.catalogItem.findMany({
+      where: { status: 'active' },
+      select: { sku: true, title: true, marginPercentOverride: true },
+    });
+    const catalog = buildMarginCatalog(products.map((product) => ({
+      sku: product.sku,
+      title: product.title,
+      marginPercent: product.marginPercentOverride,
+    })));
+    const profit = etsyRangeProfit(
+      current.map((receipt) => ({ merchandise: receiptParts(receipt).merchandise, lines: receiptLines(receipt) })),
+      catalog,
+      marginRate,
+      ads ?? 0,
+    );
+    const priorProfit = etsyRangeProfit(
+      prior.map((receipt) => ({ merchandise: receiptParts(receipt).merchandise, lines: receiptLines(receipt) })),
+      catalog,
+      marginRate,
+      priorAds ?? 0,
+    );
     return {
       status: 'ok',
       data: {
@@ -703,6 +736,8 @@ export async function getEtsyDashboard(
         revenue: Math.round(totals.revenue * 100) / 100,
         shipping: Math.round(totals.shipping * 100) / 100,
         itemCost: profit.itemCost,
+        marginPercent: profit.marginPercent,
+        marginSource: profit.marginSource,
         profit: profit.profit,
         fees: ads,
         orders: totals.orders,
