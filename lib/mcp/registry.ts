@@ -1,6 +1,6 @@
 import type { McpScope } from './oauth';
 
-export type McpEffect = 'read' | 'draft' | 'price' | 'youtube';
+export type McpEffect = 'read' | 'draft' | 'price' | 'youtube' | 'tiktok';
 
 export interface McpContext {
   accountId: string;
@@ -10,7 +10,7 @@ export interface McpContext {
 export interface LotlisterTool {
   name: string;
   description: string;
-  /** read tools need lotlister.read. draft tools need lotlister.drafts. price tools need lotlister.prices. youtube tools need lotlister.youtube. */
+  /** read tools need lotlister.read. draft tools need lotlister.drafts. price tools need lotlister.prices. youtube tools need lotlister.youtube. tiktok tools need lotlister.tiktok. */
   effect: McpEffect;
   readOnly?: boolean;
   idempotent?: boolean;
@@ -33,7 +33,7 @@ const PUBLISH_NAME = /publish|activate|unlist/i;
  * its single destructive cleanup tool additionally needs explicit channel activation.
  */
 export function registerTool(tool: LotlisterTool): void {
-  if (tool.effect !== 'read' && tool.effect !== 'draft' && tool.effect !== 'price' && tool.effect !== 'youtube') {
+  if (tool.effect !== 'read' && tool.effect !== 'draft' && tool.effect !== 'price' && tool.effect !== 'youtube' && tool.effect !== 'tiktok') {
     throw new Error(`Tool ${tool.name} uses an effect this server does not allow`);
   }
   const approvedYoutubeCleanup = tool.name === 'youtube_video_delete' && tool.effect === 'youtube'
@@ -60,5 +60,6 @@ export function scopeFor(effect: McpEffect): McpScope {
   if (effect === 'draft') return 'lotlister.drafts';
   if (effect === 'price') return 'lotlister.prices';
   if (effect === 'youtube') return 'lotlister.youtube';
+  if (effect === 'tiktok') return 'lotlister.tiktok';
   return 'lotlister.read';
 }

@@ -95,6 +95,12 @@ export default function SettingsPage() {
 
         <YoutubeSettings />
 
+        <section className="panel p-5 sm:p-6">
+          <h2 className="font-semibold text-white">TikTok ads</h2>
+          <p className="mt-1 text-sm text-surface-400">Connect the advertiser account, choose which account Box Buddy tests may use, and set the daily budget.</p>
+          <Link href="/tiktok" className="btn btn-secondary mt-4">Open TikTok settings</Link>
+        </section>
+
         {settings && (
           <details className="panel group">
             <summary className="flex items-center justify-between gap-3 p-5 sm:px-6 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">

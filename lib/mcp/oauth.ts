@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'crypto';
 
 /** Scopes this server will grant. lotlister.youtube is required for YouTube uploads and is not implied by read. */
-export const MCP_SCOPES = ['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube'] as const;
+export const MCP_SCOPES = ['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube', 'lotlister.tiktok'] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
 
 const REDIRECT_HOSTS = new Set(['chatgpt.com', 'chat.openai.com']);

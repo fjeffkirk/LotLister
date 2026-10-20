@@ -72,6 +72,15 @@ services:
       # Optional. Defaults to 400MB so a video fits on the existing 1GB disk. Raising it needs a larger disk, which changes the Render bill.
       - key: YOUTUBE_MAX_UPLOAD_BYTES
         sync: false
+      # TikTok Marketing API app. Redirect URI is ${NEXT_PUBLIC_APP_URL}/api/tiktok/callback
+      # Production: https://lotlister.onrender.com/api/tiktok/callback
+      - key: TIKTOK_APP_ID
+        sync: false
+      - key: TIKTOK_APP_SECRET
+        sync: false
+      # 32-byte key, openssl rand -base64 32. Encrypts the TikTok access token. Not the TikTok app secret.
+      - key: TIKTOK_TOKEN_ENCRYPTION_KEY
+        sync: false
     disk:
       name: lotlister-data
       mountPath: /data

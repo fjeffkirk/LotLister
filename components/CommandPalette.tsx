@@ -95,6 +95,7 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
       { id: 'nav-orders', label: 'Shopify orders to ship', group: 'General', icon: <LayersIcon />, keywords: 'fulfillment packing', run: () => router.push('/ops/orders') },
       { id: 'nav-inventory', label: 'Shopify low stock', group: 'General', icon: <LayersIcon />, keywords: 'inventory reorder', run: () => router.push('/ops/inventory') },
       { id: 'nav-youtube', label: 'YouTube analytics', group: 'General', icon: <LayersIcon />, keywords: 'channel views watch time subscribers', run: () => router.push('/youtube') },
+      { id: 'nav-tiktok', label: 'TikTok ads', group: 'General', icon: <LayersIcon />, keywords: 'box buddy advertiser budget spark', run: () => router.push('/tiktok') },
       { id: 'nav-settings', label: 'Settings', group: 'General', icon: <GearIcon />, keywords: 'account ebay etsy shopify margin store resync preferences ads', run: () => router.push('/settings') },
       { id: 'nav-signout', label: 'Sign out', group: 'General', icon: <LogOutIcon />, keywords: 'logout', run: () => void signOut() },
     ];

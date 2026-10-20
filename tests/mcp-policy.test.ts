@@ -7,8 +7,8 @@ describe('LotLister MCP policy', () => {
   it('grants read and draft access, and ignores a publish scope', () => {
     expect(grantedScopes('lotlister.read lotlister.publish')).toEqual(['lotlister.read']);
     expect(grantedScopes('lotlister.read lotlister.youtube')).toEqual(['lotlister.read', 'lotlister.youtube']);
-    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube']);
-    expect(consentScopes()).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube']);
+    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube', 'lotlister.tiktok']);
+    expect(consentScopes()).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube', 'lotlister.tiktok']);
   });
 
   it('only accepts ChatGPT redirect addresses', () => {
@@ -40,6 +40,8 @@ describe('LotLister MCP policy', () => {
     expect(names).not.toContain('ebay_prices_apply');
     expect(names).not.toContain('youtube_upload_video');
     expect(names).not.toContain('youtube_video_publish');
+    expect(names).not.toContain('tiktok_campaign_create');
+    expect(names).not.toContain('tiktok_status_update');
 
     const denied = await dispatchMcp({
       jsonrpc: '2.0',
@@ -70,5 +72,26 @@ describe('LotLister MCP policy', () => {
     const publish = ((listed.body?.result as { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] }).tools)
       .find((tool) => tool.name === 'youtube_video_publish');
     expect(publish?.annotations?.readOnlyHint).toBe(false);
+  });
+
+  it('lists TikTok tools only for the tiktok scope and still blocks deletes', async () => {
+    expect(findTool('tiktok_campaign_create')?.readOnly).toBe(false);
+    expect(findTool('tiktok_connection_status')?.readOnly).toBe(true);
+    expect(() => registerTool({
+      name: 'tiktok_campaign_delete',
+      description: 'no',
+      effect: 'tiktok',
+      inputSchema: {},
+      handler: async () => ({}),
+    })).toThrow(/not available/);
+
+    const session = { accountId: 'seller', scopes: ['lotlister.tiktok'] as const, clientId: 'chatgpt' };
+    const listed = await dispatchMcp({ jsonrpc: '2.0', id: 4, method: 'tools/list' }, { ...session, scopes: ['lotlister.tiktok'] });
+    const names = ((listed.body?.result as { tools: { name: string }[] }).tools).map((tool) => tool.name);
+    expect(names).toContain('tiktok_campaigns_list');
+    expect(names).toContain('tiktok_performance_get');
+    expect(names).toContain('tiktok_campaign_create');
+    expect(names).not.toContain('lots_list');
+    expect(names).not.toContain('youtube_upload_video');
   });
 });

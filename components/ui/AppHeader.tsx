@@ -13,6 +13,7 @@ const NAV = [
   { href: '/ops/orders', label: 'Orders' },
   { href: '/ops/inventory', label: 'Inventory' },
   { href: '/youtube', label: 'YouTube' },
+  { href: '/tiktok', label: 'TikTok' },
 ] as const;
 
 function NavLink({ href, children }: { href: string; children: ReactNode }) {

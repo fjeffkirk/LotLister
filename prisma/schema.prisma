@@ -549,3 +549,117 @@ model YoutubeUploadJob {
   @@index([userEmail])
   @@index([youtubeVideoId])
 }
+
+// TikTok Marketing API advertiser authorization. The access token is ciphertext.
+// One LotLister account stores one TikTok for Business authorization. The advertiser
+// to modify is selected explicitly and is not inferred from the profile name.
+model TiktokConnection {
+  id                   String   @id @default(cuid())
+  userEmail            String   @unique
+  accessTokenEncrypted String   @db.Text
+  scope                String   @default("")
+  status               String   @default("connected")
+  statusDetail         String?
+  connectedAt          DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  advertisers TiktokAdvertiser[]
+}
+
+model TiktokAdvertiser {
+  id                 String   @id @default(cuid())
+  connectionId       String
+  connection         TiktokConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  userEmail          String
+  advertiserId       String
+  name               String
+  currency           String?
+  timezone           String?
+  selected           Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+
+  @@unique([userEmail, advertiserId])
+  @@index([userEmail, selected])
+}
+
+// Server-side Box Buddy management rules. Scheduled review stays off until enabled here.
+// ChatGPT cannot raise dailyBudgetUsd, change productScope, or turn on scheduledReviewEnabled.
+model TiktokManagementPolicy {
+  id                      String    @id @default(cuid())
+  userEmail               String
+  advertiserId            String
+  productScope            String    @default("Box Buddies")
+  dailyBudgetUsd          Decimal   @default(20) @db.Decimal(10, 2)
+  /// Peak day the user accepted because dynamic daily budget can spend 125% of the average. Null blocks launch.
+  peakSpendAuthorizedUsd  Decimal?  @db.Decimal(10, 2)
+  totalTestCapUsd         Decimal?  @db.Decimal(12, 2)
+  endDate                 DateTime?
+  targetCpaUsd            Decimal   @default(15) @db.Decimal(10, 2)
+  observationHours        Int       @default(72)
+  reportingDelayHours     Int       @default(6)
+  minPurchasesBeforePause Int       @default(5)
+  scheduledReviewEnabled  Boolean   @default(false)
+  safetyRulesEnabled      Boolean   @default(false)
+  emergencyPaused         Boolean   @default(false)
+  routineAdjustments      Boolean   @default(true)
+  managedDailyUsd         Decimal   @default(0) @db.Decimal(10, 2)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([userEmail, advertiserId])
+}
+
+model TiktokManagedCampaign {
+  id           String   @id @default(cuid())
+  userEmail    String
+  advertiserId String
+  campaignId   String
+  dailyBudget  Decimal  @db.Decimal(10, 2)
+  kind         String
+  createdAt    DateTime @default(now())
+
+  @@unique([userEmail, campaignId])
+  @@index([userEmail, advertiserId])
+}
+
+model TiktokPreview {
+  id           String    @id @default(cuid())
+  userEmail    String
+  advertiserId String
+  payloadHash  String
+  payloadJson  String    @db.Text
+  authorizedAt DateTime?
+  consumedAt   DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  @@index([userEmail, advertiserId])
+}
+
+model TiktokChange {
+  id             String   @id @default(cuid())
+  userEmail      String
+  advertiserId   String
+  action         String
+  entityType     String
+  entityId       String?
+  reason         String
+  beforeJson     String?  @db.Text
+  afterJson      String?  @db.Text
+  idempotencyKey String?
+  status         String
+  createdAt      DateTime @default(now())
+
+  @@unique([userEmail, idempotencyKey])
+  @@index([userEmail, createdAt])
+}
+
+model TiktokReviewRun {
+  id           String   @id @default(cuid())
+  userEmail    String
+  advertiserId String
+  summary      String
+  createdAt    DateTime @default(now())
+
+  @@index([userEmail, createdAt])
+}
