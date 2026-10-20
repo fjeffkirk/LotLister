@@ -14,6 +14,7 @@ import {
   connectionStatus,
 } from '../../youtube/service';
 import { publicOrigin } from '../oauth';
+import { holdUnstartedUpload } from '../../youtube/jobs';
 
 const connectionId = z.string().trim().min(8).max(40);
 const videoId = z.string().regex(/^[A-Za-z0-9_-]{6,20}$/);
@@ -141,6 +142,22 @@ registerTool({
   async handler(ctx, args) {
     const parsed = z.object(uploadFields).strict().parse(args);
     return startVideoUpload({ accountId: ctx.accountId, ...parsed });
+  },
+});
+
+registerTool({
+  name: 'youtube_upload_hold',
+  description: 'Hold a superseded upload only if no transfer has started and no worker owns it. Preserves media and audit history. Does not delete a video or change visibility. Refuses active, started, and uncertain jobs. Repeating a successful hold is safe.',
+  effect: 'youtube',
+  readOnly: false,
+  idempotent: true,
+  openWorld: false,
+  inputSchema: {
+    type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'], additionalProperties: false,
+  },
+  async handler(ctx, args) {
+    const parsed = z.object({ jobId: z.string().trim().min(8).max(40) }).strict().parse(args);
+    return holdUnstartedUpload(ctx.accountId, parsed.jobId);
   },
 });
 

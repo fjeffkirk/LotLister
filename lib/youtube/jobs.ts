@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto';
 import fs from 'fs/promises';
+import { Prisma } from '@prisma/client';
 import { log } from '../logger';
 import prisma from '../prisma';
 import { getVideo, probeOrUpload, setThumbnail, startResumableSession } from './api';
@@ -7,6 +8,7 @@ import { CHUNK_BYTES, MAX_THUMBNAIL_BYTES, MAX_TRANSIENT_ATTEMPTS, maxUploadByte
 import { getValidAccessToken, markConnectionReconnect } from './connections';
 import { downloadPublicHttps, relativeMediaPath, resolveMediaPath } from './media';
 import { decryptString, encryptString } from './oauth';
+import { createYoutubeWorker } from './worker';
 import {
   applyVerifiedVideo,
   decideIdempotency,
@@ -205,7 +207,13 @@ function newJob(input: EnqueueInput, connection: ConnectionRecord, asset: AssetR
 }
 
 export async function advanceUpload(job: UploadJobState, io: UploadIo): Promise<UploadJobState> {
-  if (job.status === 'processed' || job.status === 'rejected' || job.status === 'failed' || job.status === 'uncertain') return job;
+  if (['processed', 'rejected', 'failed', 'uncertain', 'held'].includes(job.status)) return job;
+  // Once accepted, poll the saved video ID. Never start another session merely
+  // because YouTube processing outlives the resumable upload session.
+  if (job.youtubeVideoId) {
+    const token = await io.accessToken(job);
+    return finish(job, await io.getVideo(token, job.youtubeVideoId), io, token);
+  }
   const asset = await io.loadAsset(job.userEmail, job.mediaAssetId);
   if (!asset || asset.userEmail !== job.userEmail) {
     return fail(job, 'not_found', 'The media asset does not belong to this account. No YouTube video was created.');
@@ -270,7 +278,7 @@ export async function advanceUpload(job: UploadJobState, io: UploadIo): Promise<
     if (decision.action === 'complete') return finish(current, decision.video, io, token);
     if (decision.action === 'hold') return hold(current);
     if (decision.action === 'fatal') return fail(current, decision.code, decision.message);
-    if (decision.action === 'retry') return pause(current, decision.message, io.now());
+    if (decision.action === 'retry') return pause(current, decision.message, io.now(), query.code);
     if (decision.action === 'restart') {
       sessionUri = null;
       current = { ...current, resumableSessionEnc: null, bytesAcked: 0, completionUncertain: false };
@@ -329,7 +337,7 @@ export async function advanceUpload(job: UploadJobState, io: UploadIo): Promise<
       return pause(current, 'YouTube ended the upload session before it could be confirmed.', io.now());
     }
     if (query.type === 'fatal') return fail(current, query.code || 'youtube_error', query.message || 'YouTube rejected the upload.');
-    return pause(current, query.message || 'YouTube asked for the upload to be retried.', io.now());
+    return pause(current, query.message || 'YouTube asked for the upload to be retried.', io.now(), query.code);
   }
   if (current.bytesAcked < current.byteSize) {
     current.status = 'uploading';
@@ -400,7 +408,18 @@ function hold(job: UploadJobState): UploadJobState {
   };
 }
 
-function pause(job: UploadJobState, message: string, now: number): UploadJobState {
+export function pause(job: UploadJobState, message: string, now: number, code = 'transient'): UploadJobState {
+  // API limits are cooldowns, not repeated network failures. Preserve the job,
+  // session and key instead of exhausting six attempts in a few minutes.
+  const cooldown = code === 'uploadLimitExceeded' ? 60 * 60_000
+    : ['quotaExceeded', 'dailyLimitExceeded'].includes(code) ? 6 * 60 * 60_000
+      : code === 'rateLimitExceeded' ? 60_000
+        : code === 'userRateLimitExceeded' ? 60_000 : 0;
+  if (cooldown) return {
+    ...job, status: job.youtubeVideoId ? 'processing' : 'uploading',
+    errorCode: code, errorMessage: redactSecrets(message).slice(0, 400),
+    nextAttemptAt: new Date(now + cooldown),
+  };
   const attemptCount = job.attemptCount + 1;
   if (attemptCount >= MAX_TRANSIENT_ATTEMPTS) {
     if (job.completionUncertain) return hold({ ...job, attemptCount });
@@ -534,45 +553,55 @@ export async function enqueueVideoUpload(input: EnqueueInput, options?: { schedu
 export async function uploadStatus(accountId: string, jobId: string): Promise<Record<string, unknown>> {
   const row = await prisma.youtubeUploadJob.findFirst({ where: { id: jobId, userEmail: accountId } });
   if (!row) throw new YoutubeUserError('not_found', 'That upload job does not belong to this account.');
-  return toPublicJob(rowToJob(row));
+  return {
+    ...toPublicJob(rowToJob(row)),
+    updatedAt: row.updatedAt.toISOString(),
+    workerLeaseAt: row.lockedAt?.toISOString() ?? null,
+  };
+}
+
+const workerGlobal = globalThis as typeof globalThis & { lotlisterYoutubeWorker?: ReturnType<typeof createYoutubeWorker> };
+
+export function startYoutubeWorker(): void {
+  if (workerGlobal.lotlisterYoutubeWorker || !youtubeConfigured()
+    || process.env.YOUTUBE_WORKER_ENABLED === 'false'
+    || process.env.NEXT_PHASE === 'phase-production-build' || process.argv.includes('build')) return;
+  workerGlobal.lotlisterYoutubeWorker = createYoutubeWorker(
+    () => processPendingYoutubeJobs({ budgetMs: 60_000, maxJobs: 8 }),
+    (error) => log.error('youtube drain failed', { message: error instanceof Error ? redactSecrets(error.message).slice(0, 300) : 'failed' }),
+  );
+  workerGlobal.lotlisterYoutubeWorker.wake();
 }
 
 export function scheduleYoutubeWork(): void {
-  const run = () => {
-    void processPendingYoutubeJobs({ budgetMs: 240_000, maxJobs: 1 }).catch((error: unknown) => {
-      log.error('youtube drain failed', { message: error instanceof Error ? redactSecrets(error.message).slice(0, 300) : 'failed' });
-    });
-  };
-  void import('next/server')
-    .then((mod) => {
-      try {
-        mod.after(run);
-      } catch {
-        run();
-      }
-    })
-    .catch(() => run());
+  startYoutubeWorker();
+  workerGlobal.lotlisterYoutubeWorker?.wake();
 }
 
 export async function processPendingYoutubeJobs(options?: { budgetMs?: number; maxJobs?: number }): Promise<{ processed: number }> {
-  if (!youtubeConfigured()) return { processed: 0 };
+  if (!youtubeConfigured() || process.env.YOUTUBE_WORKER_ENABLED === 'false') return { processed: 0 };
   const budgetMs = options?.budgetMs ?? 60_000;
   const maxJobs = options?.maxJobs ?? 2;
   const started = Date.now();
   let processed = 0;
+  const visited: string[] = [];
+  const channels: string[] = [];
   while (processed < maxJobs && Date.now() - started < budgetMs) {
-    const claimed = await claimNextJob().catch((error: unknown) => {
+    const claimed = await claimNextJob(visited, channels).catch((error: unknown) => {
       log.warn('youtube claim failed', { message: error instanceof Error ? redactSecrets(error.message).slice(0, 200) : 'failed' });
       return null;
     });
     if (!claimed) break;
-    await runClaimed(claimed, started + budgetMs);
+    visited.push(claimed.id);
+    channels.push(claimed.channelId);
+    // Give large uploads a slice rather than the entire drain budget.
+    await runClaimed(claimed, Math.min(started + budgetMs, Date.now() + 20_000));
     processed += 1;
   }
   return { processed };
 }
 
-async function claimNextJob(): Promise<JobRow | null> {
+export async function claimNextJob(visited: string[] = [], channels: string[] = []): Promise<JobRow | null> {
   const token = randomBytes(16).toString('hex');
   const now = new Date();
   const staleBefore = new Date(now.getTime() - 120_000);
@@ -582,6 +611,8 @@ async function claimNextJob(): Promise<JobRow | null> {
     WHERE job."id" = (
       SELECT candidate."id" FROM "YoutubeUploadJob" AS candidate
       WHERE candidate."status" IN ('queued', 'waiting_media', 'uploading', 'uploaded', 'processing')
+        ${visited.length ? Prisma.sql`AND candidate."id" NOT IN (${Prisma.join(visited)})` : Prisma.empty}
+        ${channels.length ? Prisma.sql`AND candidate."channelId" NOT IN (${Prisma.join(channels)})` : Prisma.empty}
         AND (candidate."nextAttemptAt" IS NULL OR candidate."nextAttemptAt" <= ${now})
         AND (candidate."lockedAt" IS NULL OR candidate."lockedAt" < ${staleBefore})
         AND EXISTS (
@@ -589,7 +620,18 @@ async function claimNextJob(): Promise<JobRow | null> {
           WHERE connection."id" = candidate."connectionId"
             AND connection."status" = 'connected'
         )
-      ORDER BY candidate."createdAt" ASC
+        AND NOT EXISTS (
+          SELECT 1 FROM "YoutubeUploadJob" AS blocked
+          WHERE blocked."status" IN ('queued', 'uploading', 'uploaded', 'processing')
+            AND blocked."nextAttemptAt" > ${now}
+            AND (
+              blocked."errorCode" IN ('quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded')
+              OR (blocked."channelId" = candidate."channelId" AND blocked."userEmail" = candidate."userEmail"
+                  AND (blocked."errorCode" = 'userRateLimitExceeded'
+                    OR (blocked."errorCode" = 'uploadLimitExceeded' AND candidate."youtubeVideoId" IS NULL AND candidate."resumableSessionEnc" IS NULL)))
+            )
+        )
+      ORDER BY COALESCE(candidate."nextAttemptAt", candidate."createdAt") ASC, candidate."createdAt" ASC, candidate."id" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
@@ -612,6 +654,16 @@ async function runClaimed(row: JobRow, deadline: number): Promise<void> {
   };
   const io = prismaIo(async (job) => write(job, { lockedAt: new Date(), lockToken }));
   io.deadline = () => deadline;
+  // Long downloads/API calls must not let another process steal a live lease.
+  let heartbeatPending: Promise<unknown> | undefined;
+  const heartbeat = setInterval(() => {
+    if (heartbeatPending) return;
+    heartbeatPending = prisma.youtubeUploadJob.updateMany({
+      where: { id: row.id, lockToken: lockToken ?? undefined },
+      data: { lockedAt: new Date() },
+    }).catch(() => undefined).finally(() => { heartbeatPending = undefined; });
+  }, 30_000);
+  heartbeat.unref();
   try {
     const next = await advanceUpload(rowToJob(row), io);
     await write(next, { lockedAt: null, lockToken: null });
@@ -625,10 +677,32 @@ async function runClaimed(row: JobRow, deadline: number): Promise<void> {
     if (reconnect) await markConnectionReconnect(row.connectionId, message).catch(() => undefined);
     const paused = reconnect
       ? { ...current, status: 'queued' as const, errorCode: 'reconnect_required', errorMessage: message, nextAttemptAt: null }
-      : pause(current, message, Date.now());
+      : pause(current, message, Date.now(), error instanceof YoutubeUserError ? error.code : 'transient');
     await write(paused, { lockedAt: null, lockToken: null }).catch(() => undefined);
     log.warn('youtube job error', { jobId: row.id, status: paused.status, errorCode: paused.errorCode });
+  } finally {
+    clearInterval(heartbeat);
+    await heartbeatPending;
   }
+}
+
+/** Only holds uploads that provably have not started. This is not video deletion.
+ * The conditional update races safely with claimNextJob's row lock.
+ */
+export async function holdUnstartedUpload(accountId: string, jobId: string): Promise<Record<string, unknown>> {
+  const row = await prisma.youtubeUploadJob.findFirst({ where: { id: jobId, userEmail: accountId } });
+  if (!row) throw new YoutubeUserError('not_found', 'That upload job does not belong to this account.');
+  if (row.status === 'held') return toPublicJob(rowToJob(row));
+  const result = await prisma.youtubeUploadJob.updateMany({
+    where: {
+      id: jobId, userEmail: accountId, status: { in: ['queued', 'waiting_media'] },
+      lockToken: null, lockedAt: null, youtubeVideoId: null, resumableSessionEnc: null,
+      bytesAcked: 0, completionUncertain: false,
+    },
+    data: { status: 'held', nextAttemptAt: null, errorCode: 'operator_hold', errorMessage: 'Held by the account owner before transfer. No video was created by this job.' },
+  });
+  if (!result.count) throw new YoutubeUserError('job_started', 'The job is active, has started, or has uncertain completion. Reconcile it before taking further action; nothing was canceled.');
+  return uploadStatus(accountId, jobId);
 }
 
 function prismaIo(persist: (job: UploadJobState) => Promise<void>): UploadIo {

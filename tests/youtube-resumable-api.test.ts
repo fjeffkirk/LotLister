@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getVideo, probeOrUpload } from '../lib/youtube/api';
+import { getVideo, probeOrUpload, startResumableSession } from '../lib/youtube/api';
+import { normalizeUploadRequest } from '../lib/youtube/policy';
 
 const sessionUri = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=test';
 const token = 'test-only-token';
@@ -8,6 +9,12 @@ const input = { token, sessionUri, total: 1024 };
 afterEach(() => vi.unstubAllGlobals());
 
 describe('YouTube resumable HTTP responses', () => {
+  it.each(['uploadLimitExceeded', 'quotaExceeded', 'rateLimitExceeded'])('preserves %s for the correct retry scope', async reason => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(JSON.stringify({ error: { errors: [{ reason }] } }), { status: 403 })));
+    const metadata = normalizeUploadRequest({ connectionId: 'conn_test', mediaAssetId: 'ma_test_asset', title: 'test', categoryId: '28', madeForKids: false, containsSyntheticMedia: true }, new Date());
+    await expect(startResumableSession(token, metadata, 100, 'video/mp4')).rejects.toMatchObject({ code: reason });
+    await expect(probeOrUpload(input)).resolves.toMatchObject({ type: 'retry', code: reason });
+  });
   it('accepts an empty-session 308 probe and retains manual redirect handling', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 308 }));
     vi.stubGlobal('fetch', fetchMock);

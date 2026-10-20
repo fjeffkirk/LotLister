@@ -8,7 +8,7 @@ export const maxDuration = 300;
 /**
  * Optional recovery ping for YouTube upload jobs. Uses the existing CRON_SECRET.
  * A separate Render cron service is not declared in render.yaml because it can add cost.
- * Happy-path uploads also continue in-process after the MCP response.
+ * The normal worker starts with the web process and continues independently of requests.
  */
 export async function GET(request: Request) {
   if (!env.CRON_SECRET) {
@@ -20,6 +20,6 @@ export async function GET(request: Request) {
   if (secret !== env.CRON_SECRET && auth !== `Bearer ${env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const result = await processPendingYoutubeJobs({ budgetMs: 240_000, maxJobs: 2 });
+  const result = await processPendingYoutubeJobs({ budgetMs: 240_000, maxJobs: 8 });
   return NextResponse.json({ ok: true, ...result });
 }
