@@ -35,6 +35,16 @@ resumable session expired while YouTube was processing.
    service and verify its existing queue advances. Check fresh video state and
    thumbnail results before any separately authorized publication action.
 
+If the connected client has not refreshed its tool catalog, an existing service
+operator can set `YOUTUBE_UPLOAD_HOLDS` to a JSON array of exact
+`{jobId,connectionId,channelId,idempotencyKey}` targets while the worker remains
+disabled. Startup verifies every identity against saved work, then uses the same
+safe-hold operation and logs each verified hold. A mismatched identity or unsafe
+job fails closed. No credentials or arbitrary SQL are accepted. Verify the held
+status before enabling the worker; remove the optional configuration afterward.
+This control is only for explicitly authorized superseded jobs, never blanket
+cleanup. It preserves requests, media and history and cannot stop accepted work.
+
 Status reads remain read-only. They now expose nextAttemptAt, attemptCount,
 updatedAt and workerLeaseAt. A queued response explicitly says no transfer has
 been verified. `held` is not deletion and is not a successful upload. This patch

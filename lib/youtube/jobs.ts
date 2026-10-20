@@ -9,6 +9,7 @@ import { getValidAccessToken, markConnectionReconnect } from './connections';
 import { downloadPublicHttps, relativeMediaPath, resolveMediaPath } from './media';
 import { decryptString, encryptString } from './oauth';
 import { createYoutubeWorker } from './worker';
+import { applyOperatorHolds } from './maintenance';
 import {
   applyVerifiedVideo,
   decideIdempotency,
@@ -562,6 +563,21 @@ export async function uploadStatus(accountId: string, jobId: string): Promise<Re
 
 const workerGlobal = globalThis as typeof globalThis & { lotlisterYoutubeWorker?: ReturnType<typeof createYoutubeWorker> };
 
+let operatorHolds: Promise<void> | undefined;
+export function applyConfiguredYoutubeHolds(): Promise<void> {
+  if (process.env.NEXT_PHASE === 'phase-production-build' || process.argv.includes('build')) return Promise.resolve();
+  operatorHolds ??= applyOperatorHolds(process.env.YOUTUBE_UPLOAD_HOLDS, {
+    read: async jobId => {
+      const row = await prisma.youtubeUploadJob.findFirst({ where: { id: jobId } });
+      return row ? { jobId: row.id, connectionId: row.connectionId, channelId: row.channelId,
+        idempotencyKey: row.idempotencyKey, userEmail: row.userEmail } : null;
+    },
+    hold: holdUnstartedUpload,
+    log: jobId => log.info('youtube operator hold verified', { jobId }),
+  });
+  return operatorHolds;
+}
+
 export function startYoutubeWorker(): void {
   if (workerGlobal.lotlisterYoutubeWorker || !youtubeConfigured()
     || process.env.YOUTUBE_WORKER_ENABLED === 'false'
@@ -580,6 +596,7 @@ export function scheduleYoutubeWork(): void {
 
 export async function processPendingYoutubeJobs(options?: { budgetMs?: number; maxJobs?: number }): Promise<{ processed: number }> {
   if (!youtubeConfigured() || process.env.YOUTUBE_WORKER_ENABLED === 'false') return { processed: 0 };
+  await applyConfiguredYoutubeHolds();
   const budgetMs = options?.budgetMs ?? 60_000;
   const maxJobs = options?.maxJobs ?? 2;
   const started = Date.now();
