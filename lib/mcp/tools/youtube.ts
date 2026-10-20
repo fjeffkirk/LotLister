@@ -15,10 +15,41 @@ import {
 } from '../../youtube/service';
 import { publicOrigin } from '../oauth';
 import { holdUnstartedUpload } from '../../youtube/jobs';
+import { channelInventory, deleteOutsideTopFive } from '../../youtube/cleanup';
 
 const connectionId = z.string().trim().min(8).max(40);
 const videoId = z.string().regex(/^[A-Za-z0-9_-]{6,20}$/);
 const visibility = z.enum(['private', 'unlisted', 'public']);
+
+registerTool({
+  name: 'youtube_channel_inventory',
+  description: 'Read the complete owner-authenticated uploads inventory, including private and unlisted videos, ranked by lifetime views. Returns five protected IDs and current visibility. Fails rather than ranking incomplete data. Does not modify videos.',
+  effect: 'youtube', readOnly: true, idempotent: true, openWorld: true,
+  inputSchema: { type: 'object', properties: { connectionId: { type: 'string' }, expectedChannelId: { type: 'string' } }, required: ['connectionId', 'expectedChannelId'], additionalProperties: false },
+  async handler(ctx, args) {
+    const parsed = z.object({ connectionId, expectedChannelId: z.string().regex(/^UC[A-Za-z0-9_-]{22}$/) }).strict().parse(args);
+    return channelInventory(ctx.accountId, parsed.connectionId, parsed.expectedChannelId);
+  },
+});
+
+// Permanent deletion remains absent unless an operator explicitly approves
+// channel-scoped activation. The handler repeats this gate on every invocation.
+if (process.env.YOUTUBE_CLEANUP_CHANNEL_IDS?.trim()) registerTool({
+  name: 'youtube_video_delete',
+  description: 'Permanently delete one explicitly authorized video outside the current top five. Irreversible: views and comments are not transferred to a reupload. Requires an operator-enabled channel, exact title and channel, all five keeper IDs, and deletionIntent true. Rechecks complete ranking and ownership before deleting. Never call without explicit user deletion authorization and a saved inventory.',
+  effect: 'youtube', readOnly: false, destructive: true, idempotent: false, openWorld: true,
+  inputSchema: { type: 'object', properties: {
+    connectionId: { type: 'string' }, expectedChannelId: { type: 'string' }, videoId: { type: 'string' },
+    expectedTitle: { type: 'string' }, protectedVideoIds: { type: 'array', items: { type: 'string' }, minItems: 5, maxItems: 5, uniqueItems: true },
+    deletionIntent: { type: 'boolean', const: true },
+  }, required: ['connectionId', 'expectedChannelId', 'videoId', 'expectedTitle', 'protectedVideoIds', 'deletionIntent'], additionalProperties: false },
+  async handler(ctx, args) {
+    const parsed = z.object({ connectionId, expectedChannelId: z.string().regex(/^UC[A-Za-z0-9_-]{22}$/),
+      videoId, expectedTitle: z.string().min(1).max(100), protectedVideoIds: z.array(videoId).length(5), deletionIntent: z.literal(true),
+    }).strict().parse(args);
+    return deleteOutsideTopFive(ctx.accountId, parsed);
+  },
+});
 
 function origin(): string {
   return publicOrigin(process.env.NEXT_PUBLIC_APP_URL || 'https://lotlister.onrender.com');
@@ -270,7 +301,7 @@ registerTool({
 
 registerTool({
   name: 'youtube_video_publish',
-  description: 'Set a video on the selected channel to public or unlisted. Requires publicationIntent true. The result reports the privacy YouTube returned after a fresh read. Upload success is not publish success. There is no delete tool.',
+  description: 'Set a video on the selected channel to public or unlisted. Requires publicationIntent true. The result reports the privacy YouTube returned after a fresh read. Upload success is not publish success. This action never deletes a video.',
   effect: 'youtube',
   readOnly: false,
   idempotent: true,

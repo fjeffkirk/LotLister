@@ -57,7 +57,7 @@ export async function dispatchMcp(message: JsonRpc, session: McpSession | null):
         inputSchema: tool.inputSchema,
         annotations: {
           readOnlyHint: tool.readOnly ?? tool.effect === 'read',
-          destructiveHint: false,
+          destructiveHint: tool.destructive ?? false,
           idempotentHint: tool.idempotent ?? (tool.readOnly ?? tool.effect === 'read'),
           openWorldHint: tool.openWorld ?? false,
         },

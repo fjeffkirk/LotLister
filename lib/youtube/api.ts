@@ -51,7 +51,7 @@ export async function listMyChannel(token: string): Promise<{ channelId: string;
 }
 
 export async function getVideo(token: string, videoId: string): Promise<YoutubeVideo> {
-  const url = `${DATA_API}/videos?part=snippet,status,processingDetails,contentDetails&id=${encodeURIComponent(videoId)}`;
+  const url = `${DATA_API}/videos?part=snippet,status,processingDetails,contentDetails,statistics&id=${encodeURIComponent(videoId)}`;
   const response = await authed(url, token);
   if (response.status === 401) throw new YoutubeUserError('reconnect_required', 'YouTube refused the access token. Reconnect the channel.');
   if (!response.ok) await readError(response);
@@ -61,6 +61,59 @@ export async function getVideo(token: string, videoId: string): Promise<YoutubeV
     throw new YoutubeUserError('not_found', 'YouTube did not return that video for this channel. Check the video id and connectionId.');
   }
   return video;
+}
+
+/** Owner-authenticated uploads inventory, including nonpublic editions. Never
+ * return a partial list as complete: cap, malformed pages, and missing videos
+ * fail closed so a cleanup cannot choose keepers from an incomplete ranking. */
+export async function listChannelVideos(token: string, channelId: string): Promise<YoutubeVideo[]> {
+  const channelResponse = await authed(`${DATA_API}/channels?part=contentDetails&mine=true`, token);
+  if (!channelResponse.ok) await readError(channelResponse);
+  const channels = await channelResponse.json() as { items?: Array<{ id?: string; contentDetails?: { relatedPlaylists?: { uploads?: string } } }> };
+  const uploads = channels.items?.find(c => c.id === channelId)?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) throw new YoutubeUserError('channel_mismatch', 'The authorized channel did not return its uploads playlist.');
+  const ids = new Set<string>();
+  const pageTokens = new Set<string>();
+  let pageToken = '';
+  do {
+    if (pageTokens.has(pageToken) || pageTokens.size >= 100) throw new YoutubeUserError('incomplete_inventory', 'The inventory could not be completed safely.');
+    pageTokens.add(pageToken);
+    const query = new URLSearchParams({ part: 'contentDetails', playlistId: uploads, maxResults: '50' });
+    if (pageToken) query.set('pageToken', pageToken);
+    const response = await authed(`${DATA_API}/playlistItems?${query}`, token);
+    if (!response.ok) await readError(response);
+    const page = await response.json() as { items?: Array<{ contentDetails?: { videoId?: string } }>; nextPageToken?: string };
+    if (!Array.isArray(page.items)) throw new YoutubeUserError('incomplete_inventory', 'YouTube omitted inventory items.');
+    for (const item of page.items) {
+      const id = item.contentDetails?.videoId;
+      if (!id) throw new YoutubeUserError('incomplete_inventory', 'An upload has no video ID.');
+      ids.add(id);
+    }
+    pageToken = page.nextPageToken || '';
+  } while (pageToken);
+  const videos: YoutubeVideo[] = [];
+  const allIds = [...ids];
+  for (let offset = 0; offset < allIds.length; offset += 50) {
+    const batch = allIds.slice(offset, offset + 50);
+    const query = new URLSearchParams({ part: 'snippet,status,contentDetails,statistics', id: batch.join(',') });
+    const response = await authed(`${DATA_API}/videos?${query}`, token);
+    if (!response.ok) await readError(response);
+    const body = await response.json() as { items?: YoutubeVideo[] };
+    if (!Array.isArray(body.items) || body.items.length !== batch.length
+      || new Set(body.items.map(v => v.id)).size !== batch.length
+      || body.items.some(v => !v.id || !batch.includes(v.id) || v.snippet?.channelId !== channelId)) {
+      throw new YoutubeUserError('incomplete_inventory', 'YouTube did not return every requested video on the selected channel.');
+    }
+    videos.push(...body.items);
+  }
+  return videos;
+}
+
+/** Call only after the cleanup service has verified ownership, keepers and intent. */
+export async function deleteVideo(token: string, videoId: string): Promise<void> {
+  const response = await authed(`${DATA_API}/videos?id=${encodeURIComponent(videoId)}`, token, { method: 'DELETE' });
+  if (!response.ok) await readError(response);
+  if (response.status !== 204) throw new YoutubeUserError('deletion_unconfirmed', 'YouTube did not return its deletion success status.');
 }
 
 export async function updateVideo(token: string, part: string, body: Record<string, unknown>): Promise<YoutubeVideo> {
