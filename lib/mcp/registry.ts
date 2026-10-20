@@ -15,6 +15,7 @@ export interface LotlisterTool {
   readOnly?: boolean;
   idempotent?: boolean;
   openWorld?: boolean;
+  destructive?: boolean;
   inputSchema: Record<string, unknown>;
   handler: (ctx: McpContext, args: Record<string, unknown>) => Promise<unknown>;
 }
@@ -28,13 +29,17 @@ const PUBLISH_NAME = /publish|activate|unlist/i;
  * Register a tool on the single /mcp endpoint.
  * Add a new integration by calling this from lib/mcp/tools and importing that file
  * from lib/mcp/tools/index.ts. Do not add a second MCP URL.
- * eBay/Etsy publishing and every delete stay blocked. YouTube publish tools are the exception.
+ * eBay/Etsy publishing and deletes stay blocked. YouTube publishing is allowed;
+ * its single destructive cleanup tool additionally needs explicit channel activation.
  */
 export function registerTool(tool: LotlisterTool): void {
   if (tool.effect !== 'read' && tool.effect !== 'draft' && tool.effect !== 'price' && tool.effect !== 'youtube') {
     throw new Error(`Tool ${tool.name} uses an effect this server does not allow`);
   }
-  if (DESTRUCTIVE_NAME.test(tool.name) || (PUBLISH_NAME.test(tool.name) && !tool.name.startsWith('youtube_'))) {
+  const approvedYoutubeCleanup = tool.name === 'youtube_video_delete' && tool.effect === 'youtube'
+    && tool.destructive === true && tool.readOnly === false
+    && Boolean(process.env.YOUTUBE_CLEANUP_CHANNEL_IDS?.trim());
+  if ((DESTRUCTIVE_NAME.test(tool.name) && !approvedYoutubeCleanup) || (PUBLISH_NAME.test(tool.name) && !tool.name.startsWith('youtube_'))) {
     throw new Error(`Tool ${tool.name} is not available. Publishing and destructive actions are not registered.`);
   }
   if (tools.some((existing) => existing.name === tool.name)) {

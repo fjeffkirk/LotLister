@@ -24,6 +24,7 @@ export type JobStatus =
 
 export interface YoutubeVideo {
   id?: string;
+  statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
   snippet?: {
     title?: string;
     description?: string;

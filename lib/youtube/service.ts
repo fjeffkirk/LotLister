@@ -304,6 +304,7 @@ function publicVideo(connection: { id: string; channelId: string; channelTitle: 
     watchUrl: watchUrl(video.id),
     studioUrl: studioUrl(video.id),
     title: video.snippet?.title ?? null,
+    statistics: video.statistics ?? null,
     description: video.snippet?.description ?? null,
     tags: video.snippet?.tags ?? [],
     categoryId: video.snippet?.categoryId ?? null,
