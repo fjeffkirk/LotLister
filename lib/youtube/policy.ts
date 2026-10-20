@@ -481,9 +481,10 @@ export function explainYoutubeFailure(reason: string, message: string): string {
     case 'forbiddenPrivacySetting':
       return 'YouTube rejected this privacy setting. Leave the upload private, or complete the YouTube API compliance audit before requesting public or unlisted.';
     case 'quotaExceeded':
-      return 'This Google Cloud project has used its YouTube Data API quota. videos.insert costs about 1,600 units and the default daily quota is 10,000, which is roughly six uploads.';
+    case 'dailyLimitExceeded':
+      return 'This Google Cloud project has reached its YouTube API quota. The existing job will wait before retrying. Do not create another upload key.';
     case 'uploadLimitExceeded':
-      return 'This YouTube channel has hit an upload limit. Wait and try again later with a new idempotency key only after you confirm the video was not created.';
+      return 'This YouTube channel has hit an upload limit. The existing job will wait before retrying with the same key. Other channels can continue.';
     case 'forbidden':
       return `${clean} If this was a custom thumbnail, that channel needs phone verification in YouTube Studio → Settings → Channel → Feature eligibility. Verification on a different channel does not count.`;
     case 'videoNotFound':
@@ -552,7 +553,7 @@ export function applyVerifiedVideo(job: UploadJobState, video: YoutubeVideo): Up
   return next;
 }
 
-const TERMINAL = new Set(['processed', 'rejected', 'failed', 'uncertain']);
+const TERMINAL = new Set(['processed', 'rejected', 'failed', 'uncertain', 'held']);
 
 export function toPublicJob(job: UploadJobState, now = Date.now()): Record<string, unknown> {
   const percent = job.byteSize > 0 ? Math.min(100, Math.round((job.bytesAcked / job.byteSize) * 100)) : 0;
@@ -582,18 +583,25 @@ export function toPublicJob(job: UploadJobState, now = Date.now()): Record<strin
     thumbnailStatus: job.thumbnailStatus,
     thumbnailError: job.thumbnailError,
     idempotencyKey: job.idempotencyKey,
+    attemptCount: job.attemptCount,
+    nextAttemptAt: job.nextAttemptAt?.toISOString() ?? null,
     nextStep: nextStep(job, now),
   };
 }
 
 function nextStep(job: UploadJobState, now: number): string {
+  if (job.status === 'held') return 'This superseded upload is held and will not run. Its media and audit history are preserved.';
   if (job.errorCode === 'reconnect_required') {
     return 'Reconnect this YouTube channel in LotLister settings. This same job will continue and will not start a second video.';
+  }
+  if (job.nextAttemptAt && job.nextAttemptAt.getTime() > now) {
+    return `Waiting until ${job.nextAttemptAt.toISOString()} before the next check. Keep this job and idempotency key; do not create a replacement.`;
   }
   switch (job.status) {
     case 'waiting_media':
       return 'The video bytes are not in durable storage yet. PUT the raw file to the signed upload URL from youtube_media_upload_prepare, then poll youtube_upload_status with this job id.';
     case 'queued':
+      return 'Queued for the background worker. No transfer has been verified yet. Keep this job and idempotency key.';
     case 'uploading':
       return 'The upload is still running. Poll youtube_upload_status. Do not start another upload with a new idempotency key.';
     case 'uploaded':

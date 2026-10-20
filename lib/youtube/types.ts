@@ -19,6 +19,7 @@ export type JobStatus =
   | 'processed'
   | 'rejected'
   | 'failed'
+  | 'held'
   | 'uncertain';
 
 export interface YoutubeVideo {

@@ -8,7 +8,8 @@ const UPLOAD_API = 'https://www.googleapis.com/upload/youtube/v3';
 async function authed(url: string, token: string, init: RequestInit = {}, resumablePut = false): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(url, { ...init, headers, redirect: 'manual' });
+  const signal = init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000);
+  const response = await fetch(url, { ...init, headers, signal, redirect: 'manual' });
   // YouTube uses 308 without Location as "Resume Incomplete" for resumable
   // PUTs. It is a progress acknowledgement, not a request to forward a token.
   const resumeIncomplete = resumablePut && init.method === 'PUT'
@@ -22,7 +23,8 @@ async function authed(url: string, token: string, init: RequestInit = {}, resuma
 async function readError(response: Response): Promise<never> {
   const text = await response.text();
   const parsed = parseGoogleError(response.status, text);
-  const code = parsed.kind === 'reconnect_required' ? 'reconnect_required'
+  const limited = ['uploadLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].includes(parsed.reason);
+  const code = limited ? parsed.reason : parsed.kind === 'reconnect_required' ? 'reconnect_required'
     : parsed.kind === 'transient' ? 'transient'
       : parsed.kind === 'configuration' ? 'not_configured'
         : parsed.reason || 'youtube_error';
@@ -134,12 +136,12 @@ export async function probeOrUpload(input: {
     return { type: 'complete', videoId: video.id, video };
   }
   if (response.status === 404) return { type: 'expired' };
-  if (response.status === 429 || response.status >= 500) {
-    return { type: 'retry', message: `YouTube returned HTTP ${response.status} for the resumable upload.` };
-  }
   const text = await response.text();
   const parsed = parseGoogleError(response.status, text);
   if (parsed.kind === 'reconnect_required') throw new YoutubeUserError('reconnect_required', parsed.message);
+  if (parsed.kind === 'transient' || ['uploadLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].includes(parsed.reason)) {
+    return { type: 'retry', code: parsed.reason, message: parsed.message };
+  }
   return { type: 'fatal', code: parsed.reason || 'youtube_error', message: parsed.message };
 }
 
