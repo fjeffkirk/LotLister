@@ -194,7 +194,7 @@ registerTool({
 
 registerTool({
   name: 'youtube_upload_status',
-  description: 'Read an upload job. processed is the only finished success state. uploaded and processing are not done. actualVisibility is what YouTube reported, which can stay private after an upload. deletesAt is when LotLister will permanently delete this video, seven days after YouTube accepted it.',
+  description: 'Read an upload job. processed is the only finished success state. uploaded and processing are not done. actualVisibility is what YouTube reported, which can stay private after an upload. YouTube videos are never automatically deleted. deletesAt is always null. Only LotLister local video files are cleaned up after seven days, deferred while needed by pending or uncertain jobs.',
   effect: 'youtube',
   readOnly: true,
   idempotent: true,

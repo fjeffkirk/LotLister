@@ -308,6 +308,11 @@ describe('upload jobs', () => {
     const insertsAfterRace = inserts;
     await expect(enqueueWithRepo(repo, input({ title: 'Different title' }))).rejects.toThrow(/different upload/);
     expect(inserts).toBe(insertsAfterRace);
+    // Local file expiry must never create a duplicate or hide an existing job.
+    const expiredRepo = { ...repo, findAsset: async () => ({ ...asset, status: 'expired' }) };
+    expect((await enqueueWithRepo(expiredRepo, input())).id).toBe(first.id);
+    await expect(enqueueWithRepo(expiredRepo, input({ idempotencyKey: 'new-key-expired' }))).rejects.toThrow(/not ready/);
+    expect(inserts).toBe(insertsAfterRace);
     await expect(enqueueWithRepo(repo, input({ accountId: 'someone-else' }))).rejects.toThrow(/belongs to this account/);
     const reconnecting = { ...connection, status: 'reconnect_required', statusDetail: 'Reconnect this YouTube channel in LotLister settings.' };
     await expect(enqueueWithRepo({ ...repo, findConnection: async () => reconnecting }, input({ idempotencyKey: 'upload-key-2' }))).rejects.toThrow(/Reconnect/);

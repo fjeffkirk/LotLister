@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../lib/prisma', () => ({ default: {
   $queryRaw: mocks.query,
+  $transaction: vi.fn().mockResolvedValue([]),
   youtubeUploadJob: { findFirst: mocks.find, updateMany: mocks.update, findMany: vi.fn().mockResolvedValue([]) },
   youtubeMediaAsset: { findFirst: mocks.asset },
 } }));
@@ -107,7 +108,7 @@ describe('YouTube queue with actual PostgreSQL claim predicates', () => {
     expect(await processPendingYoutubeJobs({ maxJobs: 8 })).toEqual({ processed: 2 });
     expect(await uploadStatus(account, 'a_doom')).toMatchObject({ error: { code: 'uploadLimitExceeded' }, attemptCount: 0 });
     expect(await uploadStatus(account, 'b_doom')).toMatchObject({ status: 'queued' });
-    expect(await uploadStatus(account, 'c_brain')).toMatchObject({ status: 'processed', youtubeVideoId: 'brain_video', actualVisibility: 'private' });
+    expect(await uploadStatus(account, 'c_brain')).toMatchObject({ status: 'processed', youtubeVideoId: 'brain_video', actualVisibility: 'private', deletesAt: null, automaticYoutubeDeletion: false, localMediaRetentionDays: 7 });
     expect(mocks.start).toHaveBeenCalledTimes(2);
   });
 

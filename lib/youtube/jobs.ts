@@ -8,7 +8,7 @@ import { CHUNK_BYTES, MAX_THUMBNAIL_BYTES, MAX_TRANSIENT_ATTEMPTS, maxUploadByte
 import { getValidAccessToken, markConnectionReconnect } from './connections';
 import { downloadPublicHttps, relativeMediaPath, resolveMediaPath } from './media';
 import { decryptString, encryptString } from './oauth';
-import { deletesAt, expireLotListerUploads } from './retention';
+import { expireLocalVideoFiles } from './retention';
 import { createYoutubeWorker } from './worker';
 import { applyOperatorHolds } from './maintenance';
 import {
@@ -122,23 +122,6 @@ export async function enqueueWithRepo(repo: UploadRepo, input: EnqueueInput): Pr
   if (connection.status !== 'connected') {
     throw new YoutubeUserError('reconnect_required', connection.statusDetail || 'Reconnect this YouTube channel in LotLister settings before uploading.');
   }
-  const asset = await repo.findAsset(input.accountId, input.mediaAssetId);
-  if (!asset || asset.userEmail !== input.accountId) {
-    throw new YoutubeUserError('not_found', 'That media asset does not belong to this account.');
-  }
-  if (asset.kind !== 'video') throw new YoutubeUserError('invalid_media', 'The media asset is not a video. Prepare the MP4 again.');
-  if (asset.status === 'failed') {
-    throw new YoutubeUserError('invalid_media', asset.byteSize ? 'The video file failed validation.' : 'The video file is not usable. Prepare the upload again.');
-  }
-  if (!['pending', 'remote', 'ready'].includes(asset.status)) {
-    throw new YoutubeUserError('invalid_media', 'The media asset is not ready to upload.');
-  }
-  if (input.thumbnailAssetId) {
-    const thumb = await repo.findAsset(input.accountId, input.thumbnailAssetId);
-    if (!thumb || thumb.userEmail !== input.accountId || thumb.kind !== 'image') {
-      throw new YoutubeUserError('not_found', 'That thumbnail asset does not belong to this account or is not an image.');
-    }
-  }
   const metadata = normalizeUploadRequest({
     connectionId: input.connectionId,
     mediaAssetId: input.mediaAssetId,
@@ -161,6 +144,23 @@ export async function enqueueWithRepo(repo: UploadRepo, input: EnqueueInput): Pr
   if (decision === 'reuse' && existing) return existing;
   if (decision === 'conflict') {
     throw new YoutubeUserError('idempotency_conflict', 'This idempotency key was already used for a different upload. Poll that job, or check the channel in YouTube Studio before using a new key.');
+  }
+  const asset = await repo.findAsset(input.accountId, input.mediaAssetId);
+  if (!asset || asset.userEmail !== input.accountId) {
+    throw new YoutubeUserError('not_found', 'That media asset does not belong to this account.');
+  }
+  if (asset.kind !== 'video') throw new YoutubeUserError('invalid_media', 'The media asset is not a video. Prepare the MP4 again.');
+  if (asset.status === 'failed') {
+    throw new YoutubeUserError('invalid_media', asset.byteSize ? 'The video file failed validation.' : 'The video file is not usable. Prepare the upload again.');
+  }
+  if (!['pending', 'remote', 'ready'].includes(asset.status)) {
+    throw new YoutubeUserError('invalid_media', 'The media asset is not ready to upload.');
+  }
+  if (input.thumbnailAssetId) {
+    const thumb = await repo.findAsset(input.accountId, input.thumbnailAssetId);
+    if (!thumb || thumb.userEmail !== input.accountId || thumb.kind !== 'image') {
+      throw new YoutubeUserError('not_found', 'That thumbnail asset does not belong to this account or is not an image.');
+    }
   }
   const job = newJob(input, connection, asset, metadata);
   try {
@@ -531,23 +531,27 @@ export async function enqueueVideoUpload(input: EnqueueInput, options?: { schedu
   if (!youtubeConfigured()) {
     throw new YoutubeUserError('not_configured', 'Set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, and YOUTUBE_TOKEN_ENCRYPTION_KEY on the server.');
   }
-  const job = await enqueueWithRepo({
-    findConnection: async (accountId, connectionId) => prisma.youtubeConnection.findFirst({
-      where: { id: connectionId, userEmail: accountId },
-      select: { id: true, userEmail: true, channelId: true, channelTitle: true, status: true, statusDetail: true },
-    }),
-    findAsset: async (accountId, assetId) => prisma.youtubeMediaAsset.findFirst({
-      where: { id: assetId, userEmail: accountId },
-      select: { id: true, userEmail: true, kind: true, status: true, byteSize: true, expiresAt: true },
-    }),
-    findJobByKey: async (accountId, idempotencyKey) => {
-      const row = await prisma.youtubeUploadJob.findUnique({ where: { userEmail_idempotencyKey: { userEmail: accountId, idempotencyKey } } });
-      return row ? rowToJob(row) : null;
-    },
-    insertJob: async (created) => {
-      await prisma.youtubeUploadJob.create({ data: { id: created.id, userEmail: created.userEmail, connectionId: created.connectionId, channelId: created.channelId, channelTitle: created.channelTitle, idempotencyKey: created.idempotencyKey, requestHash: created.requestHash, mediaAssetId: created.mediaAssetId, thumbnailAssetId: created.thumbnailAssetId, ...jobData(created) } });
-    },
-  }, input);
+  const job = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "YoutubeMediaAsset"
+      WHERE "userEmail" = ${input.accountId} AND id = ${input.mediaAssetId} FOR UPDATE`;
+    return enqueueWithRepo({
+      findConnection: async (accountId, connectionId) => tx.youtubeConnection.findFirst({
+        where: { id: connectionId, userEmail: accountId },
+        select: { id: true, userEmail: true, channelId: true, channelTitle: true, status: true, statusDetail: true },
+      }),
+      findAsset: async (accountId, assetId) => tx.youtubeMediaAsset.findFirst({
+        where: { id: assetId, userEmail: accountId },
+        select: { id: true, userEmail: true, kind: true, status: true, byteSize: true, expiresAt: true },
+      }),
+      findJobByKey: async (accountId, idempotencyKey) => {
+        const row = await tx.youtubeUploadJob.findUnique({ where: { userEmail_idempotencyKey: { userEmail: accountId, idempotencyKey } } });
+        return row ? rowToJob(row) : null;
+      },
+      insertJob: async (created) => {
+        await tx.youtubeUploadJob.create({ data: { id: created.id, userEmail: created.userEmail, connectionId: created.connectionId, channelId: created.channelId, channelTitle: created.channelTitle, idempotencyKey: created.idempotencyKey, requestHash: created.requestHash, mediaAssetId: created.mediaAssetId, thumbnailAssetId: created.thumbnailAssetId, ...jobData(created) } });
+      },
+    }, input);
+  }, { isolationLevel: 'ReadCommitted' });
   if (options?.schedule !== false) scheduleYoutubeWork();
   return toPublicJob(job);
 }
@@ -560,7 +564,10 @@ export async function uploadStatus(accountId: string, jobId: string): Promise<Re
     updatedAt: row.updatedAt.toISOString(),
     workerLeaseAt: row.lockedAt?.toISOString() ?? null,
     uploadedAt: row.uploadedAt?.toISOString() ?? null,
-    deletesAt: row.status === 'deleted' ? null : row.uploadedAt ? deletesAt(row.uploadedAt).toISOString() : null,
+    // Kept null for backwards compatibility: YouTube videos never auto-expire.
+    deletesAt: null,
+    automaticYoutubeDeletion: false,
+    localMediaRetentionDays: 7,
   };
 }
 
@@ -599,8 +606,8 @@ export function scheduleYoutubeWork(): void {
 
 export async function processPendingYoutubeJobs(options?: { budgetMs?: number; maxJobs?: number }): Promise<{ processed: number }> {
   if (!youtubeConfigured() || process.env.YOUTUBE_WORKER_ENABLED === 'false') return { processed: 0 };
-  await expireLotListerUploads().catch((error: unknown) => {
-    log.warn('youtube retention failed', { message: error instanceof Error ? redactSecrets(error.message).slice(0, 200) : 'failed' });
+  await expireLocalVideoFiles().catch((error: unknown) => {
+    log.warn('local video cleanup failed', { message: error instanceof Error ? redactSecrets(error.message).slice(0, 200) : 'failed' });
   });
   await applyConfiguredYoutubeHolds();
   const budgetMs = options?.budgetMs ?? 60_000;

@@ -541,7 +541,7 @@ model YoutubeUploadJob {
   errorMessage        String?
   thumbnailError      String?
   thumbnailStatus     String?
-  /// Set once, when YouTube first accepts this upload. The video is deleted seven days later.
+  /// Set once, when YouTube first accepts this upload. YouTube videos never auto-expire.
   uploadedAt          DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
