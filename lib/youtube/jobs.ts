@@ -8,6 +8,7 @@ import { CHUNK_BYTES, MAX_THUMBNAIL_BYTES, MAX_TRANSIENT_ATTEMPTS, maxUploadByte
 import { getValidAccessToken, markConnectionReconnect } from './connections';
 import { downloadPublicHttps, relativeMediaPath, resolveMediaPath } from './media';
 import { decryptString, encryptString } from './oauth';
+import { deletesAt, expireLotListerUploads } from './retention';
 import { createYoutubeWorker } from './worker';
 import { applyOperatorHolds } from './maintenance';
 import {
@@ -558,6 +559,8 @@ export async function uploadStatus(accountId: string, jobId: string): Promise<Re
     ...toPublicJob(rowToJob(row)),
     updatedAt: row.updatedAt.toISOString(),
     workerLeaseAt: row.lockedAt?.toISOString() ?? null,
+    uploadedAt: row.uploadedAt?.toISOString() ?? null,
+    deletesAt: row.status === 'deleted' ? null : row.uploadedAt ? deletesAt(row.uploadedAt).toISOString() : null,
   };
 }
 
@@ -596,6 +599,9 @@ export function scheduleYoutubeWork(): void {
 
 export async function processPendingYoutubeJobs(options?: { budgetMs?: number; maxJobs?: number }): Promise<{ processed: number }> {
   if (!youtubeConfigured() || process.env.YOUTUBE_WORKER_ENABLED === 'false') return { processed: 0 };
+  await expireLotListerUploads().catch((error: unknown) => {
+    log.warn('youtube retention failed', { message: error instanceof Error ? redactSecrets(error.message).slice(0, 200) : 'failed' });
+  });
   await applyConfiguredYoutubeHolds();
   const budgetMs = options?.budgetMs ?? 60_000;
   const maxJobs = options?.maxJobs ?? 2;
@@ -668,6 +674,12 @@ async function runClaimed(row: JobRow, deadline: number): Promise<void> {
       data: { ...jobData(job), lockedAt: lock.lockedAt, lockToken: lock.lockToken },
     });
     if (updated.count === 0) throw new YoutubeUserError('lock_lost', 'Upload lock lost');
+    if (job.youtubeVideoId) {
+      await prisma.youtubeUploadJob.updateMany({
+        where: { id: job.id, uploadedAt: null },
+        data: { uploadedAt: new Date() },
+      });
+    }
   };
   const io = prismaIo(async (job) => write(job, { lockedAt: new Date(), lockToken }));
   io.deadline = () => deadline;
