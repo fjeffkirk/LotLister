@@ -50,6 +50,21 @@ updatedAt and workerLeaseAt. A queued response explicitly says no transfer has
 been verified. `held` is not deletion and is not a successful upload. This patch
 does not automatically revive terminal failures or change video privacy/schedules.
 
+### Reconnected jobs rejected before session creation
+
+A quota rejection while starting a resumable session can leave a never-started
+job labeled `uploading`. If its connection is later removed, the worker correctly
+skips it. The safe-hold operation now recognizes this narrow legacy state after
+its recorded quota wait expires. The atomic update still requires no worker
+lease, session, acknowledged/progress bytes, accepted video timestamp or ID, or
+uncertain completion. It also matches the observed quota error and retry deadline
+so a concurrent retry cannot be canceled. Active waits and ambiguous work remain
+protected. A successful hold retains the original payload, media and history.
+
+After a verified terminal hold, reconcile the complete channel inventory before
+creating an authorized replacement on the current connection. Do not use this to
+skip an active YouTube limit, duplicate a surviving edition, or publish in a burst.
+
 ## Validation
 
 `npm test` includes an embedded Postgres queue regression using the production

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../lib/prisma', () => ({ default: {
   $queryRaw: mocks.query,
-  youtubeUploadJob: { findFirst: mocks.find, updateMany: mocks.update },
+  youtubeUploadJob: { findFirst: mocks.find, updateMany: mocks.update, findMany: vi.fn().mockResolvedValue([]) },
   youtubeMediaAsset: { findFirst: mocks.asset },
 } }));
 vi.mock('../lib/youtube/connections', () => ({ getValidAccessToken: mocks.token, markConnectionReconnect: vi.fn() }));
@@ -38,8 +38,10 @@ function whereSql(where: Record<string, unknown>, values: unknown[]) {
 }
 
 beforeAll(async () => {
-  db = new PGlite();
+  // Match Prisma's UTC interpretation of Postgres TIMESTAMP, independent of the developer's timezone.
+  db = new PGlite({ parsers: { 1114: value => new Date(value.replace(' ', 'T') + 'Z') } });
   await db.exec(await readFile('prisma/migrations/20261012120000_youtube/migration.sql', 'utf8'));
+  await db.exec(await readFile('prisma/migrations/20261020200000_youtube_upload_retention/migration.sql', 'utf8'));
   dir = await mkdtemp(path.join(process.cwd(), 'data/uploads/queue-test-'));
   await writeFile(path.join(dir, 'video.bin'), Buffer.alloc(100));
 });
@@ -147,6 +149,49 @@ describe('YouTube queue with actual PostgreSQL claim predicates', () => {
     await holdUnstartedUpload(account, 'original');
     expect(await holdUnstartedUpload(account, 'original')).toMatchObject({ status: 'held', terminal: true });
     expect(await claimNextJob()).toBeNull();
+  });
+
+  it('recovers a session-start quota rejection stranded by a disconnected connection', async () => {
+    await job('original', 'doom');
+    await processPendingYoutubeJobs();
+    expect(mocks.chunk).not.toHaveBeenCalled();
+    expect(await uploadStatus(account, 'original')).toMatchObject({ status: 'uploading', videoAccepted: false });
+    await db.query('UPDATE "YoutubeUploadJob" SET "nextAttemptAt"=$1 WHERE id=$2', [new Date(Date.now() - 1_000), 'original']);
+    await db.query('DELETE FROM "YoutubeConnection" WHERE id=$1', ['conn_doom']);
+    expect(await claimNextJob()).toBeNull();
+    const before = (await db.query<Record<string, unknown>>('SELECT * FROM "YoutubeUploadJob" WHERE id=$1', ['original'])).rows[0];
+    expect(await holdUnstartedUpload(account, 'original')).toMatchObject({ status: 'held', terminal: true, videoAccepted: false });
+    const after = (await db.query<Record<string, unknown>>('SELECT * FROM "YoutubeUploadJob" WHERE id=$1', ['original'])).rows[0];
+    for (const key of ['idempotencyKey', 'requestHash', 'metadataJson', 'mediaAssetId', 'connectionId']) expect(after[key]).toEqual(before[key]);
+  });
+
+  it.each([
+    { nextAttemptAt: new Date(Date.now() + 60_000) },
+    { nextAttemptAt: null },
+    { errorCode: 'transient' },
+    { errorCode: null },
+    { lockToken: 'worker' },
+    { lockedAt: new Date() },
+    { resumableSessionEnc: 'existing-session' },
+    { youtubeVideoId: 'already-created' },
+    { uploadedAt: new Date() },
+    { bytesAcked: 1 },
+    { progressBytes: 1 },
+    { completionUncertain: true },
+  ])('refuses unsafe or still-cooling-down legacy quota recovery: %j', async override => {
+    await job('original', 'doom', { status: 'uploading', errorCode: 'uploadLimitExceeded', nextAttemptAt: new Date(Date.now() - 1_000), ...override });
+    await expect(holdUnstartedUpload(account, 'original')).rejects.toMatchObject({ code: 'job_started' });
+    expect(await uploadStatus(account, 'original')).toMatchObject({ status: 'uploading', terminal: false });
+  });
+
+  it('refuses recovery if a worker claims the job after the initial read', async () => {
+    await job('original', 'doom', { status: 'uploading', errorCode: 'uploadLimitExceeded', nextAttemptAt: new Date(Date.now() - 1_000) });
+    const update = mocks.update.getMockImplementation()!;
+    mocks.update.mockImplementationOnce(async args => {
+      expect((await claimNextJob())?.id).toBe('original');
+      return update(args);
+    });
+    await expect(holdUnstartedUpload(account, 'original')).rejects.toMatchObject({ code: 'job_started' });
   });
 
   it.each([

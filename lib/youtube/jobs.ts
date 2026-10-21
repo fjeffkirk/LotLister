@@ -722,11 +722,23 @@ export async function holdUnstartedUpload(accountId: string, jobId: string): Pro
   const row = await prisma.youtubeUploadJob.findFirst({ where: { id: jobId, userEmail: accountId } });
   if (!row) throw new YoutubeUserError('not_found', 'That upload job does not belong to this account.');
   if (row.status === 'held') return toPublicJob(rowToJob(row));
+  // A rejected session-start request is stored as `uploading` by pause(),
+  // even though no transfer exists. After reconnecting, that legacy job cannot
+  // be claimed on its old connection. Recover only an expired, explicit quota
+  // wait, with the same no-session/no-bytes/no-worker proof as queued work.
+  // Matching its observed deadline and error in the UPDATE also rejects a
+  // concurrent retry that changes either value. Never shorten a quota wait.
+  const expiredQuotaWait = row.status === 'uploading'
+    && ['uploadLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].includes(row.errorCode ?? '')
+    && row.nextAttemptAt !== null && row.nextAttemptAt.getTime() <= Date.now();
+  const stateGuard = expiredQuotaWait
+    ? { status: 'uploading', errorCode: row.errorCode, nextAttemptAt: row.nextAttemptAt }
+    : { status: { in: ['queued', 'waiting_media'] } };
   const result = await prisma.youtubeUploadJob.updateMany({
     where: {
-      id: jobId, userEmail: accountId, status: { in: ['queued', 'waiting_media'] },
+      id: jobId, userEmail: accountId, ...stateGuard,
       lockToken: null, lockedAt: null, youtubeVideoId: null, resumableSessionEnc: null,
-      bytesAcked: 0, completionUncertain: false,
+      bytesAcked: 0, progressBytes: 0, uploadedAt: null, completionUncertain: false,
     },
     data: { status: 'held', nextAttemptAt: null, errorCode: 'operator_hold', errorMessage: 'Held by the account owner before transfer. No video was created by this job.' },
   });
