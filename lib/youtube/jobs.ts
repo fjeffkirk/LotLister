@@ -735,11 +735,18 @@ export async function holdUnstartedUpload(accountId: string, jobId: string): Pro
   // wait, with the same no-session/no-bytes/no-worker proof as queued work.
   // Matching its observed deadline and error in the UPDATE also rejects a
   // concurrent retry that changes either value. Never shorten a quota wait.
+  // Before quota reasons were preserved, the API mapped this exact local
+  // uploadLimitExceeded message to `transient`. Do not accept arbitrary
+  // transient failures: they can represent an ambiguous session creation.
+  // The old retry delay was short, so also require a full channel cooldown.
+  const legacyChannelLimit = row.errorCode === 'transient'
+    && row.errorMessage === 'This YouTube channel has hit an upload limit. Wait and try again later with a new idempotency key only after you confirm the video was not created.'
+    && row.updatedAt.getTime() <= Date.now() - 60 * 60_000;
   const expiredQuotaWait = row.status === 'uploading'
-    && ['uploadLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].includes(row.errorCode ?? '')
+    && (legacyChannelLimit || ['uploadLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].includes(row.errorCode ?? ''))
     && row.nextAttemptAt !== null && row.nextAttemptAt.getTime() <= Date.now();
   const stateGuard = expiredQuotaWait
-    ? { status: 'uploading', errorCode: row.errorCode, nextAttemptAt: row.nextAttemptAt }
+    ? { status: 'uploading', errorCode: row.errorCode, errorMessage: row.errorMessage, updatedAt: row.updatedAt, nextAttemptAt: row.nextAttemptAt }
     : { status: { in: ['queued', 'waiting_media'] } };
   const result = await prisma.youtubeUploadJob.updateMany({
     where: {

@@ -166,6 +166,52 @@ describe('YouTube queue with actual PostgreSQL claim predicates', () => {
     for (const key of ['idempotencyKey', 'requestHash', 'metadataJson', 'mediaAssetId', 'connectionId']) expect(after[key]).toEqual(before[key]);
   });
 
+  const legacyLimitMessage = 'This YouTube channel has hit an upload limit. Wait and try again later with a new idempotency key only after you confirm the video was not created.';
+  const legacyWait = () => ({ status: 'uploading', errorCode: 'transient', errorMessage: legacyLimitMessage,
+    updatedAt: new Date(Date.now() - 2 * 60 * 60_000), nextAttemptAt: new Date(Date.now() - 60_000) });
+
+  it('holds the exact historical channel-limit failure after reconnect without creating a video', async () => {
+    await job('legacy', 'doom', legacyWait());
+    await db.query('DELETE FROM "YoutubeConnection" WHERE id=$1', ['conn_doom']);
+    const before = (await db.query<Record<string, unknown>>('SELECT * FROM "YoutubeUploadJob" WHERE id=$1', ['legacy'])).rows[0];
+    expect(await claimNextJob()).toBeNull();
+    expect(await holdUnstartedUpload(account, 'legacy')).toMatchObject({ status: 'held', terminal: true, videoAccepted: false, youtubeVideoId: null });
+    const after = (await db.query<Record<string, unknown>>('SELECT * FROM "YoutubeUploadJob" WHERE id=$1', ['legacy'])).rows[0];
+    for (const key of ['idempotencyKey', 'requestHash', 'metadataJson', 'mediaAssetId', 'connectionId']) expect(after[key]).toEqual(before[key]);
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.chunk).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { errorMessage: 'Session request timed out' },
+    { errorMessage: legacyLimitMessage + ' changed' },
+    { errorMessage: null },
+    { updatedAt: new Date() },
+    { nextAttemptAt: new Date(Date.now() + 60_000) },
+    { nextAttemptAt: null },
+    { lockToken: 'worker' },
+    { lockedAt: new Date() },
+    { resumableSessionEnc: 'session' },
+    { youtubeVideoId: 'created' },
+    { uploadedAt: new Date() },
+    { bytesAcked: 1 },
+    { progressBytes: 1 },
+    { completionUncertain: true },
+  ])('refuses unsafe legacy generic-error recovery: %j', async override => {
+    await job('legacy', 'doom', { ...legacyWait(), ...override });
+    await expect(holdUnstartedUpload(account, 'legacy')).rejects.toMatchObject({ code: 'job_started' });
+  });
+
+  it.each(['errorMessage', 'updatedAt'])('rejects concurrent legacy evidence changes to %s', async field => {
+    await job('legacy', 'doom', legacyWait());
+    const update = mocks.update.getMockImplementation()!;
+    mocks.update.mockImplementationOnce(async args => {
+      await db.query(`UPDATE "YoutubeUploadJob" SET "${field}"=$1 WHERE id=$2`, [field === 'updatedAt' ? new Date() : 'Session request timed out', 'legacy']);
+      return update(args);
+    });
+    await expect(holdUnstartedUpload(account, 'legacy')).rejects.toMatchObject({ code: 'job_started' });
+  });
+
   it.each([
     { nextAttemptAt: new Date(Date.now() + 60_000) },
     { nextAttemptAt: null },
