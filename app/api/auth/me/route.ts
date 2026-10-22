@@ -9,5 +9,5 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ success: false, error: 'Not signed in' }, { status: 401 });
   }
-  return NextResponse.json({ success: true, data: { username: user.username, accountId: user.accountId } });
+  return NextResponse.json({ success: true, data: { username: user.username } });
 }

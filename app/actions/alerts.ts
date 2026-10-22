@@ -1,7 +1,5 @@
 "use server";
 
-import { requireShopifyAction } from "@/lib/require-session";
-
 import { prisma } from "@/lib/db";
 import {
   getLowStockAlert,
@@ -15,7 +13,6 @@ export async function fetchAlertSnapshots(): Promise<{
   lowStock: AlertSnapshot;
   overdue: AlertSnapshot;
 }> {
-  await requireShopifyAction();
   if (!prisma) return { lowStock: empty, overdue: empty };
   try {
     const [lowStock, overdue] = await Promise.all([

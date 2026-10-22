@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isUnauthorized, requireShopifySession } from "@/lib/require-session";
+import { isUnauthorized, requireSession } from "@/lib/require-session";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { toDecimal } from "@/lib/money";
@@ -21,7 +21,7 @@ const bodySchema = z.object({
  * refresh of the current page (that was leaving Save spinning forever).
  */
 export async function POST(request: Request) {
-  const session = await requireShopifySession();
+  const session = await requireSession();
   if (isUnauthorized(session)) return session;
   if (!prisma) {
     return NextResponse.json({ ok: false, error: "No database" }, { status: 503, headers: noStore });

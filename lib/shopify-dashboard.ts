@@ -14,7 +14,6 @@ import {
 import { getAppSettings } from './queries/app-settings';
 import { shopifyAdminUrl } from './shopify/admin-url';
 import { isShopifyApiReady } from './shopify/config';
-import { isShopifyAccountAllowed } from './shopify/access';
 
 const OPEN_FULFILLMENT = ['UNFULFILLED', 'PARTIALLY_FULFILLED', 'PARTIAL', 'unfulfilled', 'partial'];
 
@@ -99,14 +98,11 @@ async function statsFor(
   };
 }
 
-export async function getShopifyDashboard(accountId: string, window?: {
+export async function getShopifyDashboard(window?: {
   from: Date;
   to: Date;
   key: DateRangeKey | null;
 }): Promise<DashboardSection<ShopifyData>> {
-  if (!isShopifyAccountAllowed(accountId)) {
-    return { status: 'error', message: 'Shopify access is not enabled for this account' };
-  }
   try {
     const [ready, settings] = await Promise.all([isShopifyApiReady(), getAppSettings()]);
     const shop = settings?.shopifyShopName || settings?.shopifyShopDomain || null;

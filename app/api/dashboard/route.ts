@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   try {
     const [ebay, shopify, etsy] = await Promise.all([
       getDashboardData(userEmail, tzOffsetMinutes, window),
-      getShopifyDashboard(userEmail, window),
+      getShopifyDashboard(window),
       getEtsyDashboard(userEmail, window),
     ]);
     return NextResponse.json(

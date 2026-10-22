@@ -1,14 +1,11 @@
 "use server";
 
-import { requireShopifyAction } from "@/lib/require-session";
-
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { toDecimal } from "@/lib/money";
 import { revalidateDashboardFigures } from "@/lib/sync/revalidate";
 
 export async function updateProductMargin(id: string, marginPercent: number | null) {
-  await requireShopifyAction();
   if (!prisma) return { ok: false as const, error: "No database" };
   try {
     await prisma.catalogItem.update({
@@ -29,7 +26,6 @@ const catalogPatch = z.object({
 });
 
 export async function updateCatalogItem(id: string, patch: z.infer<typeof catalogPatch>) {
-  await requireShopifyAction();
   const data = catalogPatch.parse(patch);
   if (!prisma) return { ok: false as const, error: "No database" };
   try {

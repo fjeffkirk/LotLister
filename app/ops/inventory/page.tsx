@@ -1,5 +1,3 @@
-import { redirect } from 'next/navigation';
-import { requireShopifySession, isUnauthorized } from '../../../lib/require-session';
 import Link from 'next/link';
 import { AppHeader } from '../../../components/ui/AppHeader';
 import { prisma } from '../../../lib/db';
@@ -12,8 +10,6 @@ export const dynamic = 'force-dynamic';
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 export default async function InventoryPage() {
-  const session = await requireShopifySession();
-  if (isUnauthorized(session)) redirect('/lots?access=shopify_denied');
   const [rows, settings] = await Promise.all([
     prisma ? listLowStockItems(prisma) : Promise.resolve([]),
     getAppSettings(),

@@ -1,4 +1,3 @@
-import { requireShopifySession, isUnauthorized } from "@/lib/require-session";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
@@ -8,11 +7,8 @@ import { exchangeCodeForToken, getOAuthCallbackUrl, verifyOAuthHmac, STATE_COOKI
 import { getAppBaseUrl, normalizeShopDomain, invalidateShopifyConfigCache } from "@/lib/shopify/config";
 import { shopify } from "@/lib/shopify/client";
 import { log } from "@/lib/logger";
-import { encryptCredential } from '@/lib/credential-crypto.mjs';
 
 export async function GET(request: Request) {
-  const session = await requireShopifySession();
-  if (isUnauthorized(session)) return session;
   const url = new URL(request.url);
   const sp = url.searchParams;
   if (!prisma) {
@@ -27,14 +23,13 @@ export async function GET(request: Request) {
   }
   const state = sp.get("state");
   const cookieStore = await cookies();
-  const shop = normalizeShopDomain(sp.get("shop"));
-  let want: { state?: string; accountId?: string; shop?: string } | null = null;
-  try { want = JSON.parse(cookieStore.get(STATE_COOKIE)?.value ?? 'null'); } catch { /* invalid state */ }
-  if (!state || !want || state !== want.state || want.accountId !== session.email || !shop || want.shop !== shop) {
+  const want = cookieStore.get(STATE_COOKIE)?.value;
+  if (!state || !want || state !== want) {
     return NextResponse.json({ error: "Invalid or missing state" }, { status: 400 });
   }
   cookieStore.delete(STATE_COOKIE);
   const code = sp.get("code");
+  const shop = normalizeShopDomain(sp.get("shop"));
   if (!code || !shop) {
     return NextResponse.json({ error: "Missing code or shop" }, { status: 400 });
   }
@@ -65,14 +60,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const encryptedToken = encryptCredential(token, `shopify:${shop}:access`);
     const existing = await prisma.appSetting.findFirst();
     if (existing) {
       await prisma.appSetting.update({
         where: { id: existing.id },
         data: {
           shopifyShopDomain: shop,
-          shopifyAccessToken: encryptedToken,
+          shopifyAccessToken: token,
           shopifyShopName: shopName,
           shopifyShopLogoUrl: shopLogoUrl,
           shopifyConnectedAt: new Date(),
@@ -83,7 +77,7 @@ export async function GET(request: Request) {
       await prisma.appSetting.create({
         data: {
           shopifyShopDomain: shop,
-          shopifyAccessToken: encryptedToken,
+          shopifyAccessToken: token,
           shopifyShopName: shopName,
           shopifyShopLogoUrl: shopLogoUrl,
           shopifyConnectedAt: new Date(),
