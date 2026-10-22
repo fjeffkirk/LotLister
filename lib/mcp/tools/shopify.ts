@@ -12,10 +12,10 @@ registerTool({
     properties: { range: { type: 'string', enum: ['1d', '7d', '30d', '90d'], description: 'Defaults to 30d.' } },
     additionalProperties: false,
   },
-  async handler(_ctx, args) {
+  async handler(ctx, args) {
     const { range } = z.object({ range: z.enum(['1d', '7d', '30d', '90d']).optional() }).parse(args);
     const key = (range ?? '30d') as DateRangeKey;
-    const section = await getShopifyDashboard({ ...rangeToDates(key), key });
+    const section = await getShopifyDashboard(ctx.accountId, { ...rangeToDates(key), key });
     if (section.status !== 'ok') throw new Error(section.message);
     const focus = section.data.focus;
     return {

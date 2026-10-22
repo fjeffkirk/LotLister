@@ -1,5 +1,7 @@
 "use server";
 
+import { requireShopifyAction } from "@/lib/require-session";
+
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { SyncMode } from "@prisma/client";
@@ -15,6 +17,7 @@ const schema = z.object({
 });
 
 export async function updateSettings(input: z.infer<typeof schema>) {
+  await requireShopifyAction();
   const data = schema.parse(input);
   if (!prisma) return { ok: false as const, error: "Database not configured" };
   try {

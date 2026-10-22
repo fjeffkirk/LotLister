@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { isUnauthorized, requireSession } from "@/lib/require-session";
+import { isUnauthorized, requireShopifySession } from "@/lib/require-session";
 import { log } from "@/lib/logger";
 import { beginSyncRun, executeSyncRun } from "@/lib/sync/shopify-sync";
 import { revalidateAppData } from "@/lib/sync/revalidate";
@@ -13,7 +13,7 @@ export const maxDuration = 300;
 const noStore = { "Cache-Control": "no-store" };
 
 export async function POST(request: Request) {
-  const session = await requireSession();
+  const session = await requireShopifySession();
   if (isUnauthorized(session)) return session;
   if (!prisma) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503, headers: noStore });
@@ -69,12 +69,16 @@ export async function POST(request: Request) {
  * request context so revalidateTag/revalidatePath are reliable (unlike after()).
  */
 export async function PUT() {
+  const session = await requireShopifySession();
+  if (isUnauthorized(session)) return session;
   revalidateAppData();
   return NextResponse.json({ ok: true }, { headers: noStore });
 }
 
 /** GET /api/sync — latest SyncRun, or a specific run via ?id= */
 export async function GET(request: Request) {
+  const session = await requireShopifySession();
+  if (isUnauthorized(session)) return session;
   if (!prisma) {
     return NextResponse.json({ run: null, lastSuccessfulSyncAt: null }, { headers: noStore });
   }

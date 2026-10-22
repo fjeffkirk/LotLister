@@ -12,7 +12,9 @@
     "db:deploy": "node scripts/db-migrate.mjs",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate && prisma generate --schema prisma/legacy-sqlite.prisma"
+    "postinstall": "prisma generate && prisma generate --schema prisma/legacy-sqlite.prisma",
+    "typecheck": "tsc --noEmit",
+    "credentials:migrate": "node scripts/encrypt-marketplace-credentials.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -22,12 +24,12 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "geist": "^1.7.2",
-    "next": "^15.5.26",
+    "next": "^15.5.28",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-dropzone": "^14.3.5",
-    "sharp": "^0.33.5",
-    "uuid": "^11.0.3",
+    "sharp": "^0.35.5",
+    "uuid": "^11.1.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -38,11 +40,16 @@
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "^15.5.26",
+    "eslint-config-next": "^15.5.28",
     "postcss": "^8.4.47",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
     "vitest": "^3.2.7"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.31"
+    }
   }
 }

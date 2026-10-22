@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import { SyncMode } from '@prisma/client';
 import { updateSettings } from '../../../../app/actions/settings';
 import { prisma } from '../../../../lib/db';
-import { isUnauthorized, requireSession } from '../../../../lib/require-session';
+import { isUnauthorized, requireShopifySession } from '../../../../lib/require-session';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const session = await requireSession();
+  const session = await requireShopifySession();
   if (isUnauthorized(session)) return session;
   if (!prisma) return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
 
@@ -33,7 +33,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await requireSession();
+  const session = await requireShopifySession();
   if (isUnauthorized(session)) return session;
   const body = await request.json().catch(() => null);
   const syncMode = body?.syncMode;

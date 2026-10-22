@@ -1,3 +1,4 @@
+import { requireShopifySession, isUnauthorized } from "@/lib/require-session";
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -11,6 +12,8 @@ import { normalizeShopDomain } from "@/lib/shopify/normalize";
  * Start OAuth: GET /api/shopify/auth?shop=your-store.myshopify.com
  */
 export async function GET(request: Request) {
+  const session = await requireShopifySession();
+  if (isUnauthorized(session)) return session;
   if (!env.databaseConfigured) {
     return NextResponse.json(
       { error: "Database required to store the OAuth access token. Set DATABASE_URL." },
@@ -34,7 +37,7 @@ export async function GET(request: Request) {
   }
   const state = randomBytes(16).toString("hex");
   const cookieStore = await cookies();
-  cookieStore.set(STATE_COOKIE, state, {
+  cookieStore.set(STATE_COOKIE, JSON.stringify({ state, accountId: session.email, shop: s }), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

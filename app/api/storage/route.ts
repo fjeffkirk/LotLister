@@ -1,3 +1,4 @@
+import { requireShopifySession, isUnauthorized } from '../../../lib/require-session';
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
@@ -40,7 +41,9 @@ async function getDirectorySize(dirPath: string): Promise<number> {
 }
 
 // GET /api/storage - Get storage usage info
-export async function GET(): Promise<NextResponse<{ success: boolean; data?: StorageInfo; error?: string }>> {
+export async function GET(): Promise<NextResponse> {
+  const session = await requireShopifySession();
+  if (isUnauthorized(session)) return session;
   try {
     const usedBytes = await getDirectorySize(UPLOADS_DIR);
     const usedMB = Math.round((usedBytes / (1024 * 1024)) * 100) / 100;

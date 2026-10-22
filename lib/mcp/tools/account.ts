@@ -1,5 +1,6 @@
 import prisma from '../../prisma';
 import { registerTool } from '../registry';
+import { isShopifyAccountAllowed } from '../../shopify/access';
 
 registerTool({
   name: 'account_get',
@@ -10,7 +11,9 @@ registerTool({
     const [ebay, etsy, settings] = await Promise.all([
       prisma.ebayConnection.findUnique({ where: { userEmail: ctx.accountId }, select: { ebayUsername: true } }),
       prisma.etsyConnection.findUnique({ where: { userEmail: ctx.accountId }, select: { shopName: true, shopId: true } }),
-      prisma.appSetting.findFirst({ select: { shopifyShopName: true, shopifyShopDomain: true } }),
+      isShopifyAccountAllowed(ctx.accountId)
+        ? prisma.appSetting.findFirst({ select: { shopifyShopName: true, shopifyShopDomain: true } })
+        : Promise.resolve(null),
     ]);
     return {
       ebay: ebay ? { username: ebay.ebayUsername, connected: true } : { username: null, connected: false },

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isUnauthorized, requireSession } from "@/lib/require-session";
+import { isUnauthorized, requireShopifySession } from "@/lib/require-session";
 import { toZonedTime } from "date-fns-tz";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
@@ -25,7 +25,7 @@ const saveSchema = z.object({
 
 /** POST /api/ad-budget — upsert an ad budget entry for a date */
 export async function POST(request: Request) {
-  const session = await requireSession();
+  const session = await requireShopifySession();
   if (isUnauthorized(session)) return session;
   if (!prisma) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
@@ -77,6 +77,8 @@ export async function POST(request: Request) {
 
 /** GET /api/ad-budget — recent entries, or the amount counted on ?date=YYYY-MM-DD */
 export async function GET(request: Request) {
+  const session = await requireShopifySession();
+  if (isUnauthorized(session)) return session;
   if (!prisma) return NextResponse.json({ entries: [] });
   const date = new URL(request.url).searchParams.get("date");
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {

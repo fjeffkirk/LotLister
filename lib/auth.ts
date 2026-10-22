@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import prisma from './prisma';
-import { getSessionSecret, SESSION_COOKIE, verifySession } from './session';
+import { getSessionSecret, isEbayUserAllowed, SESSION_COOKIE, verifySession } from './session';
 
 export interface CurrentUser {
   /** Account key stored in Lot.userEmail / User.email: the eBay user id. */
@@ -25,6 +25,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     select: { ebayUsername: true },
   });
   if (!connection) return null;
+  if (!isEbayUserAllowed({ userId: session.sub, username: connection.ebayUsername })) return null;
 
   return { accountId: session.sub, username: connection.ebayUsername || session.username };
 }
