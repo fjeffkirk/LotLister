@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isUnauthorized, requireSession } from "@/lib/require-session";
+import { isUnauthorized, requireShopifySession } from "@/lib/require-session";
 import { prisma } from "@/lib/db";
 import { fromZonedTime } from "date-fns-tz";
 import { toNumber } from "@/lib/money";
@@ -7,7 +7,7 @@ import { toNumber } from "@/lib/money";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const session = await requireSession();
+  const session = await requireShopifySession();
   if (isUnauthorized(session)) return session;
   if (!prisma) return NextResponse.json({ error: "No database" }, { status: 503 });
   const url = new URL(request.url);

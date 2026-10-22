@@ -1,3 +1,5 @@
+import { readMarketplaceTokens, sealMarketplaceTokens } from './credential-store';
+import { decryptCredential } from './credential-crypto.mjs';
 /**
  * Production eBay seller integration.
  *
@@ -252,24 +254,24 @@ export async function saveEbayConnection(
   identity: EbayIdentity | null
 ): Promise<void> {
   const existing = await prisma.ebayConnection.findUnique({ where: { userEmail } });
-  const refreshToken = token.refresh_token || existing?.refreshToken;
+  const refreshToken = token.refresh_token || (existing?.refreshToken
+    ? decryptCredential(existing.refreshToken, `ebay:${userEmail}:refresh`) : undefined);
   if (!refreshToken) {
     throw new Error('eBay did not return a refresh token');
   }
 
+  const sealed = sealMarketplaceTokens('ebay', userEmail, token.access_token, refreshToken);
   await prisma.ebayConnection.upsert({
     where: { userEmail },
     create: {
       userEmail,
-      accessToken: token.access_token,
-      refreshToken,
+      ...sealed,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
       ebayUserId: identity?.userId ?? null,
       ebayUsername: identity?.username ?? null,
     },
     update: {
-      accessToken: token.access_token,
-      refreshToken,
+      ...sealed,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
       ebayUserId: identity?.userId ?? existing?.ebayUserId ?? null,
       ebayUsername: identity?.username ?? existing?.ebayUsername ?? null,
@@ -288,11 +290,12 @@ export async function getValidEbayAccessToken(userEmail: string): Promise<string
     throw new Error('Your eBay session has ended. Sign out and sign in with eBay again.');
   }
 
+  const tokens = await readMarketplaceTokens('ebay', connection);
   if (connection.accessExpiresAt.getTime() > Date.now() + 60_000) {
-    return connection.accessToken;
+    return tokens.accessToken;
   }
 
-  const refreshed = await refreshEbayAccessToken(creds, connection.refreshToken);
+  const refreshed = await refreshEbayAccessToken(creds, tokens.refreshToken);
   await saveEbayConnection(userEmail, refreshed, null);
   return refreshed.access_token;
 }

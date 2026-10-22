@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashSecret, MCP_SCOPES } from '../lib/mcp/oauth';
 import { sessionFromAccessToken } from '../lib/mcp/store';
 
-const { findUnique } = vi.hoisted(() => ({ findUnique: vi.fn() }));
+const { findUnique, account } = vi.hoisted(() => ({ findUnique: vi.fn(), account: vi.fn() }));
 
 vi.mock('../lib/prisma', () => ({
-  default: { mcpToken: { findUnique } },
+  default: { mcpToken: { findUnique }, ebayConnection: { findUnique: account } },
 }));
 
 const accessToken = 'test-access-token';
@@ -23,7 +23,22 @@ function tokenRow(scopes: string) {
 }
 
 describe('MCP access-token sessions', () => {
-  beforeEach(() => findUnique.mockReset());
+  beforeEach(() => {
+    findUnique.mockReset();
+    account.mockReset();
+    account.mockResolvedValue({ ebayUsername: 'owner' });
+    vi.stubEnv('EBAY_ALLOWED_USERS', 'owner');
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('revokes existing MCP access when the seller is removed or disconnected', async () => {
+    findUnique.mockResolvedValue(tokenRow('lotlister.read'));
+    vi.stubEnv('EBAY_ALLOWED_USERS', 'someone-else');
+    expect(await sessionFromAccessToken(accessToken)).toBeNull();
+    vi.stubEnv('EBAY_ALLOWED_USERS', 'owner');
+    account.mockResolvedValue(null);
+    expect(await sessionFromAccessToken(accessToken)).toBeNull();
+  });
 
   it('preserves all granted capabilities, including YouTube, when loading a session', async () => {
     findUnique.mockResolvedValue(tokenRow(MCP_SCOPES.join(' ')));

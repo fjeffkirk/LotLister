@@ -1,3 +1,4 @@
+import { requireShopifySession, isUnauthorized } from "@/lib/require-session";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { shopify } from "@/lib/shopify/client";
@@ -7,6 +8,8 @@ import { saveShopifyShopProfile } from "@/lib/shopify/shop-profile";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const session = await requireShopifySession();
+  if (isUnauthorized(session)) return session;
   if (!(await isShopifyApiReady())) {
     return NextResponse.json({ error: "Shopify is not connected" }, { status: 400 });
   }

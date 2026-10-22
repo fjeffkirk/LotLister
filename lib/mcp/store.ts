@@ -1,6 +1,14 @@
 import { randomBytes } from 'crypto';
 import prisma from '../prisma';
 import { hashSecret, MCP_SCOPES, pkceChallenge, secretsMatch, type McpScope } from './oauth';
+import { isEbayUserAllowed } from '../session';
+
+async function accountStillAllowed(accountId: string): Promise<boolean> {
+  const account = await prisma.ebayConnection.findUnique({
+    where: { userEmail: accountId }, select: { ebayUsername: true },
+  });
+  return Boolean(account) && isEbayUserAllowed({ userId: accountId, username: account?.ebayUsername ?? null });
+}
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TTL_MS = 60 * 60 * 1000;
@@ -59,6 +67,7 @@ export async function exchangeAuthCode(input: {
   if (!row || row.expiresAt.getTime() < Date.now()) throw new Error('Authorization code expired');
   if (row.clientId !== input.clientId || row.redirectUri !== input.redirectUri) throw new Error('Authorization code does not match this client');
   if (!secretsMatch(pkceChallenge(input.codeVerifier), row.codeChallenge)) throw new Error('PKCE verification failed');
+  if (!(await accountStillAllowed(row.userEmail))) throw new Error('Account access has ended');
   await prisma.mcpAuthCode.delete({ where: { codeHash: row.codeHash } });
   return issueTokenPair(row.clientId, row.userEmail, row.scopes, randomBytes(16).toString('hex'));
 }
@@ -70,6 +79,7 @@ export async function exchangeRefreshToken(input: {
   const row = await prisma.mcpToken.findUnique({ where: { tokenHash: hashSecret(input.refreshToken) } });
   if (!row || row.kind !== 'refresh' || row.expiresAt.getTime() < Date.now()) throw new Error('Refresh token expired');
   if (row.clientId !== input.clientId) throw new Error('Refresh token does not match this client');
+  if (!(await accountStillAllowed(row.userEmail))) throw new Error('Account access has ended');
   await prisma.mcpToken.deleteMany({ where: { familyId: row.familyId } });
   return issueTokenPair(row.clientId, row.userEmail, row.scopes, row.familyId);
 }
@@ -106,6 +116,7 @@ async function issueTokenPair(clientId: string, userEmail: string, scopes: strin
 export async function sessionFromAccessToken(token: string): Promise<McpSession | null> {
   const row = await prisma.mcpToken.findUnique({ where: { tokenHash: hashSecret(token) } });
   if (!row || row.kind !== 'access' || row.expiresAt.getTime() < Date.now()) return null;
+  if (!(await accountStillAllowed(row.userEmail))) return null;
   const scopes = row.scopes.split(/\s+/).filter((scope): scope is McpScope =>
     (MCP_SCOPES as readonly string[]).includes(scope)
   );

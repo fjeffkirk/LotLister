@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
-import { log } from "@/lib/logger";
 import { env } from "@/lib/env";
 import { normalizeShopDomain } from "./normalize";
+import { decryptCredential, encryptCredential, isEncryptedCredential } from '../credential-crypto.mjs';
 
 export type ShopifyApiConfig = {
   shop: string;
@@ -38,29 +38,36 @@ export async function resolveShopifyConfig(): Promise<ShopifyApiConfig | null> {
     return _configCache.value;
   }
 
-  // Fetch from DB, but fall back to the stale cache on any error to avoid
-  // false-negative "Shopify is not connected" under transient DB load.
+  if (!prisma) return _configCache?.value ?? null;
+  let row;
   try {
-    if (!prisma) return _configCache?.value ?? null;
-    const row = await prisma.appSetting.findFirst({
-      select: { shopifyShopDomain: true, shopifyAccessToken: true },
+    row = await prisma.appSetting.findFirst({
+      select: { id: true, shopifyShopDomain: true, shopifyAccessToken: true },
     });
-    const shop = normalizeShopDomain(row?.shopifyShopDomain);
-    const token = row?.shopifyAccessToken?.trim();
-    if (shop && token) {
-      _configCache = { value: { shop, token, version }, expiry: Date.now() + CONFIG_TTL_MS };
-      return _configCache.value;
-    }
-    // DB is reachable but no valid config stored — clear cache
+  } catch {
+    // Only database availability errors may use the stale cache. Never hide a
+    // decryption failure or use a different key's cached token after corruption.
+    return _configCache?.value ?? null;
+  }
+  const shop = normalizeShopDomain(row?.shopifyShopDomain);
+  const stored = row?.shopifyAccessToken?.trim();
+  if (!row || !shop || !stored) {
     _configCache = null;
     return null;
-  } catch (e) {
-    // DB temporarily unreachable — return stale cache rather than a false-negative
-    if (_configCache) {
-      log.warn("Shopify config DB lookup failed, using cached config", { message: (e as Error).message?.slice(0, 100) });
-      return _configCache.value;
+  }
+  try {
+    const token = decryptCredential(stored, `shopify:${shop}:access`);
+    if (!isEncryptedCredential(stored)) {
+      await prisma.appSetting.updateMany({
+        where: { id: row.id, shopifyAccessToken: row.shopifyAccessToken, shopifyShopDomain: row.shopifyShopDomain },
+        data: { shopifyAccessToken: encryptCredential(token, `shopify:${shop}:access`) },
+      });
     }
-    return null;
+    _configCache = { value: { shop, token, version }, expiry: Date.now() + CONFIG_TTL_MS };
+    return _configCache.value;
+  } catch (error) {
+    _configCache = null;
+    throw error;
   }
 }
 

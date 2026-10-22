@@ -1,3 +1,5 @@
+import { isShopifyAccountAllowed } from './shopify/access';
+import { readMarketplaceTokens, sealMarketplaceTokens } from './credential-store';
 /**
  * Etsy shop connection and listing.
  *
@@ -129,22 +131,22 @@ export async function getValidEtsyAccessToken(userEmail: string): Promise<{ cred
   if (!connection) throw new Error('Connect your Etsy shop in Settings before listing');
   if (!connection.shopId) throw new Error('Etsy did not return a shop. Connect the shop again from Settings.');
 
+  const tokens = await readMarketplaceTokens('etsy', connection);
   const fresh = connection.accessExpiresAt.getTime() > Date.now() + 60_000;
-  if (fresh) return { creds, accessToken: connection.accessToken, shopId: connection.shopId };
+  if (fresh) return { creds, accessToken: tokens.accessToken, shopId: connection.shopId };
 
   const refreshed = await tokenRequest(
     creds,
     new URLSearchParams({
       grant_type: 'refresh_token',
       client_id: creds.keystring,
-      refresh_token: connection.refreshToken,
+      refresh_token: tokens.refreshToken,
     })
   );
   await prisma.etsyConnection.update({
     where: { userEmail },
     data: {
-      accessToken: refreshed.access_token,
-      refreshToken: refreshed.refresh_token || connection.refreshToken,
+      ...sealMarketplaceTokens('etsy', userEmail, refreshed.access_token, refreshed.refresh_token || tokens.refreshToken),
       accessExpiresAt: new Date(Date.now() + refreshed.expires_in * 1000),
       etsyUserId: userIdFromToken(refreshed.access_token) ?? connection.etsyUserId,
     },
@@ -162,20 +164,19 @@ export async function saveEtsyConnection(userEmail: string, token: EtsyTokenResp
   );
   const shop = shopFromEtsyPayload(shops);
   if (!shop) throw new Error('This Etsy account does not have a shop yet');
+  const sealed = sealMarketplaceTokens('etsy', userEmail, token.access_token, token.refresh_token);
   await prisma.etsyConnection.upsert({
     where: { userEmail },
     create: {
       userEmail,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token,
+      ...sealed,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
       etsyUserId,
       shopId: shop.shopId,
       shopName: shop.shopName,
     },
     update: {
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token,
+      ...sealed,
       accessExpiresAt: new Date(Date.now() + token.expires_in * 1000),
       etsyUserId,
       shopId: shop.shopId,
@@ -691,7 +692,8 @@ export async function getEtsyDashboard(
     const connection = await prisma.etsyConnection.findUnique({ where: { userEmail } });
     if (!connection?.shopId) return { status: 'ok', data: emptyEtsy('not_connected') };
     const { creds, accessToken, shopId } = await getValidEtsyAccessToken(userEmail);
-    const settings = await getAppSettings();
+    const storeAccess = isShopifyAccountAllowed(userEmail);
+    const settings = storeAccess ? await getAppSettings() : null;
     const marginRate = (settings?.defaultMarginPercent ?? 35) / 100;
     const { prevFrom, prevTo } = getComparisonDates(window.key, window.from, window.to);
     const [current, prior, open, currentLedger, priorLedger] = await Promise.all([
@@ -707,10 +709,10 @@ export async function getEtsyDashboard(
     const previous = summarize(prior);
     const ads = currentLedger ? etsyAdCost(currentLedger) : null;
     const priorAds = priorLedger ? etsyAdCost(priorLedger) : null;
-    const products = await prisma.catalogItem.findMany({
+    const products = storeAccess ? await prisma.catalogItem.findMany({
       where: { status: 'active' },
       select: { sku: true, title: true, marginPercentOverride: true },
-    });
+    }) : [];
     const catalog = buildMarginCatalog(products.map((product) => ({
       sku: product.sku,
       title: product.title,
