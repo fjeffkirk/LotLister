@@ -22,7 +22,7 @@ const connectionId = z.string().trim().min(8).max(40);
 const videoId = z.string().regex(/^[A-Za-z0-9_-]{6,20}$/);
 const visibility = z.enum(['private', 'unlisted', 'public']);
 
-if (process.env.YOUTUBE_CLEANUP_CHANNEL_IDS?.trim()) registerTool({
+if (process.env.YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS?.trim()) registerTool({
   name: 'youtube_media_delete_failed',
   description: 'Remove only the local video source of one explicitly authorized failed or rejected upload to free LotLister storage. Requires a saved backup reference and exact job, connection, channel, media, key and byte size. Refuses active, ambiguous or shared files. Preserves YouTube videos, thumbnails and upload history. Never call without owner deletion authorization.',
   effect: 'youtube', readOnly: false, destructive: true, idempotent: true, openWorld: false,

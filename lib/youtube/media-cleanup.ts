@@ -21,7 +21,7 @@ export type FailedMediaCleanupTarget = z.infer<typeof failedMediaCleanupSchema>;
  * queue revival, shared-file deletion, or changes to publication settings. */
 export async function deleteFailedMedia(accountId: string, input: FailedMediaCleanupTarget) {
   const target = failedMediaCleanupSchema.parse(input);
-  const enabled = (process.env.YOUTUBE_CLEANUP_CHANNEL_IDS ?? '').split(',').map(x => x.trim());
+  const enabled = (process.env.YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS ?? '').split(',').map(x => x.trim());
   if (!enabled.includes(target.channelId)) {
     throw new YoutubeUserError('deletion_disabled', 'Local media deletion is not enabled for this channel.');
   }

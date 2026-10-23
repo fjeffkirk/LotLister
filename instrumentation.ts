@@ -3,8 +3,12 @@ export async function register() {
     const { applyConfiguredYoutubeHolds, startYoutubeWorker } = await import('./lib/youtube/jobs');
     await applyConfiguredYoutubeHolds();
     const { applyConfiguredFailedMediaCleanup } = await import('./lib/youtube/media-cleanup');
-    await applyConfiguredFailedMediaCleanup().catch(() => {
-      console.error('Authorized failed-media cleanup did not complete; sources are preserved or marked for retry.');
+    const { YoutubeUserError } = await import('./lib/youtube/types');
+    await applyConfiguredFailedMediaCleanup().catch(error => {
+      // Only our fixed user-error messages are safe to log; database and filesystem
+      // errors can contain account paths or connection details.
+      const reason = error instanceof YoutubeUserError ? `${error.code}: ${error.message}` : 'internal_error';
+      console.error('Authorized failed-media cleanup did not complete; sources are preserved or marked for retry.', reason);
     });
     startYoutubeWorker();
   }

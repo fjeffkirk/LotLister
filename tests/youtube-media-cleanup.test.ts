@@ -30,7 +30,7 @@ beforeAll(async () => {
 afterAll(async () => { vi.unstubAllEnvs(); await db.close(); await rm(path.dirname(file()), { recursive: true, force: true }); });
 beforeEach(async () => {
   vi.clearAllMocks(); vi.unstubAllEnvs(); race = false;
-  vi.stubEnv('YOUTUBE_CLEANUP_CHANNEL_IDS', target.channelId);
+  vi.stubEnv('YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS', target.channelId);
   await db.exec('TRUNCATE "YoutubeMediaAsset", "YoutubeUploadJob"');
   const update = async (database: Pick<PGlite, 'query'>, { where, data }: any) => {
     await database.query('UPDATE "YoutubeMediaAsset" SET status=$1,"errorMessage"=$2 WHERE id=$3', [data.status, data.errorMessage ?? null, where.id]);
@@ -66,6 +66,13 @@ describe('explicit failed-source cleanup using real SQL and files', () => {
     expect((await db.query('SELECT * FROM "YoutubeUploadJob"')).rows).toEqual(before);
     expect(mocks.deleteVideo).not.toHaveBeenCalled(); expect(mocks.token).not.toHaveBeenCalled();
     expect(await deleteFailedMedia(account, target)).toMatchObject({ alreadyDeleted: true, freedBytes: 0 });
+  });
+  it('does not enable local cleanup through YouTube deletion permission', async () => {
+    vi.stubEnv('YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS', '');
+    vi.stubEnv('YOUTUBE_CLEANUP_CHANNEL_IDS', target.channelId);
+    await expect(deleteFailedMedia(account, target)).rejects.toThrow('not enabled');
+    expect(await exists()).toBe(true);
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
   it('handles sources beyond the old 32-bit counter without loading them into memory', async () => {
     const size = 3333358141;

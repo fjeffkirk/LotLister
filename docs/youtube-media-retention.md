@@ -32,10 +32,12 @@ An owner may request immediate removal of one failed or rejected upload's local
 video copy after saving a durable backup. `youtube_media_delete_failed` requires
 exact job, connection, channel, idempotency key, media ID, byte size, backup
 reference and deletion intent. The channel must already be enabled through
-`YOUTUBE_CLEANUP_CHANNEL_IDS`. It refuses leases, uncertain completion, shared
+`YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS`. It refuses leases, uncertain completion, shared
 sources, noncanonical paths, images, and unexpected file sizes. Asset and job
 locks serialize cleanup with enqueue; a deleting marker permits crash recovery.
-The original job, thumbnail, and any YouTube video are preserved.
+The original job, thumbnail, and any YouTube video are preserved. The local-media
+allowlist is separate from `YOUTUBE_CLEANUP_CHANNEL_IDS`, which controls YouTube
+video deletion; enabling one does not enable the other.
 
 For a client whose MCP catalog has not refreshed, an operator may set
 `YOUTUBE_FAILED_MEDIA_CLEANUP` to a JSON array of these exact authorized targets.

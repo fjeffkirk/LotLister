@@ -36,9 +36,12 @@ export function registerTool(tool: LotlisterTool): void {
   if (tool.effect !== 'read' && tool.effect !== 'draft' && tool.effect !== 'price' && tool.effect !== 'youtube' && tool.effect !== 'tiktok') {
     throw new Error(`Tool ${tool.name} uses an effect this server does not allow`);
   }
-  const approvedYoutubeCleanup = ['youtube_video_delete', 'youtube_media_delete_failed'].includes(tool.name) && tool.effect === 'youtube'
-    && tool.destructive === true && tool.readOnly === false
-    && Boolean(process.env.YOUTUBE_CLEANUP_CHANNEL_IDS?.trim());
+  const cleanupEnabled = tool.name === 'youtube_video_delete'
+    ? Boolean(process.env.YOUTUBE_CLEANUP_CHANNEL_IDS?.trim())
+    : tool.name === 'youtube_media_delete_failed'
+      && Boolean(process.env.YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS?.trim());
+  const approvedYoutubeCleanup = cleanupEnabled && tool.effect === 'youtube'
+    && tool.destructive === true && tool.readOnly === false;
   if ((DESTRUCTIVE_NAME.test(tool.name) && !approvedYoutubeCleanup) || (PUBLISH_NAME.test(tool.name) && !tool.name.startsWith('youtube_'))) {
     throw new Error(`Tool ${tool.name} is not available. Publishing and destructive actions are not registered.`);
   }
