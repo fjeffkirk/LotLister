@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import { Prisma } from '@prisma/client';
 import { log } from '../logger';
 import prisma from '../prisma';
+import { byteCount } from './byte-count';
 import { getVideo, probeOrUpload, setThumbnail, startResumableSession } from './api';
 import { CHUNK_BYTES, MAX_THUMBNAIL_BYTES, MAX_TRANSIENT_ATTEMPTS, maxUploadBytes, youtubeConfigured } from './config';
 import { getValidAccessToken, markConnectionReconnect } from './connections';
@@ -450,9 +451,9 @@ type JobRow = {
   mediaAssetId: string;
   thumbnailAssetId: string | null;
   status: string;
-  progressBytes: number;
-  byteSize: number;
-  bytesAcked: number;
+  progressBytes: number | bigint;
+  byteSize: number | bigint;
+  bytesAcked: number | bigint;
   attemptCount: number;
   completionUncertain: boolean;
   nextAttemptAt: Date | null;
@@ -482,9 +483,9 @@ function rowToJob(row: JobRow): UploadJobState {
     mediaAssetId: row.mediaAssetId,
     thumbnailAssetId: row.thumbnailAssetId,
     status: row.status as JobStatus,
-    progressBytes: row.progressBytes,
-    byteSize: row.byteSize,
-    bytesAcked: row.bytesAcked,
+    progressBytes: byteCount(row.progressBytes),
+    byteSize: byteCount(row.byteSize),
+    bytesAcked: byteCount(row.bytesAcked),
     attemptCount: row.attemptCount,
     completionUncertain: row.completionUncertain,
     nextAttemptAt: row.nextAttemptAt,
@@ -506,9 +507,9 @@ function rowToJob(row: JobRow): UploadJobState {
 function jobData(job: UploadJobState) {
   return {
     status: job.status,
-    progressBytes: job.bytesAcked,
-    byteSize: job.byteSize,
-    bytesAcked: job.bytesAcked,
+    progressBytes: BigInt(byteCount(job.bytesAcked)),
+    byteSize: BigInt(byteCount(job.byteSize)),
+    bytesAcked: BigInt(byteCount(job.bytesAcked)),
     attemptCount: job.attemptCount,
     completionUncertain: job.completionUncertain,
     nextAttemptAt: job.nextAttemptAt,
@@ -539,10 +540,13 @@ export async function enqueueVideoUpload(input: EnqueueInput, options?: { schedu
         where: { id: connectionId, userEmail: accountId },
         select: { id: true, userEmail: true, channelId: true, channelTitle: true, status: true, statusDetail: true },
       }),
-      findAsset: async (accountId, assetId) => tx.youtubeMediaAsset.findFirst({
-        where: { id: assetId, userEmail: accountId },
-        select: { id: true, userEmail: true, kind: true, status: true, byteSize: true, expiresAt: true },
-      }),
+      findAsset: async (accountId, assetId) => {
+        const row = await tx.youtubeMediaAsset.findFirst({
+          where: { id: assetId, userEmail: accountId },
+          select: { id: true, userEmail: true, kind: true, status: true, byteSize: true, expiresAt: true },
+        });
+        return row ? { ...row, byteSize: row.byteSize === null ? null : byteCount(row.byteSize) } : null;
+      },
       findJobByKey: async (accountId, idempotencyKey) => {
         const row = await tx.youtubeUploadJob.findUnique({ where: { userEmail_idempotencyKey: { userEmail: accountId, idempotencyKey } } });
         return row ? rowToJob(row) : null;
@@ -765,9 +769,12 @@ function prismaIo(persist: (job: UploadJobState) => Promise<void>): UploadIo {
     now: () => Date.now(),
     deadline: () => Date.now() + 60_000,
     persist,
-    loadAsset: async (accountId, assetId) => prisma.youtubeMediaAsset.findFirst({ where: { id: assetId, userEmail: accountId } }),
+    loadAsset: async (accountId, assetId) => {
+      const row = await prisma.youtubeMediaAsset.findFirst({ where: { id: assetId, userEmail: accountId } });
+      return row ? { ...row, byteSize: row.byteSize === null ? null : byteCount(row.byteSize) } : null;
+    },
     markAssetReady: async (assetId, byteSize, contentType) => {
-      await prisma.youtubeMediaAsset.update({ where: { id: assetId }, data: { status: 'ready', byteSize, contentType, errorMessage: null } });
+      await prisma.youtubeMediaAsset.update({ where: { id: assetId }, data: { status: 'ready', byteSize: BigInt(byteCount(byteSize)), contentType, errorMessage: null } });
     },
     markAssetFailed: async (assetId, message) => {
       await prisma.youtubeMediaAsset.update({ where: { id: assetId }, data: { status: 'failed', errorMessage: message.slice(0, 400) } });

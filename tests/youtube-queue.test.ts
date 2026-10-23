@@ -1,4 +1,4 @@
-import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, writeFile, rm, truncate } from 'node:fs/promises';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { Prisma } from '@prisma/client';
@@ -20,6 +20,7 @@ vi.mock('../lib/youtube/api', () => ({ startResumableSession: mocks.start, getVi
 import { claimNextJob, holdUnstartedUpload, processPendingYoutubeJobs, uploadStatus } from '../lib/youtube/jobs';
 import { normalizeUploadRequest } from '../lib/youtube/policy';
 import { YoutubeUserError } from '../lib/youtube/types';
+import { encryptString } from '../lib/youtube/oauth';
 
 let db: PGlite;
 let dir: string;
@@ -43,6 +44,7 @@ beforeAll(async () => {
   db = new PGlite({ parsers: { 1114: value => new Date(value.replace(' ', 'T') + 'Z') } });
   await db.exec(await readFile('prisma/migrations/20261012120000_youtube/migration.sql', 'utf8'));
   await db.exec(await readFile('prisma/migrations/20261020200000_youtube_upload_retention/migration.sql', 'utf8'));
+  await db.exec(await readFile('prisma/migrations/20261023160000_youtube_large_uploads/migration.sql', 'utf8'));
   dir = await mkdtemp(path.join(process.cwd(), 'data/uploads/queue-test-'));
   await writeFile(path.join(dir, 'video.bin'), Buffer.alloc(100));
 });
@@ -101,6 +103,29 @@ async function job(id: string, channel: string, overrides: Record<string, unknow
 }
 
 describe('YouTube queue with actual PostgreSQL claim predicates', () => {
+  it('resumes and completes a 3.33 GB upload with BIGINT counters and JSON-safe status', async () => {
+    const size = 3_333_358_141;
+    const start = size - 64;
+    const file = path.join(dir, 'video.bin');
+    // A sparse file exercises large seek offsets without writing gigabytes.
+    await truncate(file, size);
+    try {
+      mocks.asset.mockResolvedValue({ id: 'ma_test_asset', userEmail: account, kind: 'video', status: 'ready',
+        byteSize: BigInt(size), contentType: 'video/mp4', storagePath: `${path.basename(dir)}/video.bin`, sourceUrl: null, expiresAt: null });
+      await job('large', 'brain', { byteSize: size, progressBytes: start, bytesAcked: start,
+        status: 'uploading', resumableSessionEnc: encryptString('https://www.googleapis.com/upload/youtube/v3/videos?upload_id=large') });
+      mocks.chunk.mockResolvedValueOnce({ type: 'incomplete', acked: start })
+        .mockResolvedValueOnce({ type: 'complete', video: await mocks.video() });
+      expect(await processPendingYoutubeJobs()).toEqual({ processed: 1 });
+      const result = await uploadStatus(account, 'large');
+      expect(result).toMatchObject({ status: 'processed', actualVisibility: 'private',
+        progress: { bytesUploaded: size, byteSize: size, percent: 100 } });
+      expect(() => JSON.stringify(result)).not.toThrow();
+      expect(mocks.chunk.mock.calls[1][0]).toMatchObject({ start, total: size });
+      expect(mocks.start).not.toHaveBeenCalled();
+    } finally { await truncate(file, 100); }
+  });
+
   it('advances Brain Pickle in the same drain after doomish hits its channel limit', async () => {
     await job('a_doom', 'doom');
     await job('b_doom', 'doom');

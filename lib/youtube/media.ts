@@ -12,8 +12,37 @@ import { UPLOAD_URL_TTL_MS, maxUploadBytes } from './config';
 import { encryptionKey } from './oauth';
 import { isBlockedAddress, resolveRedirect, screenUrl, type DnsLookup } from './ssrf';
 import { YoutubeUserError } from './types';
+import { storageCapacity } from '../storage-capacity';
 
 const UPLOADS_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'data', 'uploads');
+
+// Leave room for card photos, metadata and filesystem overhead. Reservations cover
+// simultaneous media transfers in this disk-backed, single-instance service.
+export const MIN_FREE_DISK_BYTES = 256 * 1024 * 1024;
+const storageGlobal = globalThis as typeof globalThis & { lotlisterMediaReservations?: { bytes: number } };
+const reservations = storageGlobal.lotlisterMediaReservations ??= { bytes: 0 };
+
+export async function checkUploadSpace(bytes: number): Promise<void> {
+  const { freeBytes } = await storageCapacity();
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) {
+    throw new YoutubeUserError('invalid_media', 'Provide a positive, safe integer byte size.');
+  }
+  if (bytes > freeBytes - MIN_FREE_DISK_BYTES - reservations.bytes) {
+    throw new YoutubeUserError('insufficient_storage',
+      `Not enough free upload storage. ${Math.max(0, freeBytes - MIN_FREE_DISK_BYTES - reservations.bytes)} bytes are available after reserving space for other files and active uploads.`);
+  }
+}
+
+async function reserveUploadSpace(bytes: number): Promise<() => void> {
+  // Check and reserve in the same continuation, so concurrent callers cannot
+  // both pass a check before either registers its reservation.
+  const { freeBytes } = await storageCapacity();
+  if (bytes > freeBytes - MIN_FREE_DISK_BYTES - reservations.bytes) {
+    throw new YoutubeUserError('insufficient_storage', 'Not enough free disk space for this media transfer and the 256 MB safety reserve.');
+  }
+  reservations.bytes += bytes;
+  return () => { reservations.bytes -= bytes; };
+}
 
 export interface SniffedMedia {
   kind: 'video' | 'image';
@@ -102,10 +131,15 @@ export function uploadUrlFor(origin: string, assetId: string, grant: string): st
 
 export async function writeUploadStream(stream: Readable, destination: string, maxBytes: number): Promise<{ byteSize: number; sniffed: SniffedMedia }> {
   await fs.mkdir(path.dirname(destination), { recursive: true });
+  const release = await reserveUploadSpace(maxBytes).catch(error => {
+    stream.destroy();
+    throw error;
+  });
   const temp = `${destination}.${randomBytes(6).toString('hex')}.partial`;
   const header = Buffer.alloc(32);
   let headerLen = 0;
   let size = 0;
+  let nextSpaceCheck = 0;
   const counter = new Transform({
     transform(chunk, _encoding, callback) {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -119,7 +153,14 @@ export async function writeUploadStream(stream: Readable, destination: string, m
         buf.copy(header, headerLen, 0, count);
         headerLen += count;
       }
-      callback(null, buf);
+      if (size >= nextSpaceCheck) {
+        nextSpaceCheck = size + 64 * 1024 * 1024;
+        storageCapacity().then(({ freeBytes }) => {
+          if (freeBytes - buf.length < MIN_FREE_DISK_BYTES) {
+            callback(new YoutubeUserError('insufficient_storage', 'Upload stopped to preserve free disk space for other files.'));
+          } else callback(null, buf);
+        }).catch(error => callback(error));
+      } else callback(null, buf);
     },
   });
   try {
@@ -127,6 +168,8 @@ export async function writeUploadStream(stream: Readable, destination: string, m
   } catch (error) {
     await fs.rm(temp, { force: true }).catch(() => undefined);
     throw error;
+  } finally {
+    release();
   }
   const sniffed = sniffMedia(header.subarray(0, headerLen));
   if (!sniffed || size < 32) {
@@ -173,7 +216,10 @@ export async function downloadPublicHttps(rawUrl: string, destination: string, o
     if (Number.isFinite(declared) && declared > maxBytes) {
       throw new YoutubeUserError('too_large', `The source file exceeds the ${maxBytes} byte limit.`);
     }
-    return writeUploadStream(response.stream, destination, maxBytes);
+    // A known content length avoids reserving the full configured cap for a
+    // small remote file; the stream still cannot exceed the server's limit.
+    const transferLimit = Number.isSafeInteger(declared) && declared > 0 ? Math.min(declared, maxBytes) : maxBytes;
+    return writeUploadStream(response.stream, destination, transferLimit);
   }
   throw new YoutubeUserError('unsafe_url', 'The source URL redirected too many times.');
 }

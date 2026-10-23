@@ -37,7 +37,8 @@ export function hasAnalyticsScope(scope: string): boolean {
 
 export const YOUTUBE_CALLBACK_PATH = '/api/youtube/callback';
 
-const DEFAULT_MAX_UPLOAD_BYTES = 400 * 1024 * 1024;
+// Actual free disk space is checked separately before and during every transfer.
+const DEFAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024;
 export const MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024;
 export const UPLOAD_URL_TTL_MS = 30 * 60 * 1000;
 export const SCHEDULE_LEAD_MS = 2 * 60 * 1000;
@@ -62,8 +63,8 @@ export function youtubeConfigured(env: NodeJS.ProcessEnv = process.env): boolean
 
 export function maxUploadBytes(env: NodeJS.ProcessEnv = process.env): number {
   const raw = Number(env.YOUTUBE_MAX_UPLOAD_BYTES);
-  if (!Number.isFinite(raw) || raw < 1024) return DEFAULT_MAX_UPLOAD_BYTES;
-  return Math.min(Math.floor(raw), 1024 * 1024 * 1024);
+  if (!Number.isSafeInteger(raw) || raw < 1024) return DEFAULT_MAX_UPLOAD_BYTES;
+  return raw;
 }
 
 export function googleCredentials(env: NodeJS.ProcessEnv = process.env): { clientId: string; clientSecret: string } {

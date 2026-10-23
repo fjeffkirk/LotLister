@@ -8,6 +8,7 @@ import { connectionStatus, disconnectConnection, getValidAccessToken, listConnec
 import { enqueueVideoUpload, scheduleYoutubeWork, storagePathFor, uploadStatus } from './jobs';
 import {
   newAssetExpiry,
+  checkUploadSpace,
   openUploadGrant,
   relativeMediaPath,
   resolveMediaPath,
@@ -92,13 +93,14 @@ export async function prepareMedia(accountId: string, origin: string, input: {
       transfer: { method: 'source_url' as const, instructions: SOURCE_UPLOAD_INSTRUCTIONS },
     };
   }
-  if (!input.filename || !input.byteSize || !input.contentType) {
+  if (!input.filename || !Number.isSafeInteger(input.byteSize) || !input.byteSize || input.byteSize <= 0 || !input.contentType) {
     throw new YoutubeUserError('invalid_media', 'Provide filename, byteSize, and contentType, or provide a public https sourceUrl.');
   }
   const limit = imageHint ? MAX_THUMBNAIL_BYTES : maxUploadBytes();
   if (input.byteSize > limit) {
-    throw new YoutubeUserError('too_large', `The file exceeds the ${limit} byte limit for this server. The Render disk is 1 GB and is shared with card photos.`);
+    throw new YoutubeUserError('too_large', `The file exceeds the configured ${limit} byte upload limit for this server.`);
   }
+  await checkUploadSpace(input.byteSize);
   const expiresAt = newAssetExpiry();
   await prisma.youtubeMediaAsset.create({
     data: {
@@ -108,7 +110,7 @@ export async function prepareMedia(accountId: string, origin: string, input: {
       status: 'pending',
       filename: sanitizeFilename(input.filename),
       contentType: input.contentType,
-      byteSize: input.byteSize,
+      byteSize: BigInt(input.byteSize),
       storagePath,
       expiresAt,
     },
@@ -156,7 +158,7 @@ export async function acceptMediaBytes(assetId: string, token: string, stream: R
     }
     await prisma.youtubeMediaAsset.update({
       where: { id: asset.id },
-      data: { status: 'ready', byteSize: written.byteSize, contentType: written.sniffed.contentType, errorMessage: null },
+      data: { status: 'ready', byteSize: BigInt(written.byteSize), contentType: written.sniffed.contentType, errorMessage: null },
     });
     return { mediaAssetId: asset.id, status: 'ready' as const, byteSize: written.byteSize, contentType: written.sniffed.contentType, kind: written.sniffed.kind };
   } catch (error) {

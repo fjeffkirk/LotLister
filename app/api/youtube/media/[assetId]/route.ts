@@ -26,6 +26,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ? 401
       : error instanceof YoutubeUserError && error.code === 'too_large'
         ? 413
+        : error instanceof YoutubeUserError && error.code === 'insufficient_storage'
+          ? 507
         : error instanceof YoutubeUserError && error.code === 'already_uploaded'
           ? 409
           : 400;

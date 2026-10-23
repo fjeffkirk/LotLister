@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
+import { storageCapacity } from '../../../lib/storage-capacity';
 
 export const dynamic = 'force-dynamic';
-
-const UPLOADS_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'data', 'uploads');
-const MAX_STORAGE_GB = 1; // Match render.yaml disk size
 
 interface StorageInfo {
   usedBytes: number;
@@ -13,39 +9,18 @@ interface StorageInfo {
   usedGB: number;
   maxGB: number;
   percentUsed: number;
-}
-
-async function getDirectorySize(dirPath: string): Promise<number> {
-  let totalSize = 0;
-  
-  try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
-    
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      
-      if (entry.isDirectory()) {
-        totalSize += await getDirectorySize(fullPath);
-      } else if (entry.isFile()) {
-        const stats = await fs.stat(fullPath);
-        totalSize += stats.size;
-      }
-    }
-  } catch (error) {
-    // Directory might not exist yet
-    return 0;
-  }
-  
-  return totalSize;
+  freeBytes: number;
+  totalBytes: number;
 }
 
 // GET /api/storage - Get storage usage info
 export async function GET(): Promise<NextResponse<{ success: boolean; data?: StorageInfo; error?: string }>> {
   try {
-    const usedBytes = await getDirectorySize(UPLOADS_DIR);
+    const { usedBytes, freeBytes, totalBytes } = await storageCapacity();
     const usedMB = Math.round((usedBytes / (1024 * 1024)) * 100) / 100;
     const usedGB = Math.round((usedBytes / (1024 * 1024 * 1024)) * 1000) / 1000;
-    const percentUsed = Math.round((usedGB / MAX_STORAGE_GB) * 100);
+    const maxGB = Math.round((totalBytes / (1024 ** 3)) * 100) / 100;
+    const percentUsed = Math.round((usedBytes / totalBytes) * 100);
     
     return NextResponse.json({
       success: true,
@@ -53,7 +28,9 @@ export async function GET(): Promise<NextResponse<{ success: boolean; data?: Sto
         usedBytes,
         usedMB,
         usedGB,
-        maxGB: MAX_STORAGE_GB,
+        maxGB,
+        freeBytes,
+        totalBytes,
         percentUsed: Math.min(percentUsed, 100),
       },
     });

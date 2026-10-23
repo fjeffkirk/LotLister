@@ -500,7 +500,7 @@ model YoutubeMediaAsset {
   status       String
   filename     String
   contentType  String
-  byteSize     Int?
+  byteSize     BigInt?
   storagePath  String
   sourceUrl    String?   @db.Text
   expiresAt    DateTime?
@@ -521,9 +521,9 @@ model YoutubeUploadJob {
   mediaAssetId        String
   thumbnailAssetId    String?
   status              String
-  progressBytes       Int       @default(0)
-  byteSize            Int       @default(0)
-  bytesAcked          Int       @default(0)
+  progressBytes       BigInt    @default(0)
+  byteSize            BigInt    @default(0)
+  bytesAcked          BigInt    @default(0)
   attemptCount        Int       @default(0)
   completionUncertain Boolean   @default(false)
   nextAttemptAt       DateTime?

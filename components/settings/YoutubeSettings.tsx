@@ -128,7 +128,7 @@ export function YoutubeSettings() {
         <p>On Google’s screen, choose the account that owns the channel you want. If YouTube asks which channel, pick that channel. Compare the channel id here with YouTube Studio → Settings → Channel → Advanced settings. If it is the wrong channel, disconnect it and connect again.</p>
         <p>The <a href="/youtube" className="text-primary-300 hover:text-white">YouTube tab</a> shows views, watch time, and subscribers for the channel you select. A channel connected before that permission was added needs to be connected again. Estimated revenue is not requested. Enable the YouTube Analytics API on the same Google Cloud project.</p>
         <p>Uploads stay private unless a tool call sets publication intent. Refresh tokens from an OAuth app left in Testing expire after 7 days. Publishing the consent screen to production is required for ongoing access, and tokens can still be revoked.</p>
-        <p>Video files are stored on this server’s existing disk, up to about {megabytes || 400} MB each. Custom thumbnails also require phone verification on that specific channel.</p>
+        <p>Video files are stored on this server’s existing disk, up to about {megabytes || 4096} MB each when enough space is available. Custom thumbnails also require phone verification on that specific channel.</p>
       </div>
 
       {settings.callbackUrl && <CopyLine label="OAuth redirect URI" value={settings.callbackUrl} />}

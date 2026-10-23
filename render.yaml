@@ -69,7 +69,7 @@ services:
       # 32-byte key, openssl rand -base64 32. Encrypts YouTube refresh tokens. Not a Google secret.
       - key: YOUTUBE_TOKEN_ENCRYPTION_KEY
         sync: false
-      # Optional. Defaults to 400MB so a video fits on the existing 1GB disk. Raising it needs a larger disk, which changes the Render bill.
+      # Optional. Defaults to 4 GiB per video. Every transfer also checks actual free disk space.
       - key: YOUTUBE_MAX_UPLOAD_BYTES
         sync: false
       # TikTok Marketing API app. Redirect URI is ${NEXT_PUBLIC_APP_URL}/api/tiktok/callback
@@ -84,4 +84,4 @@ services:
     disk:
       name: lotlister-data
       mountPath: /data
-      sizeGB: 1
+      sizeGB: 5
