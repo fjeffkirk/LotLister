@@ -25,3 +25,20 @@ owner's durable archive. The archive must not live only on LotLister.
 `automaticYoutubeDeletion` is false; `localMediaRetentionDays` is 7. The latter is
 a local-file retention policy, not a guaranteed removal timestamp or a YouTube
 expiry. Existing historical deleted records are not resurrected.
+
+## Explicit cleanup of a failed source
+
+An owner may request immediate removal of one failed or rejected upload's local
+video copy after saving a durable backup. `youtube_media_delete_failed` requires
+exact job, connection, channel, idempotency key, media ID, byte size, backup
+reference and deletion intent. The channel must already be enabled through
+`YOUTUBE_CLEANUP_CHANNEL_IDS`. It refuses leases, uncertain completion, shared
+sources, noncanonical paths, images, and unexpected file sizes. Asset and job
+locks serialize cleanup with enqueue; a deleting marker permits crash recovery.
+The original job, thumbnail, and any YouTube video are preserved.
+
+For a client whose MCP catalog has not refreshed, an operator may set
+`YOUTUBE_FAILED_MEDIA_CLEANUP` to a JSON array of these exact authorized targets.
+Startup uses the same cleanup operation and logs each result. No wildcard, SQL,
+or credentials are accepted. Clear the configuration to `[]` after verification.
+Without this explicit configuration, existing retention behavior is unchanged.

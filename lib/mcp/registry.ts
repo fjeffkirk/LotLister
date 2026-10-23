@@ -30,13 +30,13 @@ const PUBLISH_NAME = /publish|activate|unlist/i;
  * Add a new integration by calling this from lib/mcp/tools and importing that file
  * from lib/mcp/tools/index.ts. Do not add a second MCP URL.
  * eBay/Etsy publishing and deletes stay blocked. YouTube publishing is allowed;
- * its single destructive cleanup tool additionally needs explicit channel activation.
+ * its destructive cleanup tools additionally need explicit channel activation.
  */
 export function registerTool(tool: LotlisterTool): void {
   if (tool.effect !== 'read' && tool.effect !== 'draft' && tool.effect !== 'price' && tool.effect !== 'youtube' && tool.effect !== 'tiktok') {
     throw new Error(`Tool ${tool.name} uses an effect this server does not allow`);
   }
-  const approvedYoutubeCleanup = tool.name === 'youtube_video_delete' && tool.effect === 'youtube'
+  const approvedYoutubeCleanup = ['youtube_video_delete', 'youtube_media_delete_failed'].includes(tool.name) && tool.effect === 'youtube'
     && tool.destructive === true && tool.readOnly === false
     && Boolean(process.env.YOUTUBE_CLEANUP_CHANNEL_IDS?.trim());
   if ((DESTRUCTIVE_NAME.test(tool.name) && !approvedYoutubeCleanup) || (PUBLISH_NAME.test(tool.name) && !tool.name.startsWith('youtube_'))) {

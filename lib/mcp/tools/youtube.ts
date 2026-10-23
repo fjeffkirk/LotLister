@@ -16,10 +16,24 @@ import {
 import { publicOrigin } from '../oauth';
 import { holdUnstartedUpload } from '../../youtube/jobs';
 import { channelInventory, deleteOutsideTopFive } from '../../youtube/cleanup';
+import { deleteFailedMedia, failedMediaCleanupSchema } from '../../youtube/media-cleanup';
 
 const connectionId = z.string().trim().min(8).max(40);
 const videoId = z.string().regex(/^[A-Za-z0-9_-]{6,20}$/);
 const visibility = z.enum(['private', 'unlisted', 'public']);
+
+if (process.env.YOUTUBE_CLEANUP_CHANNEL_IDS?.trim()) registerTool({
+  name: 'youtube_media_delete_failed',
+  description: 'Remove only the local video source of one explicitly authorized failed or rejected upload to free LotLister storage. Requires a saved backup reference and exact job, connection, channel, media, key and byte size. Refuses active, ambiguous or shared files. Preserves YouTube videos, thumbnails and upload history. Never call without owner deletion authorization.',
+  effect: 'youtube', readOnly: false, destructive: true, idempotent: true, openWorld: false,
+  inputSchema: { type: 'object', properties: {
+    jobId: { type: 'string' }, connectionId: { type: 'string' }, channelId: { type: 'string' },
+    idempotencyKey: { type: 'string' }, mediaAssetId: { type: 'string' },
+    expectedByteSize: { type: 'integer', minimum: 1 }, backupReference: { type: 'string' },
+    deletionIntent: { type: 'boolean', const: true },
+  }, required: ['jobId', 'connectionId', 'channelId', 'idempotencyKey', 'mediaAssetId', 'expectedByteSize', 'backupReference', 'deletionIntent'], additionalProperties: false },
+  async handler(ctx, args) { return deleteFailedMedia(ctx.accountId, failedMediaCleanupSchema.parse(args)); },
+});
 
 registerTool({
   name: 'youtube_channel_inventory',
