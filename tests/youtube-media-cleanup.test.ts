@@ -9,7 +9,7 @@ vi.mock('../lib/prisma', () => ({ default: { $transaction: mocks.transaction,
   youtubeMediaAsset: { update: mocks.update }, youtubeUploadJob: { findFirst: mocks.findJob } } }));
 vi.mock('../lib/youtube/api', () => ({ deleteVideo: mocks.deleteVideo }));
 vi.mock('../lib/youtube/connections', () => ({ getValidAccessToken: mocks.token }));
-import { deleteFailedMedia, applyConfiguredFailedMediaCleanup } from '../lib/youtube/media-cleanup';
+import { deleteFailedMedia, applyConfiguredFailedMediaCleanup, deleteCompletedMedia, applyConfiguredCompletedMediaCleanup } from '../lib/youtube/media-cleanup';
 import { relativeMediaPath, resolveMediaPath } from '../lib/youtube/media';
 
 let db: PGlite;
@@ -26,6 +26,62 @@ beforeAll(async () => {
     await db.exec(await readFile(`prisma/migrations/${migration}/migration.sql`, 'utf8'));
   }
   await mkdir(path.dirname(file()), { recursive: true });
+});
+
+describe('explicit completed-source cleanup using real SQL and files', () => {
+  const completed = { ...target, expectedYoutubeVideoId: 'r117xuJoT9g' };
+  beforeEach(async () => {
+    await db.query('UPDATE "YoutubeUploadJob" SET status=\'processed\', "youtubeVideoId"=$1, "uploadedAt"=NOW(), "byteSize"=$2, "bytesAcked"=$2',
+      [completed.expectedYoutubeVideoId, target.expectedByteSize]);
+  });
+  it('removes the completed local source while preserving the entire job and YouTube video', async () => {
+    const before = (await db.query('SELECT * FROM "YoutubeUploadJob"')).rows;
+    expect(await deleteCompletedMedia(account, completed)).toMatchObject({ localFileDeleted: true, freedBytes: 18, youtubeVideoDeleted: false, uploadHistoryPreserved: true });
+    expect(await exists()).toBe(false);
+    expect((await db.query('SELECT * FROM "YoutubeUploadJob"')).rows).toEqual(before);
+    expect(mocks.deleteVideo).not.toHaveBeenCalled(); expect(mocks.token).not.toHaveBeenCalled();
+    expect(await deleteCompletedMedia(account, completed)).toMatchObject({ alreadyDeleted: true, freedBytes: 0 });
+  });
+  it.each(['uploaded', 'processing', 'uploading', 'queued', 'failed', 'rejected', 'uncertain', 'held'])('preserves %s source files', async status => {
+    await db.query('UPDATE "YoutubeUploadJob" SET status=$1', [status]);
+    await expect(deleteCompletedMedia(account, completed)).rejects.toThrow('Only an unleased');
+    expect(await exists()).toBe(true);
+  });
+  it.each(['"youtubeVideoId"=\'differentid\'', '"uploadedAt"=NULL', '"byteSize"=19', '"bytesAcked"=17'])('requires exact accepted video and bytes: %s', async clause => {
+    await db.exec('UPDATE "YoutubeUploadJob" SET ' + clause);
+    await expect(deleteCompletedMedia(account, completed)).rejects.toThrow('fully acknowledged');
+    expect(await exists()).toBe(true);
+  });
+  it.each(['"lockedAt"=NOW()', '"lockToken"=\'worker\'', '"completionUncertain"=true'])('preserves leased or uncertain work: %s', async clause => {
+    await db.exec('UPDATE "YoutubeUploadJob" SET ' + clause);
+    await expect(deleteCompletedMedia(account, completed)).rejects.toThrow();
+    expect(await exists()).toBe(true);
+  });
+  it('retains the channel, account, backup, shared-file and size protections', async () => {
+    await expect(deleteCompletedMedia('different-account', completed)).rejects.toThrow();
+    await expect(deleteCompletedMedia(account, { ...completed, expectedByteSize: 19 })).rejects.toThrow();
+    await expect(deleteCompletedMedia(account, { ...completed, backupReference: '' })).rejects.toThrow();
+    await expect(deleteCompletedMedia(account, { ...completed, deletionIntent: false as any })).rejects.toThrow();
+    vi.stubEnv('YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS', '');
+    await expect(deleteCompletedMedia(account, completed)).rejects.toThrow('not enabled');
+    vi.stubEnv('YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS', target.channelId);
+    race = true;
+    await expect(deleteCompletedMedia(account, completed)).rejects.toThrow('Another upload references');
+    expect(await exists()).toBe(true);
+  });
+  it('accepts only configured exact completed targets and remains off by default', async () => {
+    await applyConfiguredCompletedMediaCleanup();expect(mocks.transaction).not.toHaveBeenCalled();
+    vi.stubEnv('YOUTUBE_COMPLETED_MEDIA_CLEANUP', JSON.stringify([completed]));
+    await applyConfiguredCompletedMediaCleanup();expect(await exists()).toBe(false);
+    expect(mocks.findJob).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ youtubeVideoId: completed.expectedYoutubeVideoId }) }));
+  });
+  it('fails closed on an operator identity mismatch or a build', async () => {
+    vi.stubEnv('YOUTUBE_COMPLETED_MEDIA_CLEANUP', JSON.stringify([completed]));
+    mocks.findJob.mockResolvedValue(null);
+    await expect(applyConfiguredCompletedMediaCleanup()).rejects.toThrow('identity mismatch');
+    vi.stubEnv('NEXT_PHASE','phase-production-build');
+    await applyConfiguredCompletedMediaCleanup();expect(await exists()).toBe(true);
+  });
 });
 afterAll(async () => { vi.unstubAllEnvs(); await db.close(); await rm(path.dirname(file()), { recursive: true, force: true }); });
 beforeEach(async () => {

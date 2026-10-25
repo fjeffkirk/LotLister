@@ -16,11 +16,25 @@ export const failedMediaCleanupSchema = z.object({
   deletionIntent: z.literal(true),
 }).strict();
 export type FailedMediaCleanupTarget = z.infer<typeof failedMediaCleanupSchema>;
+export const completedMediaCleanupSchema = failedMediaCleanupSchema.extend({
+  expectedYoutubeVideoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
+}).strict();
+export type CompletedMediaCleanupTarget = z.infer<typeof completedMediaCleanupSchema>;
 
 /** Owner-authorized cleanup of one failed source. No YouTube calls, job deletes,
  * queue revival, shared-file deletion, or changes to publication settings. */
 export async function deleteFailedMedia(accountId: string, input: FailedMediaCleanupTarget) {
-  const target = failedMediaCleanupSchema.parse(input);
+  return deleteLocalMedia(accountId, failedMediaCleanupSchema.parse(input), 'failed');
+}
+
+/** Remove only an explicitly authorized, archived source whose upload is fully
+ * processed. YouTube video, thumbnail, job and publication history stay intact. */
+export async function deleteCompletedMedia(accountId: string, input: CompletedMediaCleanupTarget) {
+  return deleteLocalMedia(accountId, completedMediaCleanupSchema.parse(input), 'completed');
+}
+
+async function deleteLocalMedia(accountId: string, target: FailedMediaCleanupTarget | CompletedMediaCleanupTarget,
+  kind: 'failed' | 'completed') {
   const enabled = (process.env.YOUTUBE_MEDIA_CLEANUP_CHANNEL_IDS ?? '').split(',').map(x => x.trim());
   if (!enabled.includes(target.channelId)) {
     throw new YoutubeUserError('deletion_disabled', 'Local media deletion is not enabled for this channel.');
@@ -36,19 +50,30 @@ export async function deleteFailedMedia(accountId: string, input: FailedMediaCle
     const jobs = await tx.$queryRaw<Array<{
       id: string; connectionId: string; channelId: string; idempotencyKey: string;
       mediaAssetId: string; status: string; lockedAt: Date | null; lockToken: string | null;
-      completionUncertain: boolean;
+      completionUncertain: boolean; youtubeVideoId: string | null; uploadedAt: Date | null;
+      byteSize: bigint; bytesAcked: bigint;
     }>>`SELECT id, "connectionId", "channelId", "idempotencyKey", "mediaAssetId", status,
-        "lockedAt", "lockToken", "completionUncertain" FROM "YoutubeUploadJob"
+        "lockedAt", "lockToken", "completionUncertain", "youtubeVideoId", "uploadedAt", "byteSize", "bytesAcked"
+      FROM "YoutubeUploadJob"
       WHERE id = ${target.jobId} AND "userEmail" = ${accountId} FOR UPDATE`;
     const job = jobs[0];
     if (!row || !job || job.connectionId !== target.connectionId || job.channelId !== target.channelId
       || job.idempotencyKey !== target.idempotencyKey || job.mediaAssetId !== target.mediaAssetId
       || row.kind !== 'video' || row.byteSize === null || BigInt(row.byteSize) !== BigInt(target.expectedByteSize)
       || row.storagePath !== relativeMediaPath(accountId, row.id)) {
-      throw new YoutubeUserError('cleanup_target_mismatch', 'The failed job, account, channel, file path or byte size does not match.');
+      throw new YoutubeUserError('cleanup_target_mismatch', 'The job, account, channel, file path or byte size does not match.');
     }
-    if (!['failed', 'rejected'].includes(job.status) || job.lockedAt || job.lockToken || job.completionUncertain) {
-      throw new YoutubeUserError('media_in_use', 'Only an unleased, unambiguous failed or rejected upload source can be removed.');
+    const terminal = kind === 'failed' ? ['failed', 'rejected'].includes(job.status) : job.status === 'processed';
+    if (!terminal || job.lockedAt || job.lockToken || job.completionUncertain) {
+      throw new YoutubeUserError('media_in_use', kind === 'failed'
+        ? 'Only an unleased, unambiguous failed or rejected upload source can be removed.'
+        : 'Only an unleased, unambiguous processed upload source can be removed.');
+    }
+    if (kind === 'completed' && (!('expectedYoutubeVideoId' in target)
+      || job.youtubeVideoId !== target.expectedYoutubeVideoId || !job.uploadedAt
+      || BigInt(job.byteSize) !== BigInt(target.expectedByteSize)
+      || BigInt(job.bytesAcked) !== BigInt(target.expectedByteSize))) {
+      throw new YoutubeUserError('cleanup_target_mismatch', 'The processed video ID or fully acknowledged upload size does not match.');
     }
     const references = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "YoutubeUploadJob"
       WHERE ("mediaAssetId" = ${row.id} OR "thumbnailAssetId" = ${row.id}) AND id <> ${job.id} LIMIT 1`;
@@ -65,7 +90,7 @@ export async function deleteFailedMedia(accountId: string, input: FailedMediaCle
       throw new YoutubeUserError('cleanup_file_mismatch', 'The stored file is not a regular file of the approved size.');
     }
     await tx.youtubeMediaAsset.update({ where: { id: row.id }, data: { status: 'deleting',
-      errorMessage: `Owner requested failed-source cleanup. Backup: ${target.backupReference}` } });
+      errorMessage: `Owner requested ${kind}-source cleanup. Backup: ${target.backupReference}` } });
     return row;
   }, { isolationLevel: 'ReadCommitted' });
   if (asset.status === 'expired') return { mediaAssetId: asset.id, localFileDeleted: true, alreadyDeleted: true, freedBytes: 0 };
@@ -74,7 +99,7 @@ export async function deleteFailedMedia(accountId: string, input: FailedMediaCle
     throw error; // Keep deleting so this exact authorized operation can resume.
   });
   await prisma.youtubeMediaAsset.update({ where: { id: asset.id }, data: { status: 'expired',
-    errorMessage: `Owner removed failed local source. YouTube and upload history preserved. Backup: ${target.backupReference}` } });
+    errorMessage: `Owner removed ${kind} local source. YouTube and upload history preserved. Backup: ${target.backupReference}` } });
   return { mediaAssetId: asset.id, localFileDeleted: true, alreadyDeleted: !removed,
     freedBytes: removed ? target.expectedByteSize : 0, youtubeVideoDeleted: false, uploadHistoryPreserved: true };
 }
@@ -96,5 +121,25 @@ export async function applyConfiguredFailedMediaCleanup(): Promise<void> {
   for (let i = 0; i < targets.length; i++) {
     const result = await deleteFailedMedia(accounts[i], targets[i]);
     log.info('youtube failed local media cleanup verified', { jobId: targets[i].jobId, ...result });
+  }
+}
+
+/** Exact owner-approved completed-source targets; never a retention-policy change. */
+export async function applyConfiguredCompletedMediaCleanup(): Promise<void> {
+  if (process.env.NEXT_PHASE === 'phase-production-build' || process.argv.includes('build')) return;
+  const raw = process.env.YOUTUBE_COMPLETED_MEDIA_CLEANUP;
+  if (!raw?.trim()) return;
+  const targets = z.array(completedMediaCleanupSchema).max(20).parse(JSON.parse(raw));
+  const accounts = await Promise.all(targets.map(async target => {
+    const job = await prisma.youtubeUploadJob.findFirst({ where: { id: target.jobId,
+      connectionId: target.connectionId, channelId: target.channelId,
+      idempotencyKey: target.idempotencyKey, mediaAssetId: target.mediaAssetId,
+      youtubeVideoId: target.expectedYoutubeVideoId }, select: { userEmail: true } });
+    if (!job) throw new Error('Completed-media cleanup identity mismatch. No files removed.');
+    return job.userEmail;
+  }));
+  for (let i = 0; i < targets.length; i++) {
+    const result = await deleteCompletedMedia(accounts[i], targets[i]);
+    log.info('youtube completed local media cleanup verified', { jobId: targets[i].jobId, ...result });
   }
 }

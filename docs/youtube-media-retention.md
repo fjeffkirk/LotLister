@@ -44,3 +44,14 @@ For a client whose MCP catalog has not refreshed, an operator may set
 Startup uses the same cleanup operation and logs each result. No wildcard, SQL,
 or credentials are accepted. Clear the configuration to `[]` after verification.
 Without this explicit configuration, existing retention behavior is unchanged.
+
+## Explicit cleanup of a completed source
+
+An owner can also reclaim one archived, successfully uploaded local source before
+the normal seven-day retention period. `YOUTUBE_COMPLETED_MEDIA_CLEANUP` accepts
+the same exact target fields plus `expectedYoutubeVideoId`. It requires a processed,
+unleased, unambiguous job, its recorded upload acceptance time, and matching full
+acknowledged byte count. The same account, channel allowlist, shared-reference,
+canonical-path and file-size protections apply. No YouTube API call is made and
+no video, thumbnail, upload job or visibility is changed. Clear the exact-target
+configuration to `[]` after verifying the freed-byte log and the retained video.
