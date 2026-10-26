@@ -1,4 +1,6 @@
 import { randomBytes } from 'crypto';
+import { appendMediaChunk, finalizeMediaChunks, MAX_UPLOAD_CHUNK_BYTES, readChunkProgress, withMediaUploadLock } from './chunked-media';
+import { byteCount } from './byte-count';
 import { Readable } from 'stream';
 import { getPublicBaseUrl } from '../ebay';
 import prisma from '../prisma';
@@ -38,7 +40,8 @@ import { type Visibility, type YoutubeVideo, YoutubeUserError } from './types';
 export const DIRECT_UPLOAD_INSTRUCTIONS = [
   'Call youtube_media_upload_prepare with the file name, exact byte size, and content type. It returns mediaAssetId and an expiring uploadUrl.',
   'From the program that has the MP4 bytes, PUT the raw file to uploadUrl with Content-Type: application/octet-stream. Do not send base64. A ChatGPT sandbox path or sandbox URL is not on this server and will be rejected.',
-  'The PUT response confirms status ready and the same mediaAssetId.',
+  'For large files, use sequential PUT requests of at most 64 MiB with Content-Range: bytes START-END/TOTAL and X-Upload-SHA256: the lowercase whole-file SHA-256. Each reply gives committed offset; GET the same signed URL to resume. After all bytes, POST that URL with X-Upload-SHA256 to verify the complete checksum and finalize. Grants and overall size limits still apply.',
+  'Only a response with status ready confirms that the media can be queued for YouTube.',
   'Call youtube_connections_list, copy the connectionId whose channelId matches the YouTube channel you intend to use, then call youtube_upload_video with that connectionId, the mediaAssetId, and a new idempotency key. Visibility defaults to private.',
   'Poll youtube_upload_status with the job id until status is processed, rejected, failed, or uncertain. Statuses uploaded and processing mean YouTube has not finished. Do not treat the video as public unless actualVisibility is public.',
 ].join(' ');
@@ -135,6 +138,11 @@ export async function prepareMedia(accountId: string, origin: string, input: {
 }
 
 export async function acceptMediaBytes(assetId: string, token: string, stream: Readable) {
+  try { return await withMediaUploadLock(assetId, () => acceptWholeMediaBytes(assetId, token, stream)); }
+  catch (error) { stream.destroy(); throw error; }
+}
+
+async function acceptWholeMediaBytes(assetId: string, token: string, stream: Readable) {
   const grant = openUploadGrant(token, Math.floor(Date.now() / 1000));
   if (grant.assetId !== assetId) {
     throw new YoutubeUserError('upload_unauthorized', 'The upload URL does not match this media asset.');
@@ -145,6 +153,9 @@ export async function acceptMediaBytes(assetId: string, token: string, stream: R
     throw new YoutubeUserError('already_uploaded', 'This upload URL was already used. Prepare a new upload if the file must be sent again.');
   }
   const destination = resolveMediaPath(asset.storagePath || storagePathFor(grant.accountId, assetId));
+  if (await readChunkProgress(destination)) {
+    throw new YoutubeUserError('upload_conflict', 'A resumable transfer exists. Continue its chunks instead of replacing it.');
+  }
   try {
     const written = await writeUploadStream(stream, destination, Math.min(grant.maxBytes, asset.kind === 'image' ? MAX_THUMBNAIL_BYTES : maxUploadBytes()));
     if (written.sniffed.kind !== asset.kind) {
@@ -170,6 +181,52 @@ export async function acceptMediaBytes(assetId: string, token: string, stream: R
     }
     throw error;
   }
+}
+
+async function ownedTransfer(assetId: string, token: string) {
+  const grant = openUploadGrant(token, Math.floor(Date.now() / 1000));
+  if (grant.assetId !== assetId) throw new YoutubeUserError('upload_unauthorized', 'The signed URL does not match this asset.');
+  const asset = await prisma.youtubeMediaAsset.findFirst({ where: { id: assetId, userEmail: grant.accountId } });
+  if (!asset || !['pending', 'ready'].includes(asset.status) || asset.byteSize === null || byteCount(asset.byteSize) !== grant.maxBytes) {
+    throw new YoutubeUserError('upload_unauthorized', 'No matching prepared asset exists for this account and grant.');
+  }
+  const destination = resolveMediaPath(asset.storagePath || storagePathFor(grant.accountId, assetId));
+  const limit = asset.kind === 'image' ? MAX_THUMBNAIL_BYTES : maxUploadBytes();
+  if (grant.maxBytes > limit) throw new YoutubeUserError('too_large', 'The prepared file exceeds the current upload limit.');
+  return { asset, destination, limit, total: grant.maxBytes };
+}
+
+export async function mediaTransferStatus(assetId: string, token: string) {
+  return withMediaUploadLock(assetId, async () => {
+    const { asset, destination, total } = await ownedTransfer(assetId, token);
+    const progress = await readChunkProgress(destination);
+    return { mediaAssetId: asset.id, status: asset.status, byteSize: total,
+      offset: asset.status === 'ready' ? total : progress?.offset ?? 0,
+      sha256: progress?.sha256 ?? null, maxChunkBytes: MAX_UPLOAD_CHUNK_BYTES };
+  });
+}
+
+export async function acceptMediaChunk(assetId: string, token: string, stream: Readable, contentRange: string, sha256: string) {
+  try {
+    return await withMediaUploadLock(assetId, async () => {
+      const { asset, destination, limit, total } = await ownedTransfer(assetId, token);
+      if (asset.status === 'ready') throw new YoutubeUserError('already_uploaded', 'This asset is already ready.');
+      const progress = await appendMediaChunk(stream, destination, { contentRange, total, limit, sha256 });
+      return { mediaAssetId: asset.id, status: 'pending', ...progress, maxChunkBytes: MAX_UPLOAD_CHUNK_BYTES };
+    });
+  } catch (error) { stream.destroy(); throw error; }
+}
+
+export async function finishMediaTransfer(assetId: string, token: string, sha256: string) {
+  return withMediaUploadLock(assetId, async () => {
+    const { asset, destination, limit, total } = await ownedTransfer(assetId, token);
+    const written = await finalizeMediaChunks(destination, { total, limit, sha256, kind: asset.kind });
+    await prisma.youtubeMediaAsset.update({ where: { id: asset.id }, data: {
+      status: 'ready', byteSize: BigInt(written.byteSize), contentType: written.sniffed.contentType, errorMessage: null,
+    } });
+    return { mediaAssetId: asset.id, status: 'ready', byteSize: written.byteSize,
+      sha256: written.sha256, contentType: written.sniffed.contentType, kind: written.sniffed.kind };
+  });
 }
 
 export async function startVideoUpload(input: Parameters<typeof enqueueVideoUpload>[0]) {

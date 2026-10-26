@@ -33,7 +33,7 @@ export async function checkUploadSpace(bytes: number): Promise<void> {
   }
 }
 
-async function reserveUploadSpace(bytes: number): Promise<() => void> {
+export async function reserveUploadSpace(bytes: number): Promise<() => void> {
   // Check and reserve in the same continuation, so concurrent callers cannot
   // both pass a check before either registers its reservation.
   const { freeBytes } = await storageCapacity();
