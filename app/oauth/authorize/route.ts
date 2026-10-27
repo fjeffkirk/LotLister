@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
   <p>Signed in as ${escapeHtml(user.username)}. ChatGPT can:</p>
   <ul>
     <li>View lots, eBay listings, Etsy orders, and Shopify totals</li>
-    <li>Create an unpublished Etsy draft</li>
+    <li>Create an unpublished Etsy draft, and edit the title, description, price, inventory, and images of an existing Etsy listing without publishing or deleting it</li>
     <li>Change the price of an active eBay listing after you preview it</li>
     <li>Upload videos to a YouTube channel you connect in LotLister. Those uploads stay private unless a tool call explicitly publishes or schedules them</li>
     <li>Manage Box Buddy TikTok ads inside a policy you saved. It cannot raise the budget or launch a campaign until you authorize that preview in LotLister</li>

@@ -37,6 +37,10 @@ describe('LotLister MCP policy', () => {
     expect(names).toEqual(expect.arrayContaining(['lots_list', 'ebay_listings_get', 'etsy_receipts_get', 'shopify_summary_get']));
     expect(names).not.toContain('etsy_drafts_create');
     expect(names).not.toContain('etsy_drafts_create_product');
+    expect(names).toContain('etsy_listings_get');
+    expect(names).not.toContain('etsy_listings_update');
+    expect(names).not.toContain('etsy_listing_variants_update');
+    expect(names).not.toContain('etsy_listing_images_update');
     expect(names).not.toContain('ebay_prices_apply');
     expect(names).not.toContain('youtube_upload_video');
     expect(names).not.toContain('youtube_video_publish');
@@ -93,5 +97,24 @@ describe('LotLister MCP policy', () => {
     expect(names).toContain('tiktok_campaign_create');
     expect(names).not.toContain('lots_list');
     expect(names).not.toContain('youtube_upload_video');
+  });
+
+  it('lists existing Etsy listing edits for the drafts scope and keeps them separate from draft tools', async () => {
+    expect(findTool('etsy_listings_update')?.effect).toBe('draft');
+    expect(findTool('etsy_listings_get')?.effect).toBe('read');
+    const listed = await dispatchMcp({ jsonrpc: '2.0', id: 5, method: 'tools/list' }, {
+      accountId: 'seller',
+      scopes: ['lotlister.drafts'],
+      clientId: 'chatgpt',
+    });
+    const names = ((listed.body?.result as { tools: { name: string }[] }).tools).map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining([
+      'etsy_listings_update',
+      'etsy_listing_variants_update',
+      'etsy_listing_images_update',
+      'etsy_drafts_update',
+      'etsy_draft_variants_update',
+    ]));
+    expect(names).not.toContain('etsy_listings_get');
   });
 });

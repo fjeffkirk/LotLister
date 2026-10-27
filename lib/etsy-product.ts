@@ -331,7 +331,7 @@ export interface InventoryBody {
   products: {
     sku: string;
     property_values: { property_id: number; property_name: string; values: string[]; value_ids: number[] }[];
-    offerings: { quantity: number; is_enabled: true; price: number; readiness_state_id?: number }[];
+    offerings: { quantity: number; is_enabled: boolean; price: number; readiness_state_id?: number }[];
   }[];
   price_on_property: number[];
   quantity_on_property: number[];
@@ -374,8 +374,8 @@ export function variationLimitError(variants: VariantInput[]): string | null {
       if (!option.propertyId && !option.name?.trim()) return 'Each variation needs a taxonomy propertyId or a custom name.';
       if (!option.propertyId && option.name?.trim()) customNames.add(option.name.trim().toLowerCase());
     }
-    if (!Number.isFinite(variant.price) || variant.price <= 0 || !Number.isInteger(variant.quantity) || variant.quantity <= 0) {
-      return 'Each variation needs a price above 0 and a positive whole-number quantity';
+    if (!Number.isFinite(variant.price) || variant.price <= 0 || !Number.isInteger(variant.quantity) || variant.quantity < 0) {
+      return 'Each variation needs a price above 0 and a whole-number quantity of zero or more';
     }
   }
   if (customNames.size > ETSY_CUSTOM_PROPERTY_IDS.length) return 'Etsy allows at most 3 custom variations.';
@@ -448,7 +448,7 @@ export function buildInventoryBody(
       }),
       offerings: [{
         quantity: offering?.quantity ?? 1,
-        is_enabled: true as const,
+        is_enabled: offering?.is_enabled !== false,
         price: offeringPrice(offering),
         ...(readiness ? { readiness_state_id: readiness } : {}),
       }],
@@ -462,26 +462,30 @@ export function buildInventoryBody(
     }));
     const key = optionKey(options);
     const sku = variant.sku?.trim() ?? '';
-    const readiness = variant.readinessStateId || fallbackReadinessId;
-    const next = {
-      sku,
-      property_values: variant.options.map((option) => ({
-        property_id: option.propertyId!,
-        property_name: option.name?.trim() || '',
-        values: [option.value.trim()],
-        value_ids: option.valueId ? [option.valueId] : [],
-      })),
-      offerings: [{
-        quantity: variant.quantity,
-        is_enabled: true as const,
-        price: Number(variant.price.toFixed(2)),
-        ...(readiness ? { readiness_state_id: Number(readiness) } : {}),
-      }],
-    };
     const index = kept.findIndex((product) => {
       if (sku && product.sku === sku) return true;
       return optionKey(product.property_values.map((property) => ({ propertyId: property.property_id, value: property.values[0] ?? '' }))) === key;
     });
+    const previous = index >= 0 ? kept[index] : undefined;
+    const readiness = variant.readinessStateId || fallbackReadinessId || (previous?.offerings[0].readiness_state_id != null ? String(previous.offerings[0].readiness_state_id) : '');
+    const next = {
+      sku,
+      property_values: variant.options.map((option) => {
+        const prior = previous?.property_values.find((property) => property.property_id === option.propertyId && (property.values[0] ?? '').toLowerCase() === option.value.trim().toLowerCase());
+        return {
+          property_id: option.propertyId!,
+          property_name: option.name?.trim() || prior?.property_name || '',
+          values: [option.value.trim()],
+          value_ids: option.valueId ? [option.valueId] : (prior?.value_ids ?? []),
+        };
+      }),
+      offerings: [{
+        quantity: variant.quantity,
+        is_enabled: previous?.offerings[0]?.is_enabled !== false,
+        price: Number(variant.price.toFixed(2)),
+        ...(readiness ? { readiness_state_id: Number(readiness) } : {}),
+      }],
+    };
     if (index >= 0) kept[index] = next;
     else kept.push(next);
   }

@@ -124,7 +124,7 @@ registerTool({
       taxonomyId: taxonomyId ?? null,
       taxonomyProperties,
       taxonomyError,
-      workflow: 'Create a physical draft with etsy_drafts_create_product. Pass useShopDefaults only when these saved profiles should be reused. Add images with etsy_draft_images_upload and variations with etsy_draft_variants_update. If a step fails, retry it with the returned listingId. Publishing, deletion, and edits to active listings are not available. Trading cards still use etsy_drafts_create.',
+      workflow: 'Create a physical draft with etsy_drafts_create_product. Pass useShopDefaults only when these saved profiles should be reused. Add images with etsy_draft_images_upload and variations with etsy_draft_variants_update. If a step fails, retry it with the returned listingId. Publishing and deletion are not available. To edit an existing active, inactive, or draft listing, use etsy_listings_get, etsy_listings_update, etsy_listing_variants_update, and etsy_listing_images_update. Those tools do not change the listing state. Trading cards still use etsy_drafts_create.',
     };
   },
 });

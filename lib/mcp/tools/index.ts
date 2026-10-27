@@ -3,6 +3,7 @@ import './lots';
 import './ebay';
 import './etsy';
 import './etsy-products';
+import './etsy-listings';
 import './shopify';
 import './youtube';
 import './tiktok';
