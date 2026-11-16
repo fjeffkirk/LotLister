@@ -234,6 +234,41 @@ model EbayPricePreviewLine {
   @@index([previewId, userEmail])
 }
 
+// Shipping, returns, and location used when a Shopify product is listed on eBay. Card lots keep their own ExportProfile.
+model EbayListingDefaults {
+  userEmail            String   @id
+  postalCode           String
+  location             String
+  shippingService      String   @default("USPSParcel")
+  shippingCost         Float    @default(0)
+  freeShipping         Boolean  @default(false)
+  additionalItemCost   Float    @default(0)
+  handlingDays         Int      @default(1)
+  returnsAccepted      Boolean  @default(true)
+  returnDays           Int      @default(30)
+  returnShippingPaidBy String   @default("Buyer")
+  bestOfferEnabled     Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
+}
+
+// A verified eBay listing built from one Shopify product. Create sends this exact item, once.
+model EbayProductListing {
+  id               String   @id @default(cuid())
+  previewId        String   @unique
+  userEmail        String
+  shopifyProductId String
+  uuid             String
+  itemXml          String
+  summary          Json
+  status           String
+  ebayItemId       String?
+  error            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userEmail, shopifyProductId])
+}
+
 // Player/character name read from a listing's item specifics (Trading GetItem), so the
 // dashboard's best-sellers list only looks each sold listing up once.
 model EbayItemPlayer {

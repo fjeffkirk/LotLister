@@ -12,6 +12,17 @@ import {
   SHOP,
 } from "./queries";
 import type { ShopifyOrderNode, ShopifyPageInfo, ShopifyLocationNode, ShopifyVariantNode } from "./types";
+import type { ShopifyListingProduct } from "../ebay-shopify-listing";
+import {
+  normalizeListingProduct,
+  PRODUCT_FOR_LISTING,
+  PRODUCT_ID_BY_SEARCH,
+  PRODUCT_ID_BY_SKU,
+  productGid,
+  searchTerm,
+  type ProductForListingData,
+  type ProductLookup,
+} from "./listing-product";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -325,6 +336,30 @@ export class ShopifyClient {
       hasNext = pageData.inventoryItems.pageInfo.hasNextPage;
       cursor = pageData.inventoryItems.pageInfo.endCursor;
     }
+  }
+
+  /** One product with the description, photos, options, and variants needed to list it elsewhere. */
+  async productForListing(lookup: ProductLookup): Promise<ShopifyListingProduct> {
+    let id: string;
+    if ("productId" in lookup) {
+      id = productGid(lookup.productId);
+    } else if ("handle" in lookup) {
+      const found = await this.request<{ products: { nodes: { id: string }[] } }>(PRODUCT_ID_BY_SEARCH, {
+        query: searchTerm("handle", lookup.handle),
+      });
+      if (!found.products.nodes.length) throw new Error(`No Shopify product has the handle ${lookup.handle}`);
+      id = found.products.nodes[0].id;
+    } else {
+      const found = await this.request<{ productVariants: { nodes: { sku: string | null; product: { id: string } }[] } }>(PRODUCT_ID_BY_SKU, {
+        query: searchTerm("sku", lookup.sku),
+      });
+      const matches = found.productVariants.nodes.filter((node) => node.sku === lookup.sku.trim());
+      const ids = [...new Set(matches.map((node) => node.product.id))];
+      if (!ids.length) throw new Error(`No Shopify variant has the SKU ${lookup.sku}`);
+      if (ids.length > 1) throw new Error(`SKU ${lookup.sku} is on more than one Shopify product. Pass productId instead.`);
+      id = ids[0];
+    }
+    return normalizeListingProduct(await this.request<ProductForListingData>(PRODUCT_FOR_LISTING, { id }));
   }
 
   /** Total orders matching the same filter used by paginateOrders. */

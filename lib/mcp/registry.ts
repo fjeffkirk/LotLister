@@ -1,6 +1,6 @@
 import type { McpScope } from './oauth';
 
-export type McpEffect = 'read' | 'draft' | 'price' | 'youtube' | 'tiktok';
+export type McpEffect = 'read' | 'draft' | 'price' | 'youtube' | 'tiktok' | 'listing';
 
 export interface McpContext {
   accountId: string;
@@ -10,7 +10,7 @@ export interface McpContext {
 export interface LotlisterTool {
   name: string;
   description: string;
-  /** read tools need lotlister.read. draft tools need lotlister.drafts. price tools need lotlister.prices. youtube tools need lotlister.youtube. tiktok tools need lotlister.tiktok. */
+  /** read tools need lotlister.read. draft tools need lotlister.drafts. price tools need lotlister.prices. youtube tools need lotlister.youtube. tiktok tools need lotlister.tiktok. listing tools need lotlister.listings. */
   effect: McpEffect;
   readOnly?: boolean;
   idempotent?: boolean;
@@ -29,11 +29,12 @@ const PUBLISH_NAME = /publish|activate|unlist/i;
  * Register a tool on the single /mcp endpoint.
  * Add a new integration by calling this from lib/mcp/tools and importing that file
  * from lib/mcp/tools/index.ts. Do not add a second MCP URL.
- * eBay/Etsy publishing and deletes stay blocked. YouTube publishing is allowed;
- * its destructive cleanup tools additionally need explicit channel activation.
+ * Deletes, ending listings, and Etsy publishing stay blocked. New eBay listings come only from
+ * ebay_listing_create, which needs lotlister.listings and a verified, seller-approved preview.
+ * YouTube publishing is allowed; its destructive cleanup tools additionally need explicit channel activation.
  */
 export function registerTool(tool: LotlisterTool): void {
-  if (tool.effect !== 'read' && tool.effect !== 'draft' && tool.effect !== 'price' && tool.effect !== 'youtube' && tool.effect !== 'tiktok') {
+  if (!['read', 'draft', 'price', 'youtube', 'tiktok', 'listing'].includes(tool.effect)) {
     throw new Error(`Tool ${tool.name} uses an effect this server does not allow`);
   }
   const cleanupEnabled = tool.name === 'youtube_video_delete'
@@ -64,5 +65,6 @@ export function scopeFor(effect: McpEffect): McpScope {
   if (effect === 'price') return 'lotlister.prices';
   if (effect === 'youtube') return 'lotlister.youtube';
   if (effect === 'tiktok') return 'lotlister.tiktok';
+  if (effect === 'listing') return 'lotlister.listings';
   return 'lotlister.read';
 }

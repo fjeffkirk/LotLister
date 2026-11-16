@@ -1,6 +1,7 @@
 import './account';
 import './lots';
 import './ebay';
+import './ebay-listings';
 import './etsy';
 import './etsy-products';
 import './etsy-listings';

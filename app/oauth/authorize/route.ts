@@ -64,10 +64,11 @@ export async function GET(request: NextRequest) {
     <li>View lots, eBay listings, Etsy orders, and Shopify totals</li>
     <li>Create an unpublished Etsy draft, and edit the title, description, price, inventory, and images of an existing Etsy listing without publishing or deleting it</li>
     <li>Change the price of an active eBay listing after you preview it</li>
+    <li>Create a new eBay listing from a Shopify product after eBay checks it and you approve the preview</li>
     <li>Upload videos to a YouTube channel you connect in LotLister. Those uploads stay private unless a tool call explicitly publishes or schedules them</li>
     <li>Manage Box Buddy TikTok ads inside a policy you saved. It cannot raise the budget or launch a campaign until you authorize that preview in LotLister</li>
   </ul>
-  <p>It cannot publish or delete eBay or Etsy listings, and it cannot delete YouTube videos.</p>
+  <p>It cannot end, delete, or relist eBay or Etsy listings, it cannot publish Etsy drafts, and it cannot delete YouTube videos.</p>
   <form method="post">${hidden}<button type="submit">Allow</button></form>
 </main></body></html>`;
 

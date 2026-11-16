@@ -9,6 +9,7 @@ import { AlertIcon, CheckCircleIcon, ChevronDownIcon, ChevronLeftIcon, CopyIcon,
 import { ShopifySettings } from '../../components/settings/ShopifySettings';
 import { EtsySettings } from '../../components/settings/EtsySettings';
 import { YoutubeSettings } from '../../components/settings/YoutubeSettings';
+import { EbayListingDefaults } from '../../components/settings/EbayListingDefaults';
 
 interface EbaySettings {
   configured: boolean;
@@ -87,6 +88,7 @@ export default function SettingsPage() {
               )}
             </div>
           ) : null}
+          <EbayListingDefaults />
         </section>
 
         <ShopifySettings />

@@ -7,8 +7,8 @@ describe('LotLister MCP policy', () => {
   it('grants read and draft access, and ignores a publish scope', () => {
     expect(grantedScopes('lotlister.read lotlister.publish')).toEqual(['lotlister.read']);
     expect(grantedScopes('lotlister.read lotlister.youtube')).toEqual(['lotlister.read', 'lotlister.youtube']);
-    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube', 'lotlister.tiktok']);
-    expect(consentScopes()).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube', 'lotlister.tiktok']);
+    expect(grantedScopes(undefined)).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube', 'lotlister.tiktok', 'lotlister.listings']);
+    expect(consentScopes()).toEqual(['lotlister.read', 'lotlister.drafts', 'lotlister.prices', 'lotlister.youtube', 'lotlister.tiktok', 'lotlister.listings']);
   });
 
   it('only accepts ChatGPT redirect addresses', () => {
@@ -97,6 +97,27 @@ describe('LotLister MCP policy', () => {
     expect(names).toContain('tiktok_campaign_create');
     expect(names).not.toContain('lots_list');
     expect(names).not.toContain('youtube_upload_video');
+  });
+
+  it('shows eBay listing creation only with the listings scope', async () => {
+    const readOnly = await dispatchMcp({ jsonrpc: '2.0', id: 6, method: 'tools/list' }, { accountId: 'seller', scopes: ['lotlister.read'], clientId: 'chatgpt' });
+    const readNames = ((readOnly.body?.result as { tools: { name: string }[] }).tools).map((tool) => tool.name);
+    expect(readNames).toEqual(expect.arrayContaining(['shopify_product_get', 'ebay_category_suggest', 'ebay_listing_defaults_get']));
+    expect(readNames).not.toContain('ebay_listing_preview');
+    expect(readNames).not.toContain('ebay_listing_create');
+
+    const listing = await dispatchMcp({ jsonrpc: '2.0', id: 7, method: 'tools/list' }, { accountId: 'seller', scopes: ['lotlister.listings'], clientId: 'chatgpt' });
+    const tools = (listing.body?.result as { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] }).tools;
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['ebay_listing_create', 'ebay_listing_defaults_update', 'ebay_listing_preview']);
+    expect(tools.find((tool) => tool.name === 'ebay_listing_create')?.annotations?.readOnlyHint).toBe(false);
+
+    const denied = await dispatchMcp({
+      jsonrpc: '2.0',
+      id: 8,
+      method: 'tools/call',
+      params: { name: 'ebay_listing_create', arguments: { previewId: 'ebl_000000000000000000000001', sellerApproved: true } },
+    }, { accountId: 'seller', scopes: ['lotlister.read', 'lotlister.prices'], clientId: 'chatgpt' });
+    expect((denied.body?.result as { isError: boolean }).isError).toBe(true);
   });
 
   it('lists existing Etsy listing edits for the drafts scope and keeps them separate from draft tools', async () => {
